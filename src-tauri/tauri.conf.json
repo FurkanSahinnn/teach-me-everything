@@ -59,7 +59,7 @@
       "endpoints": [
         "https://github.com/FurkanSahinnn/teach-me-everything/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_TAURI_SIGNER_GENERATE_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3MzA1NjY2QkYxN0VEMDAKUldRQTdSZS9abFl3aCthSHRPTzZpUzg5SUpDUVhqZTFaMjJJSFRDeTdxT2ZPSE4rM2VlNEw0b0oK",
       "windows": {
         "installMode": "passive"
       }
