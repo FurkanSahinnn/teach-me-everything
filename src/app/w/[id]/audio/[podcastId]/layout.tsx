@@ -10,8 +10,9 @@ export async function generateStaticParams(): Promise<
   return [{ podcastId: "_" }];
 }
 
-// Real podcast ids are user-generated at runtime — accept anything.
-export const dynamicParams = true;
+// `output: export` requires a static `false`; the running app reaches real
+// podcast ids via client-side SPA navigation.
+export const dynamicParams = false;
 
 export default function AudioPodcastLayout({
   children,

@@ -10,8 +10,9 @@ export async function generateStaticParams(): Promise<
   return [{ lessonId: "_" }];
 }
 
-// Real lesson ids are user-generated at runtime — accept anything.
-export const dynamicParams = true;
+// `output: export` requires a static `false`; the running app reaches real
+// lesson ids via client-side SPA navigation.
+export const dynamicParams = false;
 
 export default function StudyLessonLayout({
   children,

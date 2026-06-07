@@ -14,12 +14,13 @@ export async function generateStaticParams(): Promise<{ id: string }[]> {
   return [{ id: "_" }];
 }
 
-// Next 16 + App Router default behaviour with a `generateStaticParams`
-// returning a fixed list is to 404 unlisted ids ("strict" mode). TME ids
-// are user-generated at runtime in Dexie — we MUST accept any id here and
-// let the client resolve via `useParams`. Without this, the dev server and
-// the Tauri static-export bundle both 404 on `/w/<real-uuid>/...`.
-export const dynamicParams = true;
+// `output: export` forbids `dynamicParams: true` (and it must be a static
+// boolean literal), so it is `false`: only the `/w/_/...` shell is emitted.
+// TME workspace ids are user-generated at runtime, so the running Tauri app
+// reaches `/w/<real-id>/...` via client-side SPA navigation (router.push /
+// <Link>), which renders the matched route client-side without a pre-built
+// HTML page — the 404 only applies to a hard server load of an unlisted id.
+export const dynamicParams = false;
 
 export default function WorkspaceIdLayout({
   children,

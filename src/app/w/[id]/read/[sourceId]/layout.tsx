@@ -12,8 +12,9 @@ export async function generateStaticParams(): Promise<
   return [{ sourceId: "_" }];
 }
 
-// See parent layout — accept any runtime id, client resolves via useParams.
-export const dynamicParams = true;
+// See parent layout — `output: export` requires a static `false`; the running
+// app reaches real source ids via client-side SPA navigation.
+export const dynamicParams = false;
 
 export default function ReadSourceLayout({
   children,

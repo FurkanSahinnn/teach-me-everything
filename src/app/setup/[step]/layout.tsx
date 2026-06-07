@@ -1,17 +1,17 @@
 import type { ReactNode } from "react";
 
-// Phase 7.1 — static-export shim. Provides a placeholder `step` value so
-// Next's `output: 'export'` can pre-render this segment's shell; the real
-// step is resolved client-side via `useParams` against the wizard store.
-// Web/dev branch is unaffected — Next ignores `generateStaticParams` when
-// not exporting. See memory `project_phase7_plan.md` § 7.1.
+// Setup is a fixed 4-step wizard navigated via real /setup/1../setup/4 URLs
+// (router.push(`/setup/${to}`), <Link href="/setup/1">). Enumerating the four
+// steps lets the Tauri static export (`output: export`) pre-render each step's
+// shell while dev navigation keeps working. `dynamicParams` MUST be a static
+// boolean literal (Next/Turbopack rejects a computed value) and `output:
+// export` forbids `true`, so it is `false` — unknown segments 404, which the
+// page already intends via notFound().
 export async function generateStaticParams(): Promise<{ step: string }[]> {
-  return [{ step: "_" }];
+  return [{ step: "1" }, { step: "2" }, { step: "3" }, { step: "4" }];
 }
 
-// Wizard step is resolved client-side from the wizard store; accept any
-// segment value so direct URL navigation works in dev + static export.
-export const dynamicParams = true;
+export const dynamicParams = false;
 
 export default function SetupStepLayout({ children }: { children: ReactNode }) {
   return children;
