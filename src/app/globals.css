@@ -1,0 +1,598 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+/* =========================================================================
+   Teach Me Everything — Design System v2
+   ─────────────────────────────────────────────────────────────────────────
+   Üç tema:
+     • dark    → varsayılan premium akademik workspace
+     • sepia   → warm paper, reader/focus karakteri
+     • white   → temiz fallback
+   Genel dil: koyu-first, dengeli yoğunluk, ölçülü akademik karakter.
+   Surface karakteri tema-bazlı (shadow yoğunluğu / border ağırlığı override).
+   ========================================================================= */
+
+@theme {
+  /* ---- Color: paper (yüzey) ---- */
+  --color-paper:        #FFFFFF;
+  --color-paper-2:      #FAFAF9;
+  --color-paper-3:      #F4F4F2;
+  --color-paper-4:      #EDEDEA;
+
+  /* ---- Color: rule (border) ---- */
+  --color-rule:         #E5E5E1;
+  --color-rule-soft:    #EFEEEA;
+  --color-rule-strong:  #D4D3CD;
+
+  /* ---- Color: ink (typography) ---- */
+  --color-ink:          #0F0F0E;
+  --color-ink-2:        #2B2B29;
+  --color-ink-3:        #5C5B57;
+  --color-ink-4:        #8B8A85;
+  --color-ink-5:        #B8B7B1;
+
+  /* ---- Color: accent (amber dual-token) ---- */
+  --color-accent:       #B86A2B;
+  --color-accent-hot:   #C26A2E;
+  --color-accent-soft:  #E8C9A8;
+  --color-accent-wash:  #FCEFDC;
+  --color-accent-ink:   #6E3A0F;
+
+  /* ---- Color: secondary tags ---- */
+  --color-moss:         #4E5E3E;
+  --color-plum:         #6B3A5E;
+  --color-slate:        #3C4A58;
+
+  /* ---- Color: semantic ---- */
+  --color-ok:           #4E6E3E;
+  --color-warn:         #A86A1C;
+  --color-err:          #8E2F2F;
+
+  /* ---- Radius (12px central) ---- */
+  --radius-xs:          6px;
+  --radius-sm:          10px;
+  --radius:             12px;
+  --radius-md:          12px;
+  --radius-lg:          16px;
+  --radius-xl:          24px;
+  --radius-2xl:         32px;
+
+  /* ---- Shadow (theme-overridable) ---- */
+  --shadow-soft:        0 1px 2px rgb(15 15 14 / 0.04), 0 4px 12px -4px rgb(15 15 14 / 0.06);
+  --shadow-medium:      0 4px 8px -2px rgb(15 15 14 / 0.06), 0 12px 32px -8px rgb(15 15 14 / 0.10);
+  --shadow-deep:        0 8px 16px -4px rgb(15 15 14 / 0.08), 0 24px 64px -16px rgb(15 15 14 / 0.16);
+  --shadow-lift:        0 2px 0 rgb(15 15 14 / 0.02), 0 8px 20px -8px rgb(15 15 14 / 0.12);
+
+  /* ---- Motion ---- */
+  --ease-out:           cubic-bezier(0.2, 0.6, 0.2, 1);
+  --ease-spring:        cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:      120ms;
+  --duration-normal:    180ms;
+  --duration-slow:      280ms;
+
+  /* ---- Density (set per data-density) ---- */
+  --space:              8px;
+  --pad-x:              14px;
+  --pad-y:              9px;
+  --row-sm:             28px;
+  --row:                36px;
+  --row-lg:             44px;
+  --type-xs:            12px;
+  --type-sm:            13px;
+  --type-base:          14px;
+  --type-lg:            15px;
+  --type-xl:            17px;
+
+  /* ---- Typography (font families) ---- */
+  --font-serif:         var(--font-source-serif), 'Charter', 'Iowan Old Style', Georgia, serif;
+  --font-sans:          var(--font-geist), -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono:          var(--font-jetbrains-mono), 'SF Mono', ui-monospace, Menlo, monospace;
+}
+
+/* =========================================================================
+   THEME · WHITE (default · modern minimal)
+   ========================================================================= */
+:root,
+[data-theme="white"] {
+  --color-paper:        #FFFFFF;
+  --color-paper-2:      #FAFAF9;
+  --color-paper-3:      #F4F4F2;
+  --color-paper-4:      #EDEDEA;
+
+  --color-rule:         #E5E5E1;
+  --color-rule-soft:    #EFEEEA;
+  --color-rule-strong:  #D4D3CD;
+
+  --color-ink:          #0F0F0E;
+  --color-ink-2:        #2B2B29;
+  --color-ink-3:        #5C5B57;
+  --color-ink-4:        #8B8A85;
+  --color-ink-5:        #B8B7B1;
+
+  --color-accent:       #B86A2B;
+  --color-accent-hot:   #C26A2E;
+  --color-accent-soft:  #E8C9A8;
+  --color-accent-wash:  #FCEFDC;
+  --color-accent-ink:   #6E3A0F;
+
+  --shadow-soft:        0 1px 2px rgb(15 15 14 / 0.04), 0 4px 12px -4px rgb(15 15 14 / 0.06);
+  --shadow-medium:      0 4px 8px -2px rgb(15 15 14 / 0.06), 0 12px 32px -8px rgb(15 15 14 / 0.10);
+  --shadow-deep:        0 8px 16px -4px rgb(15 15 14 / 0.08), 0 24px 64px -16px rgb(15 15 14 / 0.16);
+  --shadow-lift:        0 2px 0 rgb(15 15 14 / 0.02), 0 8px 20px -8px rgb(15 15 14 / 0.12);
+
+  color-scheme: light;
+}
+
+/* =========================================================================
+   THEME · SEPIA (warm parchment · akademik okuma)
+   Surface stratejisi: border ağırlıklı, shadow neredeyse yok.
+   ========================================================================= */
+[data-theme="sepia"] {
+  --color-paper:        #F6EAD2;
+  --color-paper-2:      #EFDFC0;
+  --color-paper-3:      #E5D2AC;
+  --color-paper-4:      #DCC79A;
+
+  --color-rule:         #C9B68F;
+  --color-rule-soft:    #D6C4A0;
+  --color-rule-strong:  #A6925F;
+
+  --color-ink:          #2E1F0E;
+  --color-ink-2:        #4A331A;
+  --color-ink-3:        #6B4F30;
+  --color-ink-4:        #8E7651;
+  --color-ink-5:        #B19979;
+
+  --color-accent:       #B86A2B;
+  --color-accent-hot:   #B25920;
+  --color-accent-soft:  #DDB988;
+  --color-accent-wash:  #ECD8B0;
+  --color-accent-ink:   #5C2E08;
+
+  --shadow-soft:        0 1px 2px rgb(46 31 14 / 0.05);
+  --shadow-medium:      0 2px 4px rgb(46 31 14 / 0.06), 0 8px 24px -8px rgb(46 31 14 / 0.10);
+  --shadow-deep:        0 12px 32px -8px rgb(46 31 14 / 0.18);
+  --shadow-lift:        0 1px 3px rgb(46 31 14 / 0.08);
+
+  color-scheme: light;
+}
+
+/* =========================================================================
+   THEME · DARK (sofistike gece modu)
+   Surface stratejisi: border + belirgin ama temiz shadow.
+   ========================================================================= */
+[data-theme="dark"] {
+  --color-paper:        #11100E;
+  --color-paper-2:      #1B1814;
+  --color-paper-3:      #282219;
+  --color-paper-4:      #342B20;
+
+  --color-rule:         #473B2D;
+  --color-rule-soft:    #322A21;
+  --color-rule-strong:  #6D5A42;
+
+  --color-ink:          #F5F0E7;
+  --color-ink-2:        #DCD2C1;
+  --color-ink-3:        #A99D8B;
+  --color-ink-4:        #776D60;
+  --color-ink-5:        #524B42;
+
+  --color-accent:       #D99A5E;
+  --color-accent-hot:   #E8A764;
+  --color-accent-soft:  #6F4A27;
+  --color-accent-wash:  #2F2417;
+  --color-accent-ink:   #F2C995;
+
+  --color-ok:           #7BA85F;
+  --color-warn:         #D89A4A;
+  --color-err:          #C9594A;
+
+  --shadow-soft:        0 1px 0 rgb(255 244 224 / 0.03), 0 16px 40px -32px rgb(0 0 0 / 0.85);
+  --shadow-medium:      0 1px 0 rgb(255 244 224 / 0.04), 0 20px 56px -28px rgb(0 0 0 / 0.90);
+  --shadow-deep:        0 1px 0 rgb(255 244 224 / 0.05), 0 30px 80px -26px rgb(0 0 0 / 0.95);
+  --shadow-lift:        0 1px 0 rgb(255 244 224 / 0.05), 0 18px 44px -28px rgb(0 0 0 / 0.90);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   DENSITY · compact / normal / comfy
+   ========================================================================= */
+[data-density="compact"] {
+  --space:     6px;
+  --pad-x:     10px;
+  --pad-y:     6px;
+  --row-sm:    24px;
+  --row:       30px;
+  --row-lg:    36px;
+  --type-xs:   11px;
+  --type-sm:   12px;
+  --type-base: 13px;
+  --type-lg:   14px;
+  --type-xl:   16px;
+}
+[data-density="normal"] {
+  --space:     8px;
+  --pad-x:     14px;
+  --pad-y:     9px;
+  --row-sm:    28px;
+  --row:       36px;
+  --row-lg:    44px;
+  --type-xs:   12px;
+  --type-sm:   13px;
+  --type-base: 14px;
+  --type-lg:   15px;
+  --type-xl:   17px;
+}
+[data-density="comfy"] {
+  --space:     12px;
+  --pad-x:     18px;
+  --pad-y:     12px;
+  --row-sm:    32px;
+  --row:       42px;
+  --row-lg:    50px;
+  --type-xs:   13px;
+  --type-sm:   14px;
+  --type-base: 15px;
+  --type-lg:   17px;
+  --type-xl:   19px;
+}
+
+/* =========================================================================
+   BASE
+   ========================================================================= */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html {
+  height: 100%;
+  overflow-x: hidden;
+}
+body {
+  min-height: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--type-base);
+  line-height: 1.5;
+  color: var(--color-ink);
+  background:
+    radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--color-accent-wash) 44%, transparent), transparent 30rem),
+    linear-gradient(180deg, var(--color-paper), var(--color-paper));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'ss01','ss02','cv11';
+  text-rendering: optimizeLegibility;
+  transition:
+    background-color var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out);
+}
+
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; }
+input, textarea, select { font: inherit; color: inherit; }
+hr { border: 0; border-top: 1px solid var(--color-rule); margin: 0; }
+::selection { background: var(--color-accent-wash); color: var(--color-accent-ink); }
+
+/* Reduced motion respect */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =========================================================================
+   SCROLLBAR
+   ========================================================================= */
+.scroll-paper::-webkit-scrollbar,
+main::-webkit-scrollbar { width: 10px; height: 10px; }
+
+.scroll-paper::-webkit-scrollbar-thumb,
+main::-webkit-scrollbar-thumb {
+  background: var(--color-rule);
+  border-radius: 10px;
+  border: 3px solid var(--color-paper);
+  background-clip: padding-box;
+}
+
+.scroll-paper::-webkit-scrollbar-thumb:hover,
+main::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-rule-strong);
+  background-clip: padding-box;
+}
+
+.scroll-paper::-webkit-scrollbar-track,
+main::-webkit-scrollbar-track { background: transparent; }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-rule) transparent;
+}
+
+/* =========================================================================
+   UTILITIES
+   ========================================================================= */
+@utility paper-grid {
+  background-image:
+    linear-gradient(var(--color-rule-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-rule-soft) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+  font-weight: 500;
+}
+
+@utility page-container {
+  width: min(100%, 1180px);
+  margin-inline: auto;
+  padding: 20px 16px 80px;
+}
+@media (min-width: 640px) {
+  .page-container { padding-inline: 20px; }
+}
+@media (min-width: 1024px) {
+  .page-container { padding: 28px 32px 80px; }
+}
+
+/* Grain overlay for landing/hero sections */
+@utility grain {
+  position: relative;
+}
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image:
+    radial-gradient(circle at 20% 30%, var(--color-ink) 1px, transparent 1px),
+    radial-gradient(circle at 70% 70%, var(--color-ink) 1px, transparent 1px);
+  background-size: 3px 3px, 5px 5px;
+}
+
+/* Anti-FOUC theme transition skip on first paint */
+html.theme-init-complete body {
+  transition:
+    background-color var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out);
+}
+
+/* =========================================================================
+   CITATION PULSE — used by ChatBubble citation chip → ReaderPanel chunk jump.
+   Briefly washes the target chunk in accent so the user can confirm the jump
+   landed where they expected.
+   ========================================================================= */
+@keyframes citation-pulse {
+  0%   { background-color: transparent; }
+  20%  { background-color: var(--color-accent-wash); }
+  100% { background-color: transparent; }
+}
+.citation-pulse {
+  animation: citation-pulse 1.2s var(--ease-out);
+  border-radius: var(--radius-sm);
+}
+
+/* Markdown reading surface: web-native flow, PDF-like spacing, fixed GitHub code skin. */
+.markdown-preview {
+  overflow-wrap: anywhere;
+}
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+.markdown-preview p + ul,
+.markdown-preview p + ol {
+  margin-top: -0.35rem;
+}
+.markdown-preview li > p {
+  margin: 0;
+}
+.markdown-preview {
+  --md-code-bg: #f6f8fa;
+  --md-code-border: #d0d7de;
+  --md-code-fg: #24292f;
+  --md-code-muted: #6e7781;
+  --md-code-keyword: #cf222e;
+  --md-code-title: #8250df;
+  --md-code-string: #0a3069;
+  --md-code-number: #0550ae;
+  --md-code-attr: #953800;
+  --md-code-built-in: #6639ba;
+  --md-code-comment: #6e7781;
+  --md-inline-code-bg: #eff1f3;
+}
+[data-theme="dark"] .markdown-preview,
+[data-theme="sepia"] .markdown-preview {
+  --md-code-bg: #0d1117;
+  --md-code-border: #30363d;
+  --md-code-fg: #e6edf3;
+  --md-code-muted: #9aa7b2;
+  --md-code-keyword: #ff7b72;
+  --md-code-title: #d2a8ff;
+  --md-code-string: #a5d6ff;
+  --md-code-number: #79c0ff;
+  --md-code-attr: #ffa657;
+  --md-code-built-in: #ffa657;
+  --md-code-comment: #8b949e;
+  --md-inline-code-bg: #21262d;
+}
+.markdown-preview .markdown-code-block {
+  border-color: var(--md-code-border);
+  background: var(--md-code-bg) !important;
+  color: var(--md-code-fg) !important;
+}
+.markdown-preview .markdown-inline-code {
+  background: var(--md-inline-code-bg) !important;
+  color: var(--md-code-fg) !important;
+}
+.markdown-preview pre code {
+  display: block;
+  min-width: 100%;
+  white-space: pre;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--md-code-fg) !important;
+}
+.markdown-preview .hljs {
+  background: transparent;
+  color: var(--md-code-fg) !important;
+}
+.markdown-preview .hljs-comment,
+.markdown-preview .hljs-quote {
+  color: var(--md-code-comment) !important;
+}
+.markdown-preview .hljs-keyword,
+.markdown-preview .hljs-selector-tag,
+.markdown-preview .hljs-subst {
+  color: var(--md-code-keyword) !important;
+}
+.markdown-preview .hljs-literal,
+.markdown-preview .hljs-number,
+.markdown-preview .hljs-variable,
+.markdown-preview .hljs-template-variable {
+  color: var(--md-code-number) !important;
+}
+.markdown-preview .hljs-string,
+.markdown-preview .hljs-doctag,
+.markdown-preview .hljs-regexp {
+  color: var(--md-code-string) !important;
+}
+.markdown-preview .hljs-title,
+.markdown-preview .hljs-section,
+.markdown-preview .hljs-selector-id {
+  color: var(--md-code-title) !important;
+  font-weight: 600;
+}
+.markdown-preview .hljs-type,
+.markdown-preview .hljs-class .hljs-title,
+.markdown-preview .hljs-tag,
+.markdown-preview .hljs-name {
+  color: var(--md-code-built-in) !important;
+}
+.markdown-preview .hljs-attribute,
+.markdown-preview .hljs-attr,
+.markdown-preview .hljs-property,
+.markdown-preview .hljs-meta {
+  color: var(--md-code-attr) !important;
+}
+.markdown-preview .hljs-symbol,
+.markdown-preview .hljs-bullet,
+.markdown-preview .hljs-built_in,
+.markdown-preview .hljs-builtin-name {
+  color: var(--md-code-built-in) !important;
+}
+.markdown-preview .hljs-emphasis {
+  font-style: italic;
+}
+.markdown-preview .hljs-strong {
+  font-weight: 700;
+}
+.markdown-preview .katex,
+.chat-bubble-markdown .katex {
+  color: var(--color-ink);
+  font-size: 1.03em;
+}
+.markdown-preview .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 1.15rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-rule);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-paper-2) 76%, transparent);
+}
+/* Chat bubbles are narrow (~300px) so display math needs aggressive
+   horizontal scrolling and tighter padding to stay readable. */
+.chat-bubble-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-rule);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-paper-2) 76%, transparent);
+  font-size: 0.95em;
+}
+.chat-bubble-markdown .katex-display > .katex {
+  white-space: nowrap;
+}
+
+/* =========================================================================
+   pdfjs textLayer overlay — drawn on top of the rendered canvas in
+   PdfViewer so users can highlight, copy and select text directly out of
+   the PDF. The spans carry pdfjs's own per-character transforms; we only
+   set positioning, transparency, and the selection background.
+
+   The .endOfContent and .markedContent rules below are required for
+   selection to STOP at the right place — without them, dragging within a
+   paragraph leaks the selection across every sibling span until the end
+   of the page. pdfjs's TextLayer toggles `.selecting` on mouse-down so
+   `.endOfContent` extends from the bottom (idle) to cover the whole page
+   (active), which gives the browser a sentinel to clamp selection bounds.
+   See pdfjs-dist v5 web/text_layer_builder.css for reference.
+   ========================================================================= */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  caret-color: CanvasText;
+}
+.textLayer.highlighting {
+  touch-action: none;
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+}
+/* Chrome-only quirk: marked-content wrappers get drawn at full height
+   without this and overlap their following sibling spans, blurring
+   selection bounds. */
+.textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.textLayer.selecting .endOfContent {
+  top: 0;
+}
+.textLayer ::selection {
+  background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  color: transparent;
+}

@@ -1,0 +1,18 @@
+# Phase 8.A — BYOK keychain command permissions.
+#
+# Tauri 2.x denies every command by default. This permission file allows
+# the main webview (declared in capabilities/default.json) to invoke the
+# four custom keychain commands defined in src-tauri/src/keychain.rs.
+# No external plugin involved — these are plain in-app commands.
+
+"$schema" = "../gen/schemas/default-permissions-schema.json"
+
+[[permission]]
+identifier = "allow-keychain"
+description = "Allow the webview to read, write, delete, and list BYOK API keys stored in the OS-native credential store."
+commands.allow = [
+  "keychain_get",
+  "keychain_set",
+  "keychain_delete",
+  "keychain_list",
+]

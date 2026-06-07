@@ -1,0 +1,18 @@
+# Phase 11.B — System probe command permissions.
+#
+# Two read-only commands defined in src-tauri/src/sysinfo.rs. They expose
+# RAM / CPU / disk / OS info and GPU enumerator output to the renderer
+# so the TTS compatibility chip can render a green/yellow/red verdict
+# without the JS layer doing native OS lookups.
+
+"$schema" = "../gen/schemas/default-permissions-schema.json"
+
+[[permission]]
+identifier = "allow-sysinfo-probe"
+description = "Allow the webview to read aggregate RAM / CPU / disk / OS info for the compatibility check."
+commands.allow = ["sysinfo_probe"]
+
+[[permission]]
+identifier = "allow-sysinfo-gpu"
+description = "Allow the webview to enumerate GPU adapter names for the compatibility check."
+commands.allow = ["sysinfo_gpu"]

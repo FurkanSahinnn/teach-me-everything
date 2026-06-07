@@ -1,0 +1,298 @@
+import type { CloudProviderId, ProviderId, ProviderPreset } from "./types";
+
+// Partial because embed-only literals (voyage / cohere / jina / huggingface)
+// have no chat preset — they live in EMBED_PRESETS only.
+export const PROVIDER_PRESETS: Partial<Record<CloudProviderId, ProviderPreset>> = {
+  anthropic: {
+    id: "anthropic",
+    label: "Anthropic",
+    family: "anthropic",
+    kind: "chat",
+    baseUrl: "https://api.anthropic.com",
+    auth: { kind: "header", headerName: "x-api-key" },
+    capabilities: { cacheControl: true, toolUse: "native", streaming: true, vision: true },
+    defaultModels: { chat: "claude-sonnet-4-6" },
+    availableModels: [
+      { id: "claude-opus-4-7", displayName: "Claude Opus 4.7", tier: "flagship", hint: "Most capable" },
+      { id: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", tier: "balanced", hint: "Default" },
+      { id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", tier: "fast", hint: "Cheapest, fastest" },
+    ],
+    freeTier: false,
+    docsUrl: "https://docs.anthropic.com",
+  },
+  openai: {
+    id: "openai",
+    label: "OpenAI",
+    family: "openai-compat",
+    kind: "both",
+    baseUrl: "https://api.openai.com/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: true },
+    defaultModels: { chat: "gpt-5-mini", embed: "text-embedding-3-small" },
+    availableModels: [
+      { id: "gpt-5", displayName: "GPT-5", tier: "flagship", hint: "Most capable" },
+      { id: "gpt-5-mini", displayName: "GPT-5 mini", tier: "balanced", hint: "Default" },
+      { id: "gpt-5-nano", displayName: "GPT-5 nano", tier: "fast", hint: "Cheapest" },
+      { id: "o3", displayName: "o3 (reasoning)", tier: "flagship", hint: "Reasoning-heavy" },
+      { id: "o3-mini", displayName: "o3-mini (reasoning)", tier: "balanced", hint: "Reasoning, cheaper" },
+      { id: "gpt-4o", displayName: "GPT-4o", tier: "balanced", hint: "Legacy flagship" },
+      { id: "gpt-4o-mini", displayName: "GPT-4o mini", tier: "fast", hint: "Legacy fast" },
+      { id: "gpt-4-turbo", displayName: "GPT-4 Turbo", tier: "balanced", hint: "Legacy" },
+    ],
+    freeTier: false,
+    docsUrl: "https://platform.openai.com/docs",
+  },
+  "google-gemini": {
+    id: "google-gemini",
+    label: "Google Gemini",
+    family: "gemini",
+    kind: "both",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    auth: { kind: "header", headerName: "x-goog-api-key" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: true },
+    // Model ids verified against ai.google.dev/gemini-api/docs (2026-06).
+    // The Gemini 1.5/2.0 families are retired (404); 2.5 is deprecated
+    // (shutdown 2026-10-16); the older `gemini-3-*` ids we shipped were never
+    // valid API strings. Current lineup: 3.5-flash (GA, recommended default),
+    // 3.1-flash-lite (GA), 3.1-pro-preview (preview — no GA `pro` yet).
+    defaultModels: { chat: "gemini-3.5-flash", embed: "gemini-embedding-2" },
+    availableModels: [
+      { id: "gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)", tier: "flagship", hint: "Most capable · preview" },
+      { id: "gemini-3.5-flash", displayName: "Gemini 3.5 Flash", tier: "balanced", hint: "GA · recommended default" },
+      { id: "gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash-Lite", tier: "fast", hint: "GA · cheapest" },
+    ],
+    freeTier: true,
+    docsUrl: "https://ai.google.dev/gemini-api/docs",
+  },
+  openrouter: {
+    id: "openrouter",
+    label: "OpenRouter",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://openrouter.ai/api/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: true },
+    // GLM-5 is the cheapest stable Z-AI flagship slot via OpenRouter and does
+    // not depend on a rotating `:free` hosting partnership. We deliberately
+    // do not surface `:free` variants in the picker — OpenRouter pulls those
+    // without notice, leaving "no endpoints" 404s. Users who want a specific
+    // free model can still type the model id directly via the manual entry
+    // field; we just don't make it the discoverable default.
+    defaultModels: { chat: "z-ai/glm-5" },
+    availableModels: [
+      // GLM (Zhipu AI) — cheap, stable, paid
+      { id: "z-ai/glm-5", displayName: "GLM-5 (via OR)", tier: "balanced", hint: "Zhipu balanced, cheap" },
+      { id: "z-ai/glm-4.6", displayName: "GLM-4.6 (via OR)", tier: "flagship", hint: "Zhipu flagship" },
+      { id: "z-ai/glm-4.5", displayName: "GLM-4.5 (via OR)", tier: "balanced", hint: "Zhipu balanced" },
+      { id: "z-ai/glm-4.5v", displayName: "GLM-4.5V (vision)", tier: "balanced", hint: "Zhipu vision" },
+      // Paid (popular passthrough)
+      { id: "anthropic/claude-sonnet-4.5", displayName: "Claude Sonnet 4.5 (via OR)", tier: "balanced", hint: "Anthropic via OR" },
+      { id: "openai/gpt-5", displayName: "GPT-5 (via OR)", tier: "flagship", hint: "OpenAI via OR" },
+      { id: "x-ai/grok-4", displayName: "Grok 4 (via OR)", tier: "flagship", hint: "xAI via OR" },
+    ],
+    freeTier: true,
+    docsUrl: "https://openrouter.ai/docs",
+  },
+  groq: {
+    id: "groq",
+    label: "Groq",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.groq.com/openai/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: false },
+    defaultModels: { chat: "llama-3.3-70b-versatile" },
+    availableModels: [
+      { id: "llama-3.3-70b-versatile", displayName: "Llama 3.3 70B Versatile", tier: "free", hint: "Free, default" },
+      { id: "qwen-2.5-32b", displayName: "Qwen 2.5 32B", tier: "free", hint: "Free, faster" },
+      { id: "deepseek-r1-distill-llama-70b", displayName: "DeepSeek R1 Distill 70B", tier: "free", hint: "Free, reasoning" },
+      { id: "llama-3.1-8b-instant", displayName: "Llama 3.1 8B Instant", tier: "free", hint: "Free, fastest" },
+      { id: "mixtral-8x7b-32768", displayName: "Mixtral 8x7B 32k", tier: "free", hint: "Free, MoE" },
+      { id: "gemma2-9b-it", displayName: "Gemma2 9B", tier: "free", hint: "Free, small" },
+    ],
+    freeTier: true,
+    docsUrl: "https://console.groq.com/docs",
+  },
+  deepseek: {
+    id: "deepseek",
+    label: "DeepSeek",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.deepseek.com/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: false },
+    defaultModels: { chat: "deepseek-chat" },
+    availableModels: [
+      { id: "deepseek-chat", displayName: "DeepSeek V3", tier: "balanced", hint: "Default, cheap" },
+      { id: "deepseek-reasoner", displayName: "DeepSeek R1", tier: "flagship", hint: "Reasoning" },
+      { id: "deepseek-coder", displayName: "DeepSeek Coder", tier: "balanced", hint: "Code-focused" },
+    ],
+    freeTier: false,
+    docsUrl: "https://platform.deepseek.com/api-docs",
+  },
+  glm: {
+    id: "glm",
+    label: "GLM (Zhipu AI)",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: true },
+    defaultModels: { chat: "glm-4.6" },
+    availableModels: [
+      { id: "glm-4.6", displayName: "GLM-4.6", tier: "flagship", hint: "Most capable" },
+      { id: "glm-4-plus", displayName: "GLM-4 Plus", tier: "balanced", hint: "Default" },
+      { id: "glm-4-air", displayName: "GLM-4 Air", tier: "fast", hint: "Cheapest" },
+      { id: "glm-4-flash", displayName: "GLM-4 Flash", tier: "free", hint: "Free, fast" },
+      { id: "glm-4-long", displayName: "GLM-4 Long", tier: "balanced", hint: "Long context (1M)" },
+    ],
+    freeTier: true,
+    docsUrl: "https://open.bigmodel.cn/dev/api",
+  },
+  xai: {
+    id: "xai",
+    label: "xAI Grok",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.x.ai/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: true },
+    defaultModels: { chat: "grok-4" },
+    availableModels: [
+      { id: "grok-4", displayName: "Grok 4", tier: "flagship", hint: "Most capable" },
+      { id: "grok-3", displayName: "Grok 3", tier: "balanced", hint: "Cheaper" },
+      { id: "grok-3-mini", displayName: "Grok 3 mini", tier: "fast", hint: "Cheapest" },
+      { id: "grok-2-vision-1212", displayName: "Grok 2 Vision", tier: "balanced", hint: "Vision-tuned" },
+    ],
+    freeTier: false,
+    docsUrl: "https://docs.x.ai",
+  },
+  mistral: {
+    id: "mistral",
+    label: "Mistral",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.mistral.ai/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: false },
+    defaultModels: { chat: "mistral-large-latest" },
+    availableModels: [
+      { id: "mistral-large-latest", displayName: "Mistral Large", tier: "flagship", hint: "Most capable" },
+      { id: "mistral-medium-latest", displayName: "Mistral Medium", tier: "balanced", hint: "Default" },
+      { id: "mistral-small-latest", displayName: "Mistral Small", tier: "fast", hint: "Cheaper" },
+      { id: "codestral-latest", displayName: "Codestral", tier: "balanced", hint: "Code-focused" },
+      { id: "ministral-3b-latest", displayName: "Ministral 3B", tier: "fast", hint: "Cheapest" },
+      { id: "open-mistral-nemo", displayName: "Mistral Nemo", tier: "free", hint: "Free, open" },
+      { id: "pixtral-large-latest", displayName: "Pixtral Large", tier: "flagship", hint: "Vision-tuned" },
+    ],
+    freeTier: true,
+    docsUrl: "https://docs.mistral.ai",
+  },
+  together: {
+    id: "together",
+    label: "Together AI",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.together.xyz/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: false },
+    defaultModels: { chat: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+    availableModels: [
+      { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", displayName: "Llama 3.3 70B Turbo", tier: "balanced", hint: "Default" },
+      { id: "Qwen/Qwen2.5-72B-Instruct-Turbo", displayName: "Qwen 2.5 72B Turbo", tier: "balanced", hint: "Alternative" },
+      { id: "deepseek-ai/DeepSeek-V3", displayName: "DeepSeek V3", tier: "flagship", hint: "Most capable" },
+      { id: "deepseek-ai/DeepSeek-R1", displayName: "DeepSeek R1", tier: "flagship", hint: "Reasoning" },
+      { id: "meta-llama/Llama-3.2-3B-Instruct-Turbo", displayName: "Llama 3.2 3B Turbo", tier: "fast", hint: "Cheapest" },
+      { id: "mistralai/Mixtral-8x22B-Instruct-v0.1", displayName: "Mixtral 8x22B", tier: "balanced", hint: "MoE" },
+    ],
+    freeTier: false,
+    docsUrl: "https://docs.together.ai",
+  },
+  cerebras: {
+    id: "cerebras",
+    label: "Cerebras",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.cerebras.ai/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: false },
+    defaultModels: { chat: "llama-3.3-70b" },
+    availableModels: [
+      { id: "llama-3.3-70b", displayName: "Llama 3.3 70B", tier: "free", hint: "Free, default" },
+      { id: "qwen-3-32b", displayName: "Qwen 3 32B", tier: "free", hint: "Free, faster" },
+      { id: "llama-3.1-8b", displayName: "Llama 3.1 8B", tier: "free", hint: "Free, smallest" },
+      { id: "llama-4-scout-17b-16e-instruct", displayName: "Llama 4 Scout 17B", tier: "free", hint: "Free, latest" },
+      { id: "deepseek-r1-distill-llama-70b", displayName: "DeepSeek R1 Distill 70B", tier: "free", hint: "Free, reasoning" },
+    ],
+    freeTier: true,
+    docsUrl: "https://inference-docs.cerebras.ai",
+  },
+  perplexity: {
+    id: "perplexity",
+    label: "Perplexity",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "https://api.perplexity.ai",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "none", streaming: true, vision: false },
+    defaultModels: { chat: "sonar" },
+    availableModels: [
+      { id: "sonar", displayName: "Sonar", tier: "fast", hint: "Cheaper" },
+      { id: "sonar-pro", displayName: "Sonar Pro", tier: "flagship", hint: "Most capable" },
+      { id: "sonar-reasoning", displayName: "Sonar Reasoning", tier: "balanced", hint: "Reasoning" },
+      { id: "sonar-reasoning-pro", displayName: "Sonar Reasoning Pro", tier: "flagship", hint: "Best reasoning" },
+      { id: "sonar-deep-research", displayName: "Sonar Deep Research", tier: "flagship", hint: "Deep research" },
+    ],
+    freeTier: false,
+    docsUrl: "https://docs.perplexity.ai",
+  },
+  ollama: {
+    id: "ollama",
+    label: "Ollama",
+    family: "openai-compat",
+    kind: "both",
+    baseUrl: "http://localhost:11434/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "native", streaming: true, vision: false },
+    defaultModels: { chat: "qwen2.5:14b", embed: "nomic-embed-text" },
+    freeTier: true,
+    docsUrl: "https://github.com/ollama/ollama/blob/main/docs/openai.md",
+  },
+  "lm-studio": {
+    id: "lm-studio",
+    label: "LM Studio",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "http://localhost:1234/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "json", streaming: true, vision: false },
+    defaultModels: { chat: "local-model" },
+    freeTier: true,
+    docsUrl: "https://lmstudio.ai/docs/local-server",
+  },
+  "llama-cpp": {
+    id: "llama-cpp",
+    label: "llama.cpp",
+    family: "openai-compat",
+    kind: "chat",
+    baseUrl: "http://localhost:8080/v1",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "json", streaming: true, vision: false },
+    defaultModels: { chat: "local-model" },
+    freeTier: true,
+    docsUrl: "https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md",
+  },
+};
+
+export function listPresets(): ProviderPreset[] {
+  return Object.values(PROVIDER_PRESETS);
+}
+
+export function getPreset(id: ProviderId): ProviderPreset | undefined {
+  if (id.startsWith("custom:")) return undefined;
+  return PROVIDER_PRESETS[id as CloudProviderId];
+}
+
+export function isCloudProviderId(id: string): id is CloudProviderId {
+  return id in PROVIDER_PRESETS;
+}

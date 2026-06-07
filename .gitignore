@@ -1,0 +1,104 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches/
+!.yarn/plugins/
+!.yarn/releases/
+!.yarn/versions/
+
+# next.js
+/.next/
+/out/
+/build/
+
+# testing reports (generated artifacts only — the test suites + their config
+# files ARE committed so CI and contributors can run them)
+/coverage/
+/playwright-report/
+/test-results/
+/html-report/
+/blob-report/
+/.nyc_output/
+
+# env files and local secrets
+.env
+.env.*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.tmekey
+*.tmebak
+secrets.*
+
+# local app data and generated exports
+/uploads/
+/exports/
+/backups/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# local tool config
+.agents/
+.vercel/
+.claude/settings.local.json
+.claude/skills/
+.codex/local.*
+.codex/*.local.*
+
+# project notes not intended for git
+/docs/
+/legacy/
+/AGENTS.md
+/CLAUDE.md
+
+# npm/package-manager local artifacts
+/.npm/
+/.npmrc.local
+/.npmrc.*.local
+/.pnpm-store/
+/.yarn/cache/
+/.yarn/unplugged/
+/.yarn/build-state.yml
+/.yarn/install-state.gz
+/.parcel-cache/
+/.turbo/
+
+# logs and diagnostics
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Windows reserved name — accidentally created when a tool redirects to `nul`
+# in cmd/PowerShell; Turbopack panics trying to read it on Windows.
+/nul
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# tauri (Phase 7+)
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/WixTools/

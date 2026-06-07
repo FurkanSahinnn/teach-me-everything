@@ -1,0 +1,56 @@
+[package]
+name = "tme"
+version = "0.1.0"
+description = "Teach Me Everything — local-first active learning workspace"
+authors = ["Teach Me Everything contributors"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "tme_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.2", features = ["tray-icon"] }
+tauri-plugin-log = "2"
+tauri-plugin-http = "2"
+tauri-plugin-fs = { version = "2", features = ["watch"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-opener = "2"
+# Phase 11.A — Piper TTS sidecar spawning. The `shell` plugin gates
+# sidecar invocation behind a per-binary scope declared in
+# `capabilities/default.json`. Without this plugin the Rust-side
+# `tts_piper_synthesize` command cannot spawn the bundled binary.
+tauri-plugin-shell = "2"
+# Phase 11.A — Voice model lazy install. Reqwest is wrapped in tokio so
+# the Rust command can stream a Hugging Face download into the
+# `appDataDir/tts-models/` tree without blocking the Tauri runtime.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+tokio = { version = "1", features = ["fs", "io-util"] }
+futures-util = "0.3"
+# keyring 3.x ships with `default-features = []` — without an explicit
+# platform feature the crate falls back to an in-memory mock backend that
+# silently loses entries between process restarts. Enable the native
+# backends so credentials persist to Windows Credential Manager, macOS
+# Keychain Services, and Linux Secret Service respectively.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+# Phase 11.B — Cross-platform system probe used by the TTS compatibility
+# check (RAM / CPU cores / disk free / OS / arch). GPU detection is NOT
+# part of this crate — we spawn platform-specific shell commands instead
+# (wmic on Windows, system_profiler on macOS, lspci on Linux) so we avoid
+# pulling in heavy graphics dependencies like wgpu/ash.
+sysinfo = { version = "0.32", default-features = false, features = ["system", "disk"] }

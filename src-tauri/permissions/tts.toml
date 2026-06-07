@@ -1,0 +1,32 @@
+# Phase 11.A — Local-first TTS command permissions.
+#
+# Five in-app commands defined in src-tauri/src/tts.rs. Each is exposed
+# under its own permission identifier so a future capability split (read
+# vs install vs delete) can be expressed without rewriting permissions.
+
+"$schema" = "../gen/schemas/default-permissions-schema.json"
+
+[[permission]]
+identifier = "allow-tts-piper-check-readiness"
+description = "Allow the webview to probe whether the Piper sidecar binary and the requested voice model are present."
+commands.allow = ["tts_piper_check_readiness"]
+
+[[permission]]
+identifier = "allow-tts-piper-synthesize"
+description = "Allow the webview to synthesize a podcast segment via the Piper sidecar binary."
+commands.allow = ["tts_piper_synthesize"]
+
+[[permission]]
+identifier = "allow-tts-list-installed-voices"
+description = "Allow the webview to enumerate installed TTS voice models under appDataDir/tts-models/."
+commands.allow = ["tts_list_installed_voices"]
+
+[[permission]]
+identifier = "allow-tts-install-voice"
+description = "Allow the webview to download and install a TTS voice model from Hugging Face."
+commands.allow = ["tts_install_voice"]
+
+[[permission]]
+identifier = "allow-tts-delete-voice"
+description = "Allow the webview to delete an installed TTS voice model from appDataDir/tts-models/."
+commands.allow = ["tts_delete_voice"]

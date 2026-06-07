@@ -1,0 +1,6 @@
+# Phase 11.A — per-platform Piper engine distributions are downloaded by
+# scripts/fetch-piper.mjs on `npm install` into `piper-<rust-triple>/`
+# folders. Each folder is ~30MB (engine + DLLs + espeak-ng-data) so we
+# keep them out of git.
+
+piper-*/
