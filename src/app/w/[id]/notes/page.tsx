@@ -31,7 +31,8 @@ import {
   NotebookPen,
   Tag as TagIcon,
 } from "lucide-react";
-import { notFound, useParams, useRouter, useSearchParams } from "next/navigation";
+import { notFound, useRouter, useSearchParams } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import {
   type ReactNode,
@@ -82,7 +83,7 @@ import { cn } from "@/lib/utils/cn";
 type LeftTab = "tree" | "tags";
 
 export default function NotesPage() {
-  const params = useParams();
+  const params = useRouteParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = typeof params.id === "string" ? params.id : "";

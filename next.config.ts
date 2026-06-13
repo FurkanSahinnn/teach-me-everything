@@ -2,6 +2,41 @@ import type { NextConfig } from "next";
 
 import { deriveConnectOrigins } from "./src/lib/ai/csp-origins";
 
+const TURBOPACK_ROOT = process.cwd();
+
+function workspaceDevRewrites() {
+  return [
+    {
+      source: "/w/:id/audio/:podcastId",
+      destination: "/w/_/audio/_?workspaceId=:id&podcastId=:podcastId",
+    },
+    {
+      source: "/w/:id/read/:sourceId",
+      destination: "/w/_/read/_?workspaceId=:id&sourceId=:sourceId",
+    },
+    {
+      source: "/w/:id/roadmap/:roadmapId",
+      destination: "/w/_/roadmap/_?workspaceId=:id&roadmapId=:roadmapId",
+    },
+    {
+      source: "/w/:id/study/journal",
+      destination: "/w/_/study/journal?workspaceId=:id",
+    },
+    {
+      source: "/w/:id/study/:lessonId",
+      destination: "/w/_/study/_?workspaceId=:id&lessonId=:lessonId",
+    },
+    {
+      source: "/w/:id/:path*",
+      destination: "/w/_/:path*?workspaceId=:id",
+    },
+    {
+      source: "/w/:id",
+      destination: "/w/_?workspaceId=:id",
+    },
+  ];
+}
+
 // Phase 7.1 — Tauri static export mode toggle.
 // `NEXT_OUTPUT_EXPORT=true npm run build` (or via npm script `build:export`)
 // switches the build to a fully static bundle suitable for Tauri's webview.
@@ -78,6 +113,7 @@ function buildHeaders() {
 
 const nextConfig: NextConfig = IS_STATIC_EXPORT
   ? {
+      turbopack: { root: TURBOPACK_ROOT },
       output: "export",
       images: { unoptimized: true },
       trailingSlash: true,
@@ -90,6 +126,12 @@ const nextConfig: NextConfig = IS_STATIC_EXPORT
       typescript: { ignoreBuildErrors: false },
     }
   : {
+      turbopack: { root: TURBOPACK_ROOT },
+      async rewrites() {
+        return {
+          beforeFiles: workspaceDevRewrites(),
+        };
+      },
       async headers() {
         return buildHeaders();
       },

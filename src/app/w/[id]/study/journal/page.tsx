@@ -10,7 +10,8 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { notFound, useParams } from "next/navigation";
+import { notFound } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/shell/AppShell";
@@ -42,7 +43,7 @@ const ALL = "all" as const;
 type AllOr<T extends string> = typeof ALL | T;
 
 export default function StudyJournalPage() {
-  const params = useParams<{ id: string }>();
+  const params = useRouteParams<{ id: string }>();
   const workspaceId = params.id;
   const workspace = useWorkspace(workspaceId);
   const entries = useStudyJournalEntries(workspaceId);

@@ -2,7 +2,7 @@
 
 import { ChevronLeft, Network } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useCallback, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { NodeInspector } from "@/components/roadmap/NodeInspector";
@@ -22,7 +22,7 @@ import { usePrefs } from "@/stores/prefs";
 import { cn } from "@/lib/utils/cn";
 
 export default function RoadmapGraphPage() {
-  const params = useParams();
+  const params = useRouteParams();
   const pick = useLocalePick();
   const idParam = typeof params?.id === "string" ? params.id : "";
   const roadmapIdParam =

@@ -32,7 +32,8 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { notFound, useParams } from "next/navigation";
+import { notFound } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -115,7 +116,7 @@ function faviconFor(url: string, fallback?: string): string {
 }
 
 export default function ResearchPage() {
-  const params = useParams<{ id: string }>();
+  const params = useRouteParams<{ id: string }>();
   const workspaceId = params.id;
   const ws = useWorkspace(workspaceId);
 

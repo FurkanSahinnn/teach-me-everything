@@ -55,7 +55,8 @@ secrets.*
 .codex/*.local.*
 
 # project notes not intended for git
-/docs/
+/docs/*
+!/docs/STATIC_EXPORT_WORKSPACE_ROUTING.md
 /legacy/
 /AGENTS.md
 /CLAUDE.md

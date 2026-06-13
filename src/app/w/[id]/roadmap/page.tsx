@@ -1,7 +1,8 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useState } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RoadmapCard } from "@/components/roadmap/RoadmapCard";
@@ -12,7 +13,7 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { useRoadmapsByWorkspace, useWorkspace } from "@/lib/db/hooks";
 
 export default function RoadmapListPage() {
-  const params = useParams();
+  const params = useRouteParams();
   const router = useRouter();
   const pick = useLocalePick();
   // The static-export build hydrates `[id]` to the literal string "_" so the

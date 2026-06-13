@@ -25,7 +25,8 @@ import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { Input } from "@/components/ui/Input";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { notFound, useParams } from "next/navigation";
+import { notFound } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { AppShell } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/Button";
@@ -152,7 +153,7 @@ const EMBEDDING_STATUS_LABEL: Record<EmbeddingStatus, { tr: string; en: string }
 };
 
 export default function WorkspacePage() {
-  const params = useParams<{ id: string }>();
+  const params = useRouteParams<{ id: string }>();
   const id = params.id;
 
   return (

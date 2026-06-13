@@ -7,13 +7,16 @@ mod keychain;
 mod sysinfo;
 mod tts;
 
+use std::borrow::Cow;
+
 use tauri::{
+  http::{header, Request, Response, StatusCode},
   menu::{
     AboutMetadata, Menu, MenuBuilder, MenuItem, MenuItemBuilder,
     PredefinedMenuItem, SubmenuBuilder,
   },
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  Emitter, Manager,
+  Emitter, Manager, Runtime, UriSchemeContext,
 };
 // `RunEvent::Opened` is only compiled on macOS — it ships under
 // `#[cfg(target_os = "macos")]` in `tauri-runtime` 2.11. Importing it
@@ -24,6 +27,14 @@ use tauri::RunEvent;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app = tauri::Builder::default()
+    // Static-export SPA fallback. Replaces Tauri's built-in `tauri://` asset
+    // handler so a request for a runtime workspace route (`/w/<id>/…`) that
+    // `output: export` never emitted falls back to the `/w/_/…` placeholder
+    // shell instead of 404ing. Without this, clicking a workspace card shows
+    // "Sayfa bulunamadı". See `serve_export_asset` / `export_shell_fallback`.
+    .register_uri_scheme_protocol("tauri", |ctx, request| {
+      serve_export_asset(ctx, request)
+    })
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
@@ -85,6 +96,194 @@ pub fn run() {
       }
     }
   });
+}
+
+// === Static-export SPA fallback ===
+//
+// `output: export` only pre-renders the `/w/_/…` placeholder shell — real
+// workspace / lesson / source / podcast / roadmap ids are user-generated at
+// runtime, so no per-id HTML or RSC segment file exists. Tauri's built-in
+// asset resolver 404s on any path it can't map to a file, so a hard navigation
+// (or the Next.js RSC segment fetch that precedes a soft navigation) to
+// `/w/<real-id>/…` fails. We rewrite the runtime ids back onto the emitted `_`
+// shell so the asset exists; the React page then recovers the real id from
+// `location.pathname` (see `src/lib/utils/route-params.ts`).
+
+/// Rewrites a workspace dynamic-route asset path onto the `/w/_/…` shell that
+/// static export actually emitted. Returns `None` for paths that need no
+/// rewrite (non-workspace routes, or already-`_` shell paths).
+fn export_shell_fallback(path: &str) -> Option<String> {
+  let mut segs: Vec<String> = path.split('/').map(str::to_string).collect();
+  // Leading slash → segs[0] == "". Workspace routes look like ["", "w", id, …].
+  if segs.len() < 3 || segs[1] != "w" {
+    return None;
+  }
+
+  // The Next.js static-export marker (`__next.*`) and the Next 16 segment-cache
+  // placeholder tokens (`$d$<param>`) begin the RSC segment-tree encoding —
+  // e.g. `/w/<id>/read/<sourceId>/__next.w/$d$id/read/$d$sourceId/__PAGE__.txt`.
+  // That suffix is keyed off PLACEHOLDER tokens, not the runtime ids, so it is
+  // identical for every workspace and must pass through byte-for-byte; only the
+  // leading *page-path* ids are rewritten onto the `_` shell. Rewriting inside
+  // the suffix (the recurring `read`/`study`/… keyword, or a `$d$…` token)
+  // would point at a file that was never emitted → a spurious segment 404.
+  let is_tree_marker = |s: &str| s.starts_with("__next") || s.starts_with("$d$");
+
+  let mut changed = false;
+  if !segs[2].is_empty() && segs[2] != "_" && !is_tree_marker(&segs[2]) {
+    segs[2] = "_".to_string();
+    changed = true;
+  }
+
+  // The segment directly after one of these static parents is itself a runtime
+  // id (`/read/<sourceId>`, `/roadmap/<roadmapId>`, `/study/<lessonId>`,
+  // `/audio/<podcastId>`). `/study/journal` is a STATIC sibling route, not a
+  // lessonId, so it must NOT be rewritten.
+  const DYN_PARENTS: [&str; 4] = ["audio", "read", "study", "roadmap"];
+  let mut i = 3;
+  while i + 1 < segs.len() {
+    if is_tree_marker(&segs[i]) {
+      break;
+    }
+    let is_dyn = DYN_PARENTS.contains(&segs[i].as_str());
+    let child = &segs[i + 1];
+    let rewritable = is_dyn
+      && !child.is_empty()
+      && child != "_"
+      && !is_tree_marker(child)
+      && !(segs[i] == "study" && child == "journal");
+    if rewritable {
+      segs[i + 1] = "_".to_string();
+      changed = true;
+    }
+    i += 1;
+  }
+
+  if changed {
+    Some(segs.join("/"))
+  } else {
+    None
+  }
+}
+
+/// Custom `tauri://` asset handler. For every existing asset this behaves
+/// exactly like the built-in handler (same `asset_resolver`); only a miss on a
+/// `/w/<id>/…` path triggers the placeholder-shell fallback.
+fn serve_export_asset<R: Runtime>(
+  ctx: UriSchemeContext<'_, R>,
+  request: Request<Vec<u8>>,
+) -> Response<Cow<'static, [u8]>> {
+  let resolver = ctx.app_handle().asset_resolver();
+  // `request.uri().path()` is the leading-slash, host-stripped path on every
+  // platform (sidesteps the Windows `tauri.localhost` host); `asset_resolver`
+  // percent-decodes and maps directory paths to `index.html` internally.
+  let path = request.uri().path().to_string();
+
+  let asset = resolver.get(path.clone()).or_else(|| {
+    export_shell_fallback(&path).and_then(|fallback| resolver.get(fallback))
+  });
+
+  match asset {
+    Some(asset) => {
+      let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, asset.mime_type);
+      if let Some(csp) = asset.csp_header {
+        builder = builder.header("Content-Security-Policy", csp);
+      }
+      builder
+        .body(Cow::Owned(asset.bytes))
+        .unwrap_or_else(|_| Response::new(Cow::Borrowed(b"".as_slice())))
+    }
+    None => Response::builder()
+      .status(StatusCode::NOT_FOUND)
+      .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+      .body(Cow::Borrowed(b"404 Not Found".as_slice()))
+      .unwrap_or_else(|_| Response::new(Cow::Borrowed(b"".as_slice()))),
+  }
+}
+
+#[cfg(test)]
+mod export_fallback_tests {
+  use super::export_shell_fallback;
+
+  #[test]
+  fn rewrites_workspace_id() {
+    assert_eq!(export_shell_fallback("/w/abc"), Some("/w/_".to_string()));
+    assert_eq!(export_shell_fallback("/w/abc/"), Some("/w/_/".to_string()));
+    assert_eq!(
+      export_shell_fallback("/w/abc/cards/"),
+      Some("/w/_/cards/".to_string())
+    );
+  }
+
+  #[test]
+  fn rewrites_deep_dynamic_ids() {
+    assert_eq!(
+      export_shell_fallback("/w/abc/read/src9/"),
+      Some("/w/_/read/_/".to_string())
+    );
+    assert_eq!(
+      export_shell_fallback("/w/abc/roadmap/rm2"),
+      Some("/w/_/roadmap/_".to_string())
+    );
+    assert_eq!(
+      export_shell_fallback("/w/abc/audio/pod4/"),
+      Some("/w/_/audio/_/".to_string())
+    );
+    assert_eq!(
+      export_shell_fallback("/w/abc/study/les3"),
+      Some("/w/_/study/_".to_string())
+    );
+  }
+
+  #[test]
+  fn preserves_static_study_journal() {
+    assert_eq!(
+      export_shell_fallback("/w/abc/study/journal/"),
+      Some("/w/_/study/journal/".to_string())
+    );
+  }
+
+  #[test]
+  fn preserves_rsc_segment_tree_tokens() {
+    // Next 16 segment-cache RSC URL for a deep dynamic route. ONLY the leading
+    // page-path ids (abc, src9) become `_`; the `__next.*` marker, the `$d$…`
+    // placeholder tokens, and the recurring `read` keyword inside the tree must
+    // survive verbatim or the prefetch 404s (the file was emitted under those
+    // exact placeholder names, never under `_`).
+    assert_eq!(
+      export_shell_fallback(
+        "/w/abc/read/src9/__next.w/$d$id/read/$d$sourceId/__PAGE__.txt"
+      ),
+      Some(
+        "/w/_/read/_/__next.w/$d$id/read/$d$sourceId/__PAGE__.txt".to_string()
+      )
+    );
+    assert_eq!(
+      export_shell_fallback(
+        "/w/abc/study/les3/__next.w/$d$id/study/$d$lessonId/__PAGE__.txt"
+      ),
+      Some(
+        "/w/_/study/_/__next.w/$d$id/study/$d$lessonId/__PAGE__.txt".to_string()
+      )
+    );
+    // Shallow (single dynamic param) routes use a dotted single-segment tree;
+    // only the page-path id is rewritten.
+    assert_eq!(
+      export_shell_fallback("/w/abc/research/__next.w.$d$id.research.txt"),
+      Some("/w/_/research/__next.w.$d$id.research.txt".to_string())
+    );
+  }
+
+  #[test]
+  fn no_rewrite_for_shell_or_non_workspace() {
+    assert_eq!(export_shell_fallback("/w/_/cards/"), None);
+    assert_eq!(export_shell_fallback("/dashboard/"), None);
+    assert_eq!(export_shell_fallback("/settings/"), None);
+    assert_eq!(export_shell_fallback("/"), None);
+    assert_eq!(export_shell_fallback("/w/"), None);
+  }
 }
 
 // Phase 7.5.B — System tray + quick actions.

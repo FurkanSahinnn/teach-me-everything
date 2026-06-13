@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, Layers, MoreHorizontal, Pencil, Plus, RotateCcw, Sparkles, Trash2, Undo2 } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -111,7 +111,7 @@ function useIsMdUp(): boolean {
 }
 
 export default function FlashcardsPage() {
-  const params = useParams<{ id: string }>();
+  const params = useRouteParams<{ id: string }>();
   const workspaceId = params.id;
   const t = useTranslations("cards");
   const pick = useLocalePick();

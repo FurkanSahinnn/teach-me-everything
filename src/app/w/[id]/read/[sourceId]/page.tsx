@@ -28,7 +28,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -279,7 +280,7 @@ function friendlyChatError(
 }
 
 export default function NotebookReaderPage() {
-  const params = useParams<{ id: string; sourceId: string }>();
+  const params = useRouteParams<{ id: string; sourceId: string }>();
   const workspaceId = params.id;
   const sourceId = params.sourceId;
   const t = useTranslations("reader");

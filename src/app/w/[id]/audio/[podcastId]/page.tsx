@@ -8,7 +8,8 @@ import {
   Play,
   RefreshCw,
 } from "lucide-react";
-import { notFound, useParams } from "next/navigation";
+import { notFound } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { useEffect, useRef, useState } from "react";
@@ -36,7 +37,7 @@ type Speed = 0.75 | 1 | 1.25 | 1.5;
 const SPEED_OPTIONS: Speed[] = [0.75, 1, 1.25, 1.5];
 
 export default function PodcastPage() {
-  const params = useParams<{ id: string; podcastId: string }>();
+  const params = useRouteParams<{ id: string; podcastId: string }>();
   const workspaceId = params.id;
   const podcastId = params.podcastId;
   const t = useTranslations("audio");

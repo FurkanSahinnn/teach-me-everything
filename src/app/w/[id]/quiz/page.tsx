@@ -9,7 +9,8 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { notFound, useParams } from "next/navigation";
+import { notFound } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -132,7 +133,7 @@ function mcqForView(
 }
 
 export default function QuizPage() {
-  const params = useParams<{ id: string }>();
+  const params = useRouteParams<{ id: string }>();
   const workspaceId = params.id;
   const ws = useWorkspace(workspaceId);
   const sources = useSources(workspaceId);

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { notFound, useParams, useRouter } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
+import { useRouteParams } from "@/lib/utils/route-params";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -46,7 +47,7 @@ import type { CurriculumItemRecord, StudySourceRef } from "@/lib/study/types";
 type AutosaveStatus = "idle" | "saving" | "saved";
 
 export default function StudyLessonPage() {
-  const params = useParams<{ id: string; lessonId: string }>();
+  const params = useRouteParams<{ id: string; lessonId: string }>();
   const workspaceId = params.id;
   const lessonId = params.lessonId;
   const router = useRouter();
