@@ -54,6 +54,19 @@ test.describe("guided-study happy-path — curriculum → lesson → edit → Q&
   }) => {
     test.setTimeout(180_000);
 
+    // Skipped: the curriculum-generation UI entry point was removed in the
+    // Plan→Roadmap migration (Phase 13). `GenerateCurriculumModal` still
+    // exists but is no longer mounted/triggered on any page, so the
+    // generate→start-topic→study→edit→Q&A→PDF flow is unreachable from the UI.
+    // The study-from-a-topic use case is now served by the roadmap
+    // NodeInspector ("Generate lesson" / "Make flashcards"). Curriculum /
+    // lesson-note logic remains covered by Vitest. Re-enable when curriculum
+    // generation has a UI entry again; the body below is kept as the spec.
+    test.skip(
+      true,
+      "Guided-study curriculum generation has no UI entry point post Plan→Roadmap (GenerateCurriculumModal unmounted).",
+    );
+
     const seed = await seedGuidedStudyWorkspace(page);
     const sourceRef = {
       sourceId: seed.sourceId,
@@ -138,15 +151,18 @@ test.describe("guided-study happy-path — curriculum → lesson → edit → Q&
       ],
     });
 
-    // ───── Step 1: Plan page → open generate modal ────────────────────────
-    await page.goto(`/w/${seed.workspaceId}/plan`);
+    // ───── Step 1: open the curriculum generate modal ─────────────────────
+    // NOTE: unreachable today (see test.skip above) — the /plan route was
+    // removed and GenerateCurriculumModal is mounted on no page. Kept as the
+    // spec for when curriculum generation regains a UI entry point.
+    await page.goto(`/w/${seed.workspaceId}`);
     await page.waitForLoadState("networkidle");
 
-    // The plan-page CTA renders both as the topbar "Müfredat oluştur" /
-    // "Build curriculum" button (i18n key `workspace.mufredat`) and as the
-    // empty-state "Taslak oluştur / Create draft" button on the curriculum
-    // card — both call handleCreateDraft. Match without anchors so future
-    // i18n tweaks (e.g. capitalization) don't silently break the test.
+    // The overview CTA renders both as the "Müfredat oluştur" / "Build
+    // curriculum" button and as the empty-state "Taslak oluştur / Create
+    // draft" button on the curriculum card — both call handleCreateDraft.
+    // Match without anchors so future i18n tweaks (e.g. capitalization) don't
+    // silently break the test.
     const openModalButton = page
       .getByRole("button", {
         name: /(müfredat oluştur|build curriculum|taslak oluştur|create draft)/i,

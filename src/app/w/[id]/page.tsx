@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  Sparkles,
   SquareStack,
   Trash2,
   Upload,
@@ -152,6 +153,79 @@ const EMBEDDING_STATUS_LABEL: Record<EmbeddingStatus, { tr: string; en: string }
   error: { tr: "Embedding hatası", en: "Embedding error" },
 };
 
+// A source is embeddable from the bulk bar when its text is fully ingested
+// (chunks exist) but its vectors are missing/stale. Kept in lockstep with
+// countSourcesNeedingEmbedding's predicate so the bulk count, the per-row
+// retry, and the DB-side helper all agree on what "needs embedding" means.
+function sourceNeedsEmbedding(s: SourceRecord): boolean {
+  if (s.ingestStatus !== "ready") return false;
+  const es = s.embeddingStatus;
+  return (
+    es === undefined ||
+    es === "missing" ||
+    es === "skipped" ||
+    es === "error"
+  );
+}
+
+type EmbedAuthToast = { variant: "warn"; title: string; description: string };
+
+// Shared embedding-credential resolution for both the per-row retry and the
+// bulk "embed missing" action, so the two paths can never diverge on which
+// preset/provider key they read or how they report a missing one. Returns the
+// resolved key + preset id, or a ready-to-toast warning (no key / locked
+// vault). Local presets resolve to an empty key (no credential needed).
+async function resolveEmbedAuth(
+  pick: (tr: string, en: string) => string,
+): Promise<{ apiKey: string; presetId: EmbedPresetId } | { error: EmbedAuthToast }> {
+  const { embedPresetId } = usePrefs.getState().modelBindings;
+  const preset =
+    EMBED_PRESETS[embedPresetId as EmbedPresetId] ??
+    EMBED_PRESETS["openai-3-small"];
+  const providerId = presetToProviderId(preset.id);
+  const isLocal = preset.isLocal === true || isLocalUrl(preset.baseUrl);
+
+  const { isUnlocked, masterKey } = useVault.getState();
+  let apiKey: string | null = null;
+  if (isLocal) {
+    apiKey = "";
+  } else if (isUnlocked && masterKey) {
+    try {
+      apiKey = await getApiKey(providerId as Provider);
+    } catch {
+      apiKey = null;
+    }
+  }
+
+  if (apiKey == null) {
+    const lockedButStored =
+      !isLocal &&
+      !isUnlocked &&
+      (await hasApiKey(providerId as Provider).catch(() => false));
+    return {
+      error: {
+        variant: "warn",
+        title: lockedButStored
+          ? pick("Vault kilitli", "Vault locked")
+          : pick(
+              `${preset.label} anahtarı yok`,
+              `${preset.label} key missing`,
+            ),
+        description: lockedButStored
+          ? pick(
+              "Master parolayı girince yeniden dene.",
+              "Unlock the vault and try again.",
+            )
+          : pick(
+              "Ayarlardan ekleyince retrieval'a hazır.",
+              "Add it in Settings to enable retrieval.",
+            ),
+      },
+    };
+  }
+  return { apiKey, presetId: preset.id };
+}
+
 export default function WorkspacePage() {
   const params = useRouteParams<{ id: string }>();
   const id = params.id;
@@ -179,6 +253,13 @@ function WorkspaceView({ id }: { id: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkEmbedding, setBulkEmbedding] = useState(false);
+  const [embedProgress, setEmbedProgress] = useState({ done: 0, total: 0 });
+  // Synchronous re-entrancy guard. The Button's `disabled` attribute reflects
+  // `bulkEmbedding` state, which isn't guaranteed painted before a same-tick
+  // second activation (double-click / Enter+click), and the closure's
+  // `bulkEmbedding` is stale until re-render. A ref flips immediately.
+  const bulkEmbedRunningRef = useRef(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [searchSourcesOpen, setSearchSourcesOpen] = useState(false);
   const [podcastOpen, setPodcastOpen] = useState(false);
@@ -335,6 +416,88 @@ function WorkspaceView({ id }: { id: string }) {
       }
     } finally {
       setBulkDeleting(false);
+    }
+  }
+
+  // Selected sources whose chunks exist but vectors are missing/stale — the
+  // targets of the bulk "embed missing" action. Already-embedded selections
+  // are excluded so the button count is honest and ready rows are never
+  // re-billed.
+  const embeddableSelected = useMemo(
+    () => sources.filter((s) => selected.has(s.id) && sourceNeedsEmbedding(s)),
+    [sources, selected],
+  );
+
+  async function handleBulkEmbed(): Promise<void> {
+    if (bulkEmbedRunningRef.current) return;
+    const targets = embeddableSelected;
+    if (targets.length === 0) return;
+    bulkEmbedRunningRef.current = true;
+    setBulkEmbedding(true);
+    setEmbedProgress({ done: 0, total: targets.length });
+
+    let embedded = 0; // sources that actually had vectors written
+    let failed = 0;
+    try {
+      const auth = await resolveEmbedAuth(pick);
+      if ("error" in auth) {
+        toast(auth.error);
+        return;
+      }
+      // Sequential: the embed worker is single-threaded, so parallel runReembed
+      // calls would contend. Mirrors the bulk-delete loop above.
+      for (const s of targets) {
+        try {
+          const handle = runReembed({
+            scope: { kind: "source", sourceId: s.id },
+            apiKey: auth.apiKey,
+            presetId: auth.presetId,
+          });
+          const result = await handle.promise;
+          // runReembed resolves {total:0} when a source's chunks already match
+          // the target dim (or it has none) — nothing is written and the row's
+          // status is left untouched. Counting that as "embedded" would falsely
+          // claim success, so only count rows that actually got vectors.
+          if (result.total > 0) embedded += 1;
+        } catch {
+          failed += 1;
+        } finally {
+          setEmbedProgress((p) => ({ ...p, done: p.done + 1 }));
+        }
+      }
+      // Embedded rows flip to "ready" via useLiveQuery, so sourceNeedsEmbedding
+      // drops them from embeddableSelected and the button count updates on its
+      // own — no manual selection edit needed.
+      if (failed > 0) {
+        toast({
+          variant: "warn",
+          title: pick(
+            `${embedded} gömüldü · ${failed} hatalı`,
+            `${embedded} embedded · ${failed} failed`,
+          ),
+        });
+      } else if (embedded === 0) {
+        toast({
+          variant: "info",
+          title: pick("Gömülecek yeni chunk yok", "Nothing new to embed"),
+        });
+      } else {
+        toast({
+          variant: "success",
+          title: pick(
+            `${embedded} kaynak gömüldü`,
+            `${embedded} sources embedded`,
+          ),
+          description: pick(
+            "Retrieval artık çalışır.",
+            "Retrieval is live now.",
+          ),
+        });
+      }
+    } finally {
+      bulkEmbedRunningRef.current = false;
+      setBulkEmbedding(false);
+      setEmbedProgress({ done: 0, total: 0 });
     }
   }
 
@@ -502,6 +665,10 @@ function WorkspaceView({ id }: { id: string }) {
                 onSortChange={setSort}
                 presentTypes={presentTypes}
                 selectedCount={selected.size}
+                embeddableCount={embeddableSelected.length}
+                bulkEmbedding={bulkEmbedding}
+                embedProgress={embedProgress}
+                onBulkEmbed={() => void handleBulkEmbed()}
                 onClearSelection={() => setSelected(new Set())}
                 onBulkDelete={() => setBulkDeleteOpen(true)}
                 pick={pick}
@@ -669,6 +836,10 @@ function SourcesToolbar({
   onSortChange,
   presentTypes,
   selectedCount,
+  embeddableCount,
+  bulkEmbedding,
+  embedProgress,
+  onBulkEmbed,
   onClearSelection,
   onBulkDelete,
   pick,
@@ -681,6 +852,10 @@ function SourcesToolbar({
   onSortChange: (key: SortKey) => void;
   presentTypes: SourceType[];
   selectedCount: number;
+  embeddableCount: number;
+  bulkEmbedding: boolean;
+  embedProgress: { done: number; total: number };
+  onBulkEmbed: () => void;
   onClearSelection: () => void;
   onBulkDelete: () => void;
   pick: (tr: string, en: string) => string;
@@ -736,10 +911,43 @@ function SourcesToolbar({
             )}
           </span>
           <div className="flex items-center gap-1.5">
-            <Button size="sm" variant="ghost" onClick={onClearSelection}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onClearSelection}
+              disabled={bulkEmbedding}
+            >
               {pick("Seçimi temizle", "Clear")}
             </Button>
-            <Button size="sm" variant="danger" onClick={onBulkDelete}>
+            {embeddableCount > 0 || bulkEmbedding ? (
+              <Button
+                size="sm"
+                variant="default"
+                onClick={onBulkEmbed}
+                disabled={bulkEmbedding || embeddableCount === 0}
+              >
+                {bulkEmbedding ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {bulkEmbedding
+                  ? pick(
+                      `Gömülüyor… ${embedProgress.done}/${embedProgress.total}`,
+                      `Embedding… ${embedProgress.done}/${embedProgress.total}`,
+                    )
+                  : pick(
+                      `Eksikleri göm (${embeddableCount})`,
+                      `Embed missing (${embeddableCount})`,
+                    )}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={onBulkDelete}
+              disabled={bulkEmbedding}
+            >
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
               {pick("Sil", "Delete")}
             </Button>
@@ -1249,55 +1457,16 @@ function EmbeddingStatusBadge({
     if (retrying) return;
     setRetrying(true);
     try {
-      const { embedPresetId } = usePrefs.getState().modelBindings;
-      const preset =
-        EMBED_PRESETS[embedPresetId as EmbedPresetId] ??
-        EMBED_PRESETS["openai-3-small"];
-      const providerId = presetToProviderId(preset.id);
-      const isLocal = preset.isLocal === true || isLocalUrl(preset.baseUrl);
-
-      const { isUnlocked, masterKey } = useVault.getState();
-      let apiKey: string | null = null;
-      if (isLocal) {
-        apiKey = "";
-      } else if (isUnlocked && masterKey) {
-        try {
-          apiKey = await getApiKey(providerId as Provider);
-        } catch {
-          apiKey = null;
-        }
-      }
-
-      if (apiKey == null) {
-        const lockedButStored =
-          !isLocal &&
-          !isUnlocked &&
-          (await hasApiKey(providerId as Provider).catch(() => false));
-        toast({
-          variant: "warn",
-          title: lockedButStored
-            ? pick("Vault kilitli", "Vault locked")
-            : pick(
-                `${preset.label} anahtarı yok`,
-                `${preset.label} key missing`,
-              ),
-          description: lockedButStored
-            ? pick(
-                "Master parolayı girince yeniden dene.",
-                "Unlock the vault and try again.",
-              )
-            : pick(
-                "Ayarlardan ekleyince retrieval'a hazır.",
-                "Add it in Settings to enable retrieval.",
-              ),
-        });
+      const auth = await resolveEmbedAuth(pick);
+      if ("error" in auth) {
+        toast(auth.error);
         return;
       }
 
       const handle = runReembed({
         scope: { kind: "source", sourceId },
-        apiKey,
-        presetId: preset.id as EmbedPresetId,
+        apiKey: auth.apiKey,
+        presetId: auth.presetId,
       });
       const result = await handle.promise;
       if (result.total === 0) {

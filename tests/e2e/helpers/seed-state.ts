@@ -1,32 +1,21 @@
 import type { Page } from "@playwright/test";
 
-// Seeds Dexie with a master vault row, an OpenAI api-key row encrypted under
-// a known throwaway password, and a workspace. Then installs an init script
-// that re-imports the JWK-exported master key on every page load and patches
-// useVault → unlocked. This lets the chat test land directly on the workspace
-// page without walking the Setup Wizard or the master-password modal — the
-// Wizard already has its own Playwright coverage in `setup-wizard.e2e.ts`.
+// Seeds Dexie (CURRENT post-Phase-9 schema) + a workspace so chat /
+// guided-study / podcast / notes E2E tests land directly on a workspace
+// without walking the Setup Wizard (which has its own coverage in
+// setup-wizard.e2e.ts).
 //
-// Why JWK round-trip instead of re-deriving via PBKDF2 on each load: 600k
-// PBKDF2 iterations cost ~600 ms per nav, which the chat happy-path triggers
-// 2-3 times. Importing a JWK is sub-millisecond.
-//
-// Why expose useVault on window at all (1-line affordance in src/stores/
-// vault.ts): vault state is in-memory only by design (no persist middleware
-// — masterKey must never hit disk). Without an externally reachable handle,
-// every full page navigation in the test would silently re-lock the vault
-// and embedding/chat would degrade to the "key missing" path.
+// Phase 9 removed the master-password vault: the `vault` object store is gone
+// (Dexie v24) and `ApiKeyRecord` is now plaintext `{provider, plaintext,
+// updatedAt}`. `useVault` is a trivial always-unlocked stub, so there is no
+// masterKey to import/restore. The only "setup done" signal is the
+// `tme:setup-complete` localStorage flag (lib/setup-completion.ts /
+// FirstRunGate) — set it before any navigation so the gate doesn't bounce to
+// /setup.
 
-const E2E_PASSWORD = "tme-e2e-seed-password";
 const E2E_WORKSPACE_ID = "ws_e2e_seed";
-const E2E_OPENAI_KEY_PLAINTEXT = "sk-e2e-mocked-never-used-by-network";
-
-// Must match constants in src/lib/crypto/api-keys.ts. If those change, this
-// helper has to follow or unlocking via the modal would diverge.
-const PBKDF2_ITERATIONS = 600_000;
-const SALT_LENGTH = 16;
-const IV_LENGTH = 12;
-const VERIFIER_CONSTANT = "tme:vault:v1";
+const E2E_API_KEY_PLAINTEXT = "sk-e2e-mocked-never-used-by-network";
+const SETUP_COMPLETE_KEY = "tme:setup-complete";
 
 export type SeedResult = { workspaceId: string };
 
@@ -37,6 +26,14 @@ export async function seedUnlockedVault(
   opts: { extraApiKeys?: ExtraApiKey[] } = {},
 ): Promise<SeedResult> {
   const extraApiKeys = opts.extraApiKeys ?? [];
+
+  // Mark setup complete before any navigation so FirstRunGate (which reads the
+  // `tme:setup-complete` localStorage flag post-Phase-9) doesn't bounce to
+  // /setup. addInitScript applies to every page load in the test.
+  await page.addInitScript((key: string) => {
+    window.localStorage.setItem(key, "1");
+  }, SETUP_COMPLETE_KEY);
+
   // Hit /dashboard — it imports Dexie hooks (`useDashboardStats` →
   // `useLiveQuery` → `db.workspaces.toArray()`), which forces the singleton
   // `db = new TmeDb()` to actually open IndexedDB. Landing on `/` skips
@@ -45,75 +42,12 @@ export async function seedUnlockedVault(
   await page.goto("/dashboard");
   await page.waitForLoadState("networkidle");
 
-  const seed = await page.evaluate(
+  await page.evaluate(
     async (args: {
-      password: string;
       wsId: string;
       apiKeyPlaintext: string;
-      iters: number;
-      saltLen: number;
-      ivLen: number;
-      verifier: string;
       extraApiKeys: ExtraApiKey[];
     }) => {
-      const enc = new TextEncoder();
-
-      function bytesToBase64(bytes: Uint8Array): string {
-        let s = "";
-        for (let i = 0; i < bytes.length; i++) {
-          s += String.fromCharCode(bytes[i] as number);
-        }
-        return btoa(s);
-      }
-
-      const salt = crypto.getRandomValues(new Uint8Array(args.saltLen));
-      const baseKey = await crypto.subtle.importKey(
-        "raw",
-        enc.encode(args.password),
-        "PBKDF2",
-        false,
-        ["deriveKey"],
-      );
-      const masterKey = await crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt, iterations: args.iters, hash: "SHA-256" },
-        baseKey,
-        { name: "AES-GCM", length: 256 },
-        true,
-        ["encrypt", "decrypt"],
-      );
-
-      async function encryptSecret(
-        plaintext: string,
-      ): Promise<{ ciphertext: string; iv: string }> {
-        const iv = crypto.getRandomValues(new Uint8Array(args.ivLen));
-        const ct = await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv },
-          masterKey,
-          enc.encode(plaintext),
-        );
-        return {
-          ciphertext: bytesToBase64(new Uint8Array(ct)),
-          iv: bytesToBase64(iv),
-        };
-      }
-
-      const verifierEnc = await encryptSecret(args.verifier);
-      const openaiKeyEnc = await encryptSecret(args.apiKeyPlaintext);
-      // The reader's runChat path reads `getApiKey("anthropic")` first and
-      // bails with `key_missing` (without firing /api/ai/chat) if absent.
-      // Seed an anthropic row alongside the openai row so the chat happy-
-      // path reaches the streamed-response branch under the same mocks.
-      const anthropicKeyEnc = await encryptSecret(args.apiKeyPlaintext);
-
-      // Encrypt any extra api-key rows up front so the IndexedDB
-      // transaction body stays synchronous w.r.t. crypto work.
-      const extraEncrypted = await Promise.all(
-        args.extraApiKeys.map(async (k) => ({
-          provider: k.provider,
-          enc: await encryptSecret(k.plaintext),
-        })),
-      );
-
       // Wait until Dexie has finished opening the database — `db = new
       // TmeDb()` is module-level, so it kicks off on first import, but the
       // open transaction can lag behind page load.
@@ -137,105 +71,57 @@ export async function seedUnlockedVault(
         dbReq.onerror = () => reject(dbReq.error);
       });
 
+      const now = Date.now();
       try {
         await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(
-            ["vault", "apiKeys", "workspaces"],
-            "readwrite",
-          );
+          const tx = db.transaction(["apiKeys", "workspaces"], "readwrite");
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
-          tx.objectStore("vault").put({
-            id: "master",
-            salt: bytesToBase64(salt),
-            verifierCiphertext: verifierEnc.ciphertext,
-            verifierIv: verifierEnc.iv,
-            createdAt: Date.now(),
-          });
-          tx.objectStore("apiKeys").put({
-            provider: "openai",
-            ciphertext: openaiKeyEnc.ciphertext,
-            iv: openaiKeyEnc.iv,
-            updatedAt: Date.now(),
-          });
-          tx.objectStore("apiKeys").put({
+
+          // Post-Phase-9 ApiKeyRecord: { provider, plaintext, updatedAt }.
+          // Seed `anthropic` (default chat binding is
+          // `anthropic::claude-sonnet-4-6`) AND `openai` (the embed path) so
+          // both chat and retrieval reach their mocked routes instead of the
+          // `key_missing` branch.
+          const keys = tx.objectStore("apiKeys");
+          keys.put({
             provider: "anthropic",
-            ciphertext: anthropicKeyEnc.ciphertext,
-            iv: anthropicKeyEnc.iv,
-            updatedAt: Date.now(),
+            plaintext: args.apiKeyPlaintext,
+            updatedAt: now,
           });
-          for (const extra of extraEncrypted) {
-            tx.objectStore("apiKeys").put({
+          keys.put({
+            provider: "openai",
+            plaintext: args.apiKeyPlaintext,
+            updatedAt: now,
+          });
+          for (const extra of args.extraApiKeys) {
+            keys.put({
               provider: extra.provider,
-              ciphertext: extra.enc.ciphertext,
-              iv: extra.enc.iv,
-              updatedAt: Date.now(),
+              plaintext: extra.plaintext,
+              updatedAt: now,
             });
           }
+
           tx.objectStore("workspaces").put({
             id: args.wsId,
             name: "E2E Test Workspace",
             color: "#8b5cf6",
             initials: "E2",
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
+            createdAt: now,
+            updatedAt: now,
             archivedAt: null,
           });
         });
       } finally {
         db.close();
       }
-
-      const jwk = await crypto.subtle.exportKey("jwk", masterKey);
-      return { jwk };
     },
     {
-      password: E2E_PASSWORD,
       wsId: E2E_WORKSPACE_ID,
-      apiKeyPlaintext: E2E_OPENAI_KEY_PLAINTEXT,
-      iters: PBKDF2_ITERATIONS,
-      saltLen: SALT_LENGTH,
-      ivLen: IV_LENGTH,
-      verifier: VERIFIER_CONSTANT,
+      apiKeyPlaintext: E2E_API_KEY_PLAINTEXT,
       extraApiKeys,
     },
   );
-
-  await page.addInitScript((jwkSerialized: string) => {
-    const jwk: JsonWebKey = JSON.parse(jwkSerialized);
-    type VaultStoreHandle = {
-      setState: (s: { masterKey: CryptoKey; isUnlocked: boolean }) => void;
-    };
-
-    const restore = async (): Promise<boolean> => {
-      const handle = (
-        window as unknown as { __useVault?: VaultStoreHandle }
-      ).__useVault;
-      if (!handle) return false;
-      const masterKey = await crypto.subtle.importKey(
-        "jwk",
-        jwk,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt", "decrypt"],
-      );
-      handle.setState({ masterKey, isUnlocked: true });
-      return true;
-    };
-
-    // Poll until the vault store mounts. App boot is ~50-200 ms; cap at 5 s
-    // so a missing affordance fails the test loudly instead of silently
-    // leaving the vault locked through the rest of the run.
-    const start = Date.now();
-    const tick = async (): Promise<void> => {
-      if (await restore()) return;
-      if (Date.now() - start > 5_000) return;
-      setTimeout(() => {
-        void tick();
-      }, 25);
-    };
-    void tick();
-  }, JSON.stringify(seed.jwk));
 
   return { workspaceId: E2E_WORKSPACE_ID };
 }
@@ -352,7 +238,6 @@ const E2E_PODCAST_CHUNK_IDS = [
   "ck_e2e_pod_2",
   "ck_e2e_pod_3",
 ] as const;
-const E2E_ELEVENLABS_KEY_PLAINTEXT = "xl-e2e-mocked-never-used-by-network";
 
 export type PodcastSeed = {
   workspaceId: string;
@@ -360,21 +245,13 @@ export type PodcastSeed = {
   chunkIds: readonly string[];
 };
 
-// Layered on top of seedUnlockedVault: seeds an ElevenLabs api-key row
-// alongside the standard Anthropic/OpenAI rows, then writes one
-// ready-status PDF source plus three chunks. The podcast-script runner
-// and the TTS synthesis stage both need their keys, and the runner's
-// `filterRefs` will strip any segment whose sourceRefs don't reference
-// these exact ids — so JSON envelopes the AI mock returns must cite
-// E2E_PODCAST_SOURCE_ID + E2E_PODCAST_CHUNK_IDS verbatim.
-export async function seedPodcastWorkspace(
-  page: Page,
-): Promise<PodcastSeed> {
-  const base = await seedUnlockedVault(page, {
-    extraApiKeys: [
-      { provider: "elevenlabs", plaintext: E2E_ELEVENLABS_KEY_PLAINTEXT },
-    ],
-  });
+// Layered on top of seedUnlockedVault: writes one ready-status PDF source
+// plus three chunks. The podcast-script runner's `filterRefs` strips any
+// segment whose sourceRefs don't reference these exact ids — so JSON
+// envelopes the AI mock returns must cite E2E_PODCAST_SOURCE_ID +
+// E2E_PODCAST_CHUNK_IDS verbatim.
+export async function seedPodcastWorkspace(page: Page): Promise<PodcastSeed> {
+  const base = await seedUnlockedVault(page);
 
   await page.evaluate(
     async (args: {

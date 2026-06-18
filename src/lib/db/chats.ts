@@ -54,6 +54,10 @@ export async function createThread(
   input: ThreadInput,
 ): Promise<ChatThreadRecord> {
   const now = Date.now();
+  // Keep the discriminator clean from the start: a thread with a sourceId is a
+  // reader thread (`scope: "source"`); a thread without one is a workspace
+  // thread. Existing rows stay `scope: undefined`, which is fine — the reader
+  // list keys off sourceId and the workspace list keys off `scope`.
   const record: ChatThreadRecord = {
     id: input.id ?? newId("thr"),
     workspaceId: input.workspaceId,
@@ -61,11 +65,81 @@ export async function createThread(
     title: input.title,
     titleEn: input.titleEn,
     pinned: input.pinned ?? false,
+    scope: input.sourceId !== undefined ? "source" : "workspace",
     createdAt: now,
     updatedAt: now,
   };
   await db.chatThreads.add(record);
   return record;
+}
+
+// Workspace Chat — create a thread spanning ALL sources in the workspace.
+// No sourceId, `scope: "workspace"`. Distinct from `createThread` so callers
+// can't accidentally attach a sourceId to a workspace thread.
+export async function createWorkspaceThread(
+  workspaceId: string,
+  title: string,
+): Promise<ChatThreadRecord> {
+  return createThread({ workspaceId, title });
+}
+
+// Workspace Chat — return the newest workspace thread for the workspace, or
+// create one. Mirrors `findOrCreateSourceThread` but keys off `scope` instead
+// of sourceId. Uses `listWorkspaceChatThreads` (pinned-first, then updatedAt
+// desc) so the "newest" thread is the first non-pinned-aware entry.
+export async function findOrCreateWorkspaceThread(
+  workspaceId: string,
+  title: string,
+): Promise<ChatThreadRecord> {
+  const existing = await listWorkspaceChatThreads(workspaceId);
+  if (existing.length > 0 && existing[0] !== undefined) return existing[0];
+  return createWorkspaceThread(workspaceId, title);
+}
+
+// Workspace Chat — list workspace-scoped chat threads, excluding reader
+// (source) threads. Filters in-memory on `scope === "workspace"` (no index on
+// scope, by design — no Dexie migration). Sorted pinned-first, then updatedAt
+// descending, matching `listThreadsByWorkspace`.
+export async function listWorkspaceChatThreads(
+  workspaceId: string,
+): Promise<ChatThreadRecord[]> {
+  const items = await db.chatThreads
+    .where("workspaceId")
+    .equals(workspaceId)
+    .toArray();
+  return items
+    .filter((t) => t.scope === "workspace")
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    });
+}
+
+// Workspace Chat — persist the active context chips for a thread so the
+// grounding toggles survive reopening. `updatedAt` is bumped so the thread
+// floats to the top of the workspace-thread list.
+export async function setThreadContextScopes(
+  threadId: string,
+  scopes: string[],
+): Promise<void> {
+  await db.chatThreads.update(threadId, {
+    contextScopes: scopes,
+    updatedAt: Date.now(),
+  });
+}
+
+// Workspace Chat — persist the narrowed source selection for a thread. An
+// empty array means "all sources" (the default); we write it verbatim so a
+// previously-narrowed thread can be reset back to all. Bumps `updatedAt` so
+// the thread floats to the top of the workspace-thread list.
+export async function setThreadSelectedSources(
+  threadId: string,
+  sourceIds: string[],
+): Promise<void> {
+  await db.chatThreads.update(threadId, {
+    selectedSourceIds: sourceIds,
+    updatedAt: Date.now(),
+  });
 }
 
 export async function getThread(
@@ -141,6 +215,15 @@ export async function forkThread(
       id: newId_,
       workspaceId: source.workspaceId,
       sourceId: source.sourceId,
+      // Carry the discriminator + grounding toggles so a forked WORKSPACE
+      // thread stays visible in `listWorkspaceChatThreads` (which filters on
+      // scope === "workspace"). Without this the fork was orphaned: invisible
+      // in the list and unselectable by the runner's fork handler.
+      scope:
+        source.scope ??
+        (source.sourceId !== undefined ? "source" : "workspace"),
+      contextScopes: source.contextScopes,
+      selectedSourceIds: source.selectedSourceIds,
       title: forkedTitle,
       titleEn: source.titleEn ? `${source.titleEn} ↗` : undefined,
       pinned: false,

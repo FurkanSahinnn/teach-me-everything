@@ -216,6 +216,22 @@ export type ChatThreadRecord = {
   titleEn?: string | undefined;
   pinned: boolean;
   renamedAt?: number | undefined;
+  // Workspace Chat — discriminator separating the cross-source workspace chat
+  // (`sourceId === undefined`) from the single-source reader chat. Optional +
+  // non-indexed → no Dexie migration; legacy rows leave it undefined and the
+  // workspace-thread list filters to `scope === "workspace"`, while the reader
+  // chat's existing `listThreadsBySource` query is unaffected. New writes set
+  // `"source"` when a sourceId is present and `"workspace"` otherwise.
+  scope?: "workspace" | "source" | undefined;
+  // Workspace Chat — the active context chips for this thread (e.g.
+  // ["sources", "notes"]). Persisted per thread so reopening a workspace chat
+  // restores the user's grounding toggles. Optional + non-indexed.
+  contextScopes?: string[] | undefined;
+  // Workspace Chat — when the user narrows retrieval to specific sources, the
+  // chosen source ids. Empty/absent means ALL workspace sources (the default,
+  // backward-compatible). A non-empty array restricts RAG to just those
+  // sources. Optional + non-indexed, like `contextScopes`; no Dexie migration.
+  selectedSourceIds?: string[] | undefined;
   createdAt: number;
   updatedAt: number;
 };

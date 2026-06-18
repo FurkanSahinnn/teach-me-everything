@@ -12,7 +12,10 @@ const DEFAULT_DECK_COLOR = "#B86E00";
 
 export type ToolHandlerContext = {
   workspaceId: string;
-  sourceId: string;
+  // Optional: the workspace chat anchors a card to the CITED chunk's source and
+  // may have no anchor at all (a general-knowledge card in a workspace with no
+  // sources). The single-source reader always supplies it.
+  sourceId?: string | undefined;
   chunks: ChunkRecord[];
   locale: "tr" | "en";
 };
@@ -69,19 +72,27 @@ export async function runAddFlashcard(
     });
   }
 
-  const citations = sourceSection
-    ? [
-        {
-          sourceId: ctx.sourceId,
-          ...(sourceSection ? { section: sourceSection } : {}),
-        },
-      ]
-    : undefined;
+  // Prefer the source whose chunk the card actually cites. In a cross-source
+  // workspace chat the cited chunk can belong to a different source than the
+  // turn's anchor, so attributing to the chunk keeps sourceId/chunkId on the
+  // same source. Falls back to the context anchor (single-source reader path),
+  // then to undefined (workspace with no sources → an unanchored card).
+  const effectiveSourceId = linkedChunk?.sourceId ?? ctx.sourceId;
+
+  const citations =
+    sourceSection || effectiveSourceId
+      ? [
+          {
+            ...(effectiveSourceId ? { sourceId: effectiveSourceId } : {}),
+            ...(sourceSection ? { section: sourceSection } : {}),
+          },
+        ]
+      : undefined;
 
   const record = await createFlashcard({
     workspaceId: ctx.workspaceId,
     deckId: deck.id,
-    sourceId: ctx.sourceId,
+    ...(effectiveSourceId ? { sourceId: effectiveSourceId } : {}),
     ...(linkedChunk ? { chunkId: linkedChunk.id } : {}),
     question,
     answer,

@@ -136,6 +136,17 @@ test.describe("podcast happy-path — generate script + synthesize + play", () =
   }) => {
     test.setTimeout(180_000);
 
+    // Phase 11 moved podcast TTS to the Tauri-only Piper sidecar: the
+    // `/api/ai/tts` HTTP route was removed, the feature is gated behind
+    // `prefs.podcastFeatureEnabled` (off by default), and Piper can't run in
+    // the web E2E harness. Script-generation + synthesis + audio-assembly are
+    // covered by Vitest. Skip until a Tauri-based E2E runner exists; the body
+    // below is kept as the spec for that future runner.
+    test.skip(
+      true,
+      "Podcast audio synthesis requires the Tauri Piper sidecar (Phase 11); not runnable in the web E2E harness.",
+    );
+
     // 1) Install the AudioContext stub BEFORE seeding navigates the
     //    page so /dashboard's bundle never sees the real constructor.
     await installAudioContextStub(page);

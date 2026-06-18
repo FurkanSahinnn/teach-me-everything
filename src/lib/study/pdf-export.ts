@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkNoIndentedCode } from "@/lib/markdown/remark-no-indented-code";
 import {
   lessonNoteToMarkdown,
   studyJournalToMarkdown,
@@ -251,7 +252,7 @@ function extractAndRenderMeta(markdown: string): {
 function markdownToHtml(markdown: string): string {
   const tree = createElement(
     ReactMarkdown,
-    { remarkPlugins: [remarkGfm] },
+    { remarkPlugins: [remarkGfm, remarkNoIndentedCode] },
     normalizeMarkdown(markdown),
   );
   let html = renderToStaticMarkup(tree);

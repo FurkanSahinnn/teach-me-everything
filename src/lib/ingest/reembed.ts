@@ -26,6 +26,11 @@ export type ReembedScope =
 export type ReembedPlan = {
   totalChunks: number;
   toReembed: number;
+  // Chunks that currently carry any embedding metadata (vector / model / dim /
+  // provider). 0 with totalChunks > 0 means the workspace has been wiped or
+  // never embedded — distinct from "all on a different model", which the bare
+  // toReembed count can't express on its own.
+  embeddedCount: number;
   estTokens: number;
   estCostUsd: number;
   targetPresetId: EmbedPresetId;
@@ -56,6 +61,23 @@ export function presetToProviderId(presetId: EmbedPresetId): ProviderId {
   return PRESET_TO_PROVIDER[presetId];
 }
 
+// Display category for an embedding-consistency row, derived from a probe.
+// "not-embedded" is distinct from "mismatch": the former means the workspace
+// has chunks but zero carry embedding metadata (wiped or never embedded),
+// the latter means some are embedded on a model that doesn't match the probe.
+export type EmbedRowStatus = "consistent" | "not-embedded" | "mismatch";
+
+export function deriveEmbedStatus(
+  totalChunks: number,
+  embeddedCount: number,
+  toReembed: number,
+): EmbedRowStatus {
+  if (totalChunks === 0) return "consistent";
+  if (embeddedCount === 0) return "not-embedded";
+  if (toReembed > 0) return "mismatch";
+  return "consistent";
+}
+
 export function resolvePresetDim(preset: EmbedPreset): number {
   // Matryoshka models (Jina v3) advertise multiple valid dims; default to the
   // largest so retrieval quality is not silently downgraded.
@@ -70,6 +92,19 @@ function chunkEffectiveDim(chunk: ChunkRecord): number | undefined {
   if (typeof chunk.embeddingDim === "number") return chunk.embeddingDim;
   if (chunk.embedding) return chunk.embedding.length;
   return undefined;
+}
+
+// "Embedded" for display/teardown purposes = carries any embedding metadata.
+// Kept identical to the predicate pruneEmbeddings clears on, so an EmbedSection
+// "delete embedding" affordance gated on embeddedCount > 0 is enabled exactly
+// when there is something for the prune to remove.
+function hasAnyEmbedding(chunk: ChunkRecord): boolean {
+  return (
+    chunk.embedding !== undefined ||
+    chunk.embeddingModel !== undefined ||
+    chunk.embeddingDim !== undefined ||
+    chunk.embeddingProvider !== undefined
+  );
 }
 
 function matchesTargetDim(
@@ -97,7 +132,9 @@ export async function planReembed(
   const chunks = await readChunksForScope(scope);
   let toReembed = 0;
   let estTokens = 0;
+  let embeddedCount = 0;
   for (const c of chunks) {
+    if (hasAnyEmbedding(c)) embeddedCount += 1;
     const cdim = chunkEffectiveDim(c);
     if (!matchesTargetDim(preset, cdim)) {
       toReembed += 1;
@@ -110,6 +147,7 @@ export async function planReembed(
   return {
     totalChunks: chunks.length,
     toReembed,
+    embeddedCount,
     estTokens,
     estCostUsd,
     targetPresetId,

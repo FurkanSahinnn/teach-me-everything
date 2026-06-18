@@ -139,6 +139,10 @@ fn export_shell_fallback(path: &str) -> Option<String> {
   // id (`/read/<sourceId>`, `/roadmap/<roadmapId>`, `/study/<lessonId>`,
   // `/audio/<podcastId>`). `/study/journal` is a STATIC sibling route, not a
   // lessonId, so it must NOT be rewritten.
+  //
+  // Note: `/w/<id>/chat` (the workspace chat) is a leaf route with no dynamic
+  // child segment — like `/w/<id>/cards` — so it is fully handled by the
+  // `segs[2]` workspace-id rewrite above and is NOT a dynamic parent here.
   const DYN_PARENTS: [&str; 4] = ["audio", "read", "study", "roadmap"];
   let mut i = 3;
   while i + 1 < segs.len() {
@@ -214,6 +218,16 @@ mod export_fallback_tests {
     assert_eq!(
       export_shell_fallback("/w/abc/cards/"),
       Some("/w/_/cards/".to_string())
+    );
+    // Workspace chat is a leaf route like cards — covered by the segs[2]
+    // workspace-id rewrite, no dynamic-parent handling needed.
+    assert_eq!(
+      export_shell_fallback("/w/abc/chat/"),
+      Some("/w/_/chat/".to_string())
+    );
+    assert_eq!(
+      export_shell_fallback("/w/abc/chat"),
+      Some("/w/_/chat".to_string())
     );
   }
 

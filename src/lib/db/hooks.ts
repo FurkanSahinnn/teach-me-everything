@@ -19,8 +19,13 @@ import {
   listMessages,
   listThreadsBySource,
   listThreadsByWorkspace,
+  listWorkspaceChatThreads,
 } from "./chats";
-import { listChunksByIds, listChunksBySource } from "./chunks";
+import {
+  listChunksByIds,
+  listChunksBySource,
+  listChunksByWorkspace,
+} from "./chunks";
 import {
   listConceptsByWorkspace,
   listEdgesByWorkspace,
@@ -134,6 +139,20 @@ export function useChunksBySource(sourceId: string | undefined) {
   return useLiveQuery(
     () => (sourceId ? listChunksBySource(sourceId) : Promise.resolve([])),
     [sourceId],
+    [],
+  );
+}
+
+// Workspace Chat — live union of every chunk across all workspace sources,
+// used for cross-source RAG retrieval. `[]` fallback while `workspaceId` is
+// undefined (mirrors useChunksBySource).
+export function useChunksByWorkspace(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () =>
+      workspaceId
+        ? listChunksByWorkspace(workspaceId)
+        : Promise.resolve([]),
+    [workspaceId],
     [],
   );
 }
@@ -366,6 +385,19 @@ export function useThreadsByWorkspace(workspaceId: string | undefined) {
     () =>
       workspaceId
         ? listThreadsByWorkspace(workspaceId)
+        : Promise.resolve([]),
+    [workspaceId],
+    [],
+  );
+}
+
+// Workspace Chat — live list of workspace-scoped chat threads (excludes
+// reader/source threads). Pinned-first, then updatedAt desc. `[]` fallback.
+export function useWorkspaceChatThreads(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () =>
+      workspaceId
+        ? listWorkspaceChatThreads(workspaceId)
         : Promise.resolve([]),
     [workspaceId],
     [],

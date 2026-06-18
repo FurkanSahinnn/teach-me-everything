@@ -4,6 +4,7 @@ import {
   Headphones,
   Home,
   LayoutGrid,
+  MessagesSquare,
   Network,
   Notebook,
   NotebookPen,
@@ -38,6 +39,14 @@ export const WORKSPACE_NAV: NavItem[] = [
     label: "Özet",
     labelEn: "Overview",
     icon: LayoutGrid,
+    workspaceScoped: true,
+  },
+  {
+    key: "chat",
+    href: "/w/{id}/chat",
+    label: "Sohbet",
+    labelEn: "Chat",
+    icon: MessagesSquare,
     workspaceScoped: true,
   },
   {

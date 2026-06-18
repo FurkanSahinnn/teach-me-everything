@@ -516,6 +516,7 @@ function NodeMark(props: {
         />
       ) : null}
       <rect
+        data-node-id={node.id}
         x={-hw}
         y={-hh}
         width={box.w}

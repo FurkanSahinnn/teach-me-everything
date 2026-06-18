@@ -77,6 +77,11 @@ export function useStorageQuota(): StorageQuotaState {
 // stay intact, so retrieval still works in BM25/lexical fallback mode and the
 // user can re-embed later. Cascades affected sources to embeddingStatus=missing
 // so the UI reflects that they no longer have vectors attached.
+//
+// ALL embedding metadata is dropped (vector + model + dim + provider), not just
+// the vector: the reembed/consistency probe reads `embeddingDim` first when
+// deciding whether a chunk is embedded, so leaving a stale dim behind would make
+// a wiped workspace still read as "Consistent" even though no vectors remain.
 export async function pruneEmbeddings(
   workspaceId?: string,
 ): Promise<{ cleared: number }> {
@@ -89,10 +94,17 @@ export async function pruneEmbeddings(
       : db.chunks.where("workspaceId").equals(workspaceId);
 
   await collection.modify((chunk) => {
-    if (chunk.embedding !== undefined || chunk.embeddingModel !== undefined) {
+    if (
+      chunk.embedding !== undefined ||
+      chunk.embeddingModel !== undefined ||
+      chunk.embeddingDim !== undefined ||
+      chunk.embeddingProvider !== undefined
+    ) {
       // Use `delete` so the property is dropped, not stored as undefined.
       delete chunk.embedding;
       delete chunk.embeddingModel;
+      delete chunk.embeddingDim;
+      delete chunk.embeddingProvider;
       affectedSourceIds.add(chunk.sourceId);
       cleared += 1;
     }

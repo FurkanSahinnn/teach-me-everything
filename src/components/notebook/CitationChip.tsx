@@ -32,10 +32,7 @@ export function parseCitations(content: string): CitationToken[] {
   return tokens;
 }
 
-export function findChunkForRef(
-  ref: string,
-  chunks: ChunkRecord[],
-): ChunkRecord | null {
+function matchChunk(ref: string, chunks: ChunkRecord[]): ChunkRecord | null {
   const target = ref.trim().toLowerCase();
   if (!target) return null;
 
@@ -50,6 +47,23 @@ export function findChunkForRef(
     ) {
       return c;
     }
+  }
+  return null;
+}
+
+export function findChunkForRef(
+  ref: string,
+  chunks: ChunkRecord[],
+): ChunkRecord | null {
+  const direct = matchChunk(ref, chunks);
+  if (direct) return direct;
+  // The workspace chat emits multi-source citations as `[§<source-title> ·
+  // <section>]`; the single-source reader emits a bare `[§<section>]`. When the
+  // ref carries the ` · ` separator, retry with just the trailing section
+  // segment so cross-source citations resolve (and the chip becomes clickable).
+  const SEP = " · ";
+  if (ref.includes(SEP)) {
+    return matchChunk(ref.slice(ref.lastIndexOf(SEP) + SEP.length), chunks);
   }
   return null;
 }

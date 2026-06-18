@@ -88,3 +88,23 @@ export async function deleteChunksBySource(sourceId: string): Promise<void> {
 export async function countChunks(workspaceId: string): Promise<number> {
   return db.chunks.where("workspaceId").equals(workspaceId).count();
 }
+
+// Workspace Chat — every chunk across ALL sources in a workspace. The chunks
+// table already carries an indexed `workspaceId` (denormalised at write time
+// by addChunk/bulkAddChunks), so this is a single indexed range query — no
+// need to gather sources first. Sorted by (sourceId, index) so callers that
+// re-group retrieved chunks back by source get a stable in-document order.
+export async function listChunksByWorkspace(
+  workspaceId: string,
+): Promise<ChunkRecord[]> {
+  const rows = await db.chunks
+    .where("workspaceId")
+    .equals(workspaceId)
+    .toArray();
+  return rows.sort((a, b) => {
+    if (a.sourceId !== b.sourceId) {
+      return a.sourceId < b.sourceId ? -1 : 1;
+    }
+    return a.index - b.index;
+  });
+}

@@ -139,14 +139,23 @@ test.describe("Phase 13 — Roadmap render + interact", () => {
       { timeout: 10_000 },
     );
 
-    // SVG canvas with the two seeded nodes (rendered as <text> labels).
-    const gradient = page.locator("svg").getByText("Gradient", { exact: false });
-    const chainRule = page.locator("svg").getByText("Chain rule", { exact: false });
-    await expect(gradient).toBeVisible({ timeout: 10_000 });
-    await expect(chainRule).toBeVisible({ timeout: 10_000 });
+    // SVG canvas with the two seeded nodes. Phase 13 renders each node as a
+    // square: the label lives in a pointer-events:none <foreignObject>, and the
+    // title is ALSO emitted as an SVG <title> tooltip — so scope the visibility
+    // check to the foreignObject label to avoid a strict-mode double match.
+    const gradientLabel = page
+      .locator("svg foreignObject")
+      .getByText("Gradient", { exact: false });
+    const chainRuleLabel = page
+      .locator("svg foreignObject")
+      .getByText("Chain rule", { exact: false });
+    await expect(gradientLabel).toBeVisible({ timeout: 10_000 });
+    await expect(chainRuleLabel).toBeVisible({ timeout: 10_000 });
 
-    // Click the Gradient node → NodeInspector slides in.
-    await gradient.click();
+    // Select the Gradient node → NodeInspector slides in. Selection fires from
+    // the node's clickable <rect> (a no-travel tap), targeted via the
+    // data-node-id test affordance (the label foreignObject is pointer-inert).
+    await page.locator('rect[data-node-id="rmn_a"]').click();
     const inspectorHeading = page.getByRole("heading", { name: "Gradient" });
     await expect(inspectorHeading).toBeVisible({ timeout: 5_000 });
 
