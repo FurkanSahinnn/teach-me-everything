@@ -40,6 +40,7 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { findChatOption } from "@/lib/ai/model-options";
 import type { WebCitation } from "@/lib/ai/web-search/types";
 import type { ChatMessageRecord, ChunkRecord } from "@/lib/db/types";
+import { balanceCodeFences } from "@/lib/markdown/balance-code-fences";
 import { remarkNoIndentedCode } from "@/lib/markdown/remark-no-indented-code";
 import { cn } from "@/lib/utils/cn";
 
@@ -433,7 +434,7 @@ function ChatBubbleImpl({
                   rehypePlugins={[rehypeKatex]}
                   components={markdownComponents}
                 >
-                  {message.content}
+                  {balanceCodeFences(message.content)}
                 </ReactMarkdown>
               </div>
             )

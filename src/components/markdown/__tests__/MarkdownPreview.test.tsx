@@ -48,3 +48,41 @@ describe("MarkdownPreview heading scale", () => {
     }
   });
 });
+
+describe("MarkdownPreview unbalanced fences", () => {
+  // Regression guard for the "inverted markdown" bug: an unclosed ``` fence
+  // above a section used to flip every fence below it, so prose, headings and
+  // blockquotes rendered inside code boxes while real code rendered as plain
+  // text. normalizeMarkdown now balances fences before parsing.
+  const html = renderMd(
+    [
+      "```python",
+      "x = tokenize(text)", // fence the LLM forgot to close
+      "",
+      "## Bag of Words",
+      "",
+      "**Sıra kaybolur.**",
+      "",
+      "```",
+      "Cümle 1",
+      "```",
+      "",
+      "> Önemli not.",
+    ].join("\n"),
+  );
+
+  function pres(source: string): string[] {
+    return source.match(/<pre[\s\S]*?<\/pre>/g) ?? [];
+  }
+
+  it("keeps prose, headings and blockquotes out of code boxes", () => {
+    const codeText = pres(html).join(" ");
+    expect(codeText).not.toContain("Sıra kaybolur");
+    expect(html).toContain("<h2");
+    expect(html).toContain("<blockquote");
+  });
+
+  it("renders the real fenced block as code", () => {
+    expect(pres(html).some((b) => b.includes("Cümle 1"))).toBe(true);
+  });
+});

@@ -401,6 +401,19 @@ html.theme-init-complete body {
 .markdown-preview li > p {
   margin: 0;
 }
+/* Section headings get a hairline underline (VS Code-style) so long lessons
+   read as clearly separated sections. Headings nested inside list items are
+   reset — those are LLM over-nesting artefacts rendered as inline body text. */
+.markdown-preview h1,
+.markdown-preview h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--color-rule);
+}
+.markdown-preview li h1,
+.markdown-preview li h2 {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
 .markdown-preview {
   --md-code-bg: #f6f8fa;
   --md-code-border: #d0d7de;

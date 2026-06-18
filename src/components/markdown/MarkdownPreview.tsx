@@ -16,6 +16,7 @@ import {
   parseCitations,
 } from "@/components/notebook/CitationChip";
 import type { ChunkRecord } from "@/lib/db/types";
+import { balanceCodeFences } from "@/lib/markdown/balance-code-fences";
 import { remarkNoIndentedCode } from "@/lib/markdown/remark-no-indented-code";
 import { cn } from "@/lib/utils/cn";
 
@@ -257,8 +258,10 @@ const markdownComponents: Components = {
 };
 
 function normalizeMarkdown(value: string): string {
-  return value
-    .replace(/\r\n/g, "\n")
-    .replace(/^\s*>\s-\s/gm, "> - ")
-    .replace(/^\s*>\s(?=\S)/gm, "> ");
+  return balanceCodeFences(
+    value
+      .replace(/\r\n/g, "\n")
+      .replace(/^\s*>\s-\s/gm, "> - ")
+      .replace(/^\s*>\s(?=\S)/gm, "> "),
+  );
 }
