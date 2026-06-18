@@ -40,6 +40,7 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { findChatOption } from "@/lib/ai/model-options";
 import type { WebCitation } from "@/lib/ai/web-search/types";
 import type { ChatMessageRecord, ChunkRecord } from "@/lib/db/types";
+import { remarkNoIndentedCode } from "@/lib/markdown/remark-no-indented-code";
 import { cn } from "@/lib/utils/cn";
 
 type ChatBubbleProps = {
@@ -67,6 +68,11 @@ type ChatBubbleProps = {
    *  through `onJumpCitation`; the host inspects the chunk's source and
    *  routes to `/notes` when appropriate. */
   noteSourceIds?: ReadonlySet<string>;
+  /** Roomy layout for full-width hosts (workspace chat). The reader chat
+   *  lives in a narrow, resizable side-panel and keeps the compact 300px
+   *  measure (the default); the full-page workspace chat opts into a wider
+   *  bubble so it doesn't sprawl as a thin left column on a wide screen. */
+  wide?: boolean;
 };
 
 /**
@@ -146,6 +152,7 @@ function ChatBubbleImpl({
   onSaveJournalEntry,
   onWebCitationClick,
   noteSourceIds,
+  wide = false,
 }: ChatBubbleProps) {
   const t = useTranslations("reader");
   const tAction = useTranslations("message_action");
@@ -158,7 +165,8 @@ function ChatBubbleImpl({
     () => message.webCitations ?? [],
     [message.webCitations],
   );
-  const showWebCitations = !isUserPrecomputed(message.role) && webCitations.length > 0;
+  const showWebCitations =
+    !isUserPrecomputed(message.role) && webCitations.length > 0;
 
   const isUser = message.role === "user";
   const time = useMemo(
@@ -171,8 +179,9 @@ function ChatBubbleImpl({
     !isUser && (totalIn > 0 || (message.tokensOut ?? 0) > 0 || message.model);
 
   // Components map for ReactMarkdown — compact spacing tuned to the chat
-  // bubble (max 300px wide). Memoized on chunks/onJumpCitation/noteSourceIds
-  // so child overrides don't churn on every assistant streaming tick.
+  // bubble; scales fine at the wider workspace-chat measure too. Memoized on
+  // chunks/onJumpCitation/noteSourceIds so child overrides don't churn on
+  // every assistant streaming tick.
   const markdownComponents = useMemo<Components>(() => {
     const wrap = (children: ReactNode) =>
       transformCitationsInChildren(
@@ -215,6 +224,20 @@ function ChatBubbleImpl({
         <h4 className="mb-1 mt-1.5 text-[13px] font-semibold leading-snug text-ink first:mt-0">
           {wrap(children)}
         </h4>
+      ),
+      // h5/h6 need explicit overrides too — without them react-markdown emits
+      // raw tags that CSS preflight flattens to body text, so a model that
+      // nests headings deeply loses the hierarchy. Kept within the bubble's
+      // compact scale (just below h4) and not uppercased (Turkish casing).
+      h5: ({ children }) => (
+        <h5 className="mb-1 mt-1.5 text-[12.5px] font-semibold leading-snug text-ink first:mt-0">
+          {wrap(children)}
+        </h5>
+      ),
+      h6: ({ children }) => (
+        <h6 className="mb-1 mt-1.5 text-[12px] font-semibold leading-snug text-ink-2 first:mt-0">
+          {wrap(children)}
+        </h6>
       ),
       strong: ({ children }) => (
         <strong className="font-semibold text-ink">{wrap(children)}</strong>
@@ -292,7 +315,7 @@ function ChatBubbleImpl({
 
   if (message.role === "tool") return null;
   if (message.role === "assistant" && message.toolName) {
-    return <ToolActionBubble message={message} pick={pick} />;
+    return <ToolActionBubble message={message} pick={pick} wide={wide} />;
   }
 
   async function handleCopy(): Promise<void> {
@@ -359,6 +382,11 @@ function ChatBubbleImpl({
     return `${presetLabel} · ${opt.modelId}`;
   }, [isUser, message.model, pick, t]);
 
+  // `wide` bubbles cap below full width so an assistant turn (left-aligned)
+  // leaves a clear gutter on the right and a user turn (right-aligned) leaves
+  // one on the left — a visible horizontal lane between the two senders.
+  const bubbleMaxWidth = wide ? "max-w-[68%]" : "max-w-[300px]";
+
   return (
     <div className={cn("group flex flex-col gap-2", isUser && "items-end")}>
       <div className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-4">
@@ -366,7 +394,9 @@ function ChatBubbleImpl({
         <span>·</span>
         <span>{time}</span>
       </div>
-      <div className={cn("relative flex max-w-[300px]", isUser && "justify-end")}>
+      <div
+        className={cn("relative flex", bubbleMaxWidth, isUser && "justify-end")}
+      >
         <div
           className={cn(
             "rounded-lg px-3.5 py-2.5 text-[13.5px] leading-[1.6]",
@@ -399,7 +429,7 @@ function ChatBubbleImpl({
             ) : (
               <div className="chat-bubble-markdown">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
+                  remarkPlugins={[remarkGfm, remarkMath, remarkNoIndentedCode]}
                   rehypePlugins={[rehypeKatex]}
                   components={markdownComponents}
                 >
@@ -417,7 +447,9 @@ function ChatBubbleImpl({
           ref={menuRef}
           className={cn(
             "absolute -top-1.5 flex items-center transition-opacity",
-            isUser ? "left-1.5 -translate-x-full" : "right-1.5 translate-x-full",
+            isUser
+              ? "left-1.5 -translate-x-full"
+              : "right-1.5 translate-x-full",
             menuOpen
               ? "opacity-100"
               : "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
@@ -492,7 +524,10 @@ function ChatBubbleImpl({
                   onClick={handleSaveJournal}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ink-2 hover:bg-paper-2 hover:text-ink"
                 >
-                  <BookmarkPlus className="h-3.5 w-3.5 text-accent" aria-hidden />
+                  <BookmarkPlus
+                    className="h-3.5 w-3.5 text-accent"
+                    aria-hidden
+                  />
                   {tAction("save_to_journal")}
                 </button>
               ) : null}
@@ -501,7 +536,7 @@ function ChatBubbleImpl({
         </div>
       </div>
       {showWebCitations ? (
-        <div className="w-full max-w-[300px]">
+        <div className={cn("w-full", bubbleMaxWidth)}>
           <button
             type="button"
             onClick={() => setWebCitationsOpen((v) => !v)}
@@ -533,9 +568,9 @@ function ChatBubbleImpl({
       ) : null}
       {showMeta ? (
         <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">
-          {message.tokensIn ?? 0}↓ · {message.tokensOut ?? 0}↑
-          {" · "}
-          {pick("önbellek", "cache")}: {cacheHit ? pick("isabet", "hit") : pick("kaçık", "miss")}
+          {message.tokensIn ?? 0}↓ · {message.tokensOut ?? 0}↑{" · "}
+          {pick("önbellek", "cache")}:{" "}
+          {cacheHit ? pick("isabet", "hit") : pick("kaçık", "miss")}
           {message.interrupted ? ` · ${pick("kesildi", "interrupted")}` : ""}
           {message.webSearchUsed ? ` · ${pick("web arama", "web search")}` : ""}
         </div>
@@ -550,7 +585,10 @@ function ChatBubbleImpl({
 // intentionally ignored — they capture stable refs in the parent's
 // useCallback closures and their effect is purely event-time, so re-binding
 // them does not change what the bubble renders.
-function chatBubbleEqual(prev: ChatBubbleProps, next: ChatBubbleProps): boolean {
+function chatBubbleEqual(
+  prev: ChatBubbleProps,
+  next: ChatBubbleProps,
+): boolean {
   if (prev.isStreaming !== next.isStreaming) return false;
   if (prev.chunks !== next.chunks) return false;
   if (prev.noteSourceIds !== next.noteSourceIds) return false;
@@ -584,9 +622,11 @@ function isUserPrecomputed(role: ChatMessageRecord["role"]): boolean {
 function ToolActionBubble({
   message,
   pick,
+  wide = false,
 }: {
   message: ChatMessageRecord;
   pick: (tr: string, en: string) => string;
+  wide?: boolean;
 }) {
   const status = message.toolStatus ?? "pending";
   const StatusIcon =
@@ -604,12 +644,15 @@ function ToolActionBubble({
     simplify_explanation: ["Daha basit anlat", "Simplify"],
   };
   const label = labelMap[message.toolName ?? ""];
-  const labelText = label
-    ? pick(label[0], label[1])
-    : (message.toolName ?? "");
+  const labelText = label ? pick(label[0], label[1]) : (message.toolName ?? "");
 
   return (
-    <div className="flex max-w-[300px] flex-col gap-1">
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        wide ? "max-w-[68%]" : "max-w-[300px]",
+      )}
+    >
       <div className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-4">
         <Wrench className="h-3 w-3" aria-hidden />
         <span>TOOL</span>

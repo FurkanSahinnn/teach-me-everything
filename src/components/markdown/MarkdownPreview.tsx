@@ -16,6 +16,7 @@ import {
   parseCitations,
 } from "@/components/notebook/CitationChip";
 import type { ChunkRecord } from "@/lib/db/types";
+import { remarkNoIndentedCode } from "@/lib/markdown/remark-no-indented-code";
 import { cn } from "@/lib/utils/cn";
 
 export function MarkdownPreview({
@@ -41,7 +42,7 @@ export function MarkdownPreview({
   return (
     <div className={cn("markdown-preview text-ink-2", className)}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkNoIndentedCode]}
         rehypePlugins={[[rehypeHighlight, { detect: true }], rehypeKatex]}
         components={components}
       >
@@ -89,6 +90,25 @@ function transformCitations(
   });
 }
 
+// Shared heading scale for the standalone markdown preview (study notes, the
+// reader, journal). One descending serif family — 28 → 23 → 19 → 17 → 15 →
+// 13.5 — so an LLM answer or source document that over-nests / mixes heading
+// levels still renders a clear, legible hierarchy instead of collapsing deep
+// levels into body text. Before: h4 was sans-serif at body size (15px, same as
+// the reader/study body) so it read as bold paragraph text, and h5/h6 had no
+// component override at all — react-markdown emitted raw tags that CSS preflight
+// reset to plain paragraphs, making any nested heading vanish. NOT uppercased:
+// `text-transform` mangles Turkish casing (i → I instead of İ), and headings
+// carry user/source content.
+const HEADING_CLASS = {
+  h1: "mt-9 font-serif text-[28px] font-semibold leading-tight text-ink first:mt-0",
+  h2: "mb-3 mt-10 font-serif text-[23px] font-semibold leading-snug text-ink first:mt-0",
+  h3: "mb-3 mt-9 font-serif text-[19px] font-semibold leading-snug text-ink first:mt-0",
+  h4: "mb-2 mt-7 font-serif text-[17px] font-semibold leading-snug text-ink first:mt-0",
+  h5: "mb-1.5 mt-6 font-serif text-[15px] font-semibold leading-snug text-ink first:mt-0",
+  h6: "mb-1.5 mt-5 font-serif text-[13.5px] font-semibold leading-snug text-ink-2 first:mt-0",
+} as const;
+
 function createMarkdownComponents(
   chunks: ChunkRecord[],
   onCitationClick: (chunk: ChunkRecord) => void,
@@ -104,32 +124,22 @@ function createMarkdownComponents(
       return <li className="pl-1">{wrap(children)}</li>;
     },
     h1({ children }) {
-      return (
-        <h1 className="mt-9 font-serif text-[28px] font-semibold leading-tight text-ink first:mt-0">
-          {wrap(children)}
-        </h1>
-      );
+      return <h1 className={HEADING_CLASS.h1}>{wrap(children)}</h1>;
     },
     h2({ children }) {
-      return (
-        <h2 className="mb-3 mt-10 font-serif text-[23px] font-semibold leading-snug text-ink first:mt-0">
-          {wrap(children)}
-        </h2>
-      );
+      return <h2 className={HEADING_CLASS.h2}>{wrap(children)}</h2>;
     },
     h3({ children }) {
-      return (
-        <h3 className="mb-3 mt-9 font-serif text-[19px] font-semibold leading-snug text-ink first:mt-0">
-          {wrap(children)}
-        </h3>
-      );
+      return <h3 className={HEADING_CLASS.h3}>{wrap(children)}</h3>;
     },
     h4({ children }) {
-      return (
-        <h4 className="mb-2 mt-7 text-[15px] font-semibold leading-snug text-ink first:mt-0">
-          {wrap(children)}
-        </h4>
-      );
+      return <h4 className={HEADING_CLASS.h4}>{wrap(children)}</h4>;
+    },
+    h5({ children }) {
+      return <h5 className={HEADING_CLASS.h5}>{wrap(children)}</h5>;
+    },
+    h6({ children }) {
+      return <h6 className={HEADING_CLASS.h6}>{wrap(children)}</h6>;
     },
   };
 }
@@ -149,32 +159,22 @@ const markdownComponents: Components = {
     );
   },
   h1({ children }) {
-    return (
-      <h1 className="mt-9 font-serif text-[28px] font-semibold leading-tight text-ink first:mt-0">
-        {children}
-      </h1>
-    );
+    return <h1 className={HEADING_CLASS.h1}>{children}</h1>;
   },
   h2({ children }) {
-    return (
-      <h2 className="mb-3 mt-10 font-serif text-[23px] font-semibold leading-snug text-ink first:mt-0">
-        {children}
-      </h2>
-    );
+    return <h2 className={HEADING_CLASS.h2}>{children}</h2>;
   },
   h3({ children }) {
-    return (
-      <h3 className="mb-3 mt-9 font-serif text-[19px] font-semibold leading-snug text-ink first:mt-0">
-        {children}
-      </h3>
-    );
+    return <h3 className={HEADING_CLASS.h3}>{children}</h3>;
   },
   h4({ children }) {
-    return (
-      <h4 className="mb-2 mt-7 text-[15px] font-semibold leading-snug text-ink first:mt-0">
-        {children}
-      </h4>
-    );
+    return <h4 className={HEADING_CLASS.h4}>{children}</h4>;
+  },
+  h5({ children }) {
+    return <h5 className={HEADING_CLASS.h5}>{children}</h5>;
+  },
+  h6({ children }) {
+    return <h6 className={HEADING_CLASS.h6}>{children}</h6>;
   },
   p({ children }) {
     return <p className="my-4 whitespace-pre-wrap">{children}</p>;
