@@ -52,6 +52,37 @@ describe("balanceCodeFences", () => {
     expect(code).toContain("Iteration = Toplam / Batch");
   });
 
+  it("repairs an orphan close that fakes a balanced count (the SGD bug)", () => {
+    // Even fence count, but inverted: the orphan ``` pairs with the SGD block's
+    // close and ```python is swallowed as body, so a naive counter sees it as
+    // balanced while the SGD code is actually trapped.
+    const src = [
+      "optimizer.zero_grad()", // tail of code from the previous chunk
+      "```", // orphan close
+      "",
+      "### SGD",
+      "",
+      "```python",
+      "optimizer = torch.optim.SGD(model.parameters(), lr=0.01)",
+      "```",
+      "",
+      "### Adam",
+      "",
+      "```python",
+      "optimizer = torch.optim.Adam(model.parameters(), lr=0.001)",
+      "```",
+    ].join("\n");
+    const out = balanceCodeFences(src);
+    const codeBlocks = out.match(/```[\s\S]*?```/g) ?? [];
+    // Two real code blocks, each holding exactly its optimizer line.
+    expect(codeBlocks.length).toBe(2);
+    expect(codeBlocks.some((b) => b.includes("optim.SGD"))).toBe(true);
+    expect(codeBlocks.some((b) => b.includes("optim.Adam"))).toBe(true);
+    // The headings are no longer trapped inside a code box.
+    expect(out).toContain("\n### SGD\n");
+    expect(out).toContain("\n### Adam\n");
+  });
+
   it("drops a trailing unclosed fence that wraps prose", () => {
     const src = [
       "Intro.",

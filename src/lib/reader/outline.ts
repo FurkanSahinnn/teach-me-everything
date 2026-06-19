@@ -1,4 +1,5 @@
 import type { ChunkRecord } from "@/lib/db/types";
+import { balanceCodeFences } from "@/lib/markdown/balance-code-fences";
 import { stripInlineMarkdown, stripMarkdownHeading } from "@/lib/reader/markdown";
 
 export type ReaderOutlineEntry = {
@@ -50,8 +51,13 @@ export function buildReaderOutline(chunks: ChunkRecord[]): ReaderOutlineEntry[] 
 }
 
 export function splitChunkIntoMarkdownSegments(chunk: ChunkRecord): ReaderMarkdownSegment[] {
-  const lines = chunk.text.replace(/\r\n/g, "\n").split("\n");
-  const headingLines = new Set(extractHeadingsFromText(chunk.text).map((h) => h.lineIndex));
+  // Balance fences across the WHOLE chunk before detecting headings or
+  // splitting. A chunk split mid-fence (chunker artifact) otherwise throws off
+  // fence tracking, so headings are detected at the wrong lines and segments cut
+  // real code blocks in half — yielding empty code boxes and unboxed code.
+  const balanced = balanceCodeFences(chunk.text.replace(/\r\n/g, "\n"));
+  const lines = balanced.split("\n");
+  const headingLines = new Set(extractHeadingsFromText(balanced).map((h) => h.lineIndex));
   const segments: ReaderMarkdownSegment[] = [];
   let buffer: string[] = [];
   let activeAnchorId: string | undefined;
@@ -85,11 +91,15 @@ export function splitChunkIntoMarkdownSegments(chunk: ChunkRecord): ReaderMarkdo
 
   return segments.length > 0
     ? segments
-    : [{ key: `${chunk.id}-0`, text: chunk.text }];
+    : [{ key: `${chunk.id}-0`, text: balanced }];
 }
 
 function buildHeadingCandidates(chunk: ChunkRecord): HeadingCandidate[] {
-  const textCandidates = extractHeadingsFromText(chunk.text);
+  // Use the same balanced text as splitChunkIntoMarkdownSegments so heading
+  // line indices (and thus anchor IDs) stay consistent between the two.
+  const textCandidates = extractHeadingsFromText(
+    balanceCodeFences(chunk.text.replace(/\r\n/g, "\n")),
+  );
   const textLabels = new Set(
     textCandidates.map((candidate) => normalizeOutlineLabel(cleanOutlineLabel(candidate.label))),
   );
