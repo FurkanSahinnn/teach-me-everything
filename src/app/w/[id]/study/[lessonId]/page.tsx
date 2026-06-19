@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { notFound, useRouter } from "next/navigation";
 import { useRouteParams } from "@/lib/utils/route-params";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -630,11 +629,6 @@ function MarkdownNote({
         text={formatLessonMarkdownForPreview(markdown)}
         citationChunks={chunks}
         onCitationClick={onCitationClick}
-        components={{
-          blockquote({ children }) {
-            return <PassagePreview>{children}</PassagePreview>;
-          },
-        }}
         className={[
           "max-w-none break-words text-[15px] leading-7",
           "[&_li_h1]:my-1 [&_li_h1]:font-sans [&_li_h1]:text-[15px] [&_li_h1]:leading-7",
@@ -644,19 +638,6 @@ function MarkdownNote({
         ].join(" ")}
       />
     </article>
-  );
-}
-
-function PassagePreview({ children }: { children: ReactNode }) {
-  return (
-    <blockquote className="my-4 rounded-[10px] border border-rule-strong bg-paper-2 px-4 py-3 text-[14px] leading-7 text-ink-2">
-      <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-4">
-        Source passage
-      </div>
-      <div className="line-clamp-3 text-[13.5px] leading-6 text-ink-3 [&_p]:my-0 [&_strong]:font-medium [&_strong]:text-ink-2">
-        {children}
-      </div>
-    </blockquote>
   );
 }
 
