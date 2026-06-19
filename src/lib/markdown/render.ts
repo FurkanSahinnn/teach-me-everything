@@ -55,6 +55,12 @@ const md: MarkdownIt = new MarkdownIt({
   },
 });
 
+// Disable CommonMark indented (4-space/tab) code blocks. In this app code is
+// always fenced, and ingested/chunked content routinely carries stray leading
+// indentation that would otherwise render prose as code boxes. (The old
+// react-markdown pipeline did the same via remarkNoIndentedCode.)
+md.disable("code");
+
 // VS Code's own KaTeX plugin (handles $…$, $$…$$ and the awkward edge cases).
 const useKatex = (katexPlugin as { default?: typeof katexPlugin }).default ?? katexPlugin;
 md.use(useKatex, { throwOnError: false });

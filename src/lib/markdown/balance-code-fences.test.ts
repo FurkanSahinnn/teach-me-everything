@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { balanceCodeFences } from "./balance-code-fences";
 
+const fenceLines = (s: string) => s.match(/^(```|~~~)/gm)?.length ?? 0;
+
 describe("balanceCodeFences", () => {
   it("leaves well-formed markdown untouched", () => {
     const src = [
@@ -16,8 +18,6 @@ describe("balanceCodeFences", () => {
   });
 
   it("never rewrites a balanced block that contains heading-like comments", () => {
-    // Regression guard: `## ` and `---` are legal *inside* code. They must only
-    // be treated as a forgotten close when the document is already unbalanced.
     const src = [
       "```yaml",
       "## a yaml comment",
@@ -28,36 +28,51 @@ describe("balanceCodeFences", () => {
     expect(balanceCodeFences(src)).toBe(src);
   });
 
-  it("closes an unclosed fence before a following ATX heading", () => {
+  it("drops an orphan closing fence that wraps real markdown (reader chunk split)", () => {
+    // A chunk that began mid-code: it starts with an orphan ``` then prose.
     const src = [
-      "```python",
-      "x = tokenize(text)",
+      "loss = compute()", // tail of code from the previous chunk
+      "```", // orphan close → micromark/markdown-it read it as an OPEN
       "",
-      "## 1.5 Bag of Words",
-      "",
-      "**Ölümcül problem.**",
+      "**Avantaj:** Stabil",
+      "**Dezavantaj:** yavaş",
+      "### Epoch vs Iteration",
+      "Bu üç kavram bağlı:",
       "",
       "```",
-      "Cümle 1",
+      "Iteration = Toplam / Batch",
       "```",
     ].join("\n");
     const out = balanceCodeFences(src);
-    // The forgotten close lands before the heading, so the heading and bold
-    // prose escape the code box and the real block pairs up again.
-    expect(out).toContain("```\n\n## 1.5 Bag of Words");
-    expect(out.match(/^```/gm)?.length).toBe(4);
+    const code = out.match(/```[\s\S]*?```/g)?.join(" ") ?? "";
+    // The prose region must NOT be inside a code block any more...
+    expect(code).not.toContain("Avantaj");
+    expect(code).not.toContain("### Epoch");
+    // ...while the genuine code block survives.
+    expect(code).toContain("Iteration = Toplam / Batch");
   });
 
-  it("closes an unclosed fence at end of document", () => {
-    const src = ["Intro", "", "```", "code line", "more code"].join("\n");
+  it("drops a trailing unclosed fence that wraps prose", () => {
+    const src = [
+      "Intro.",
+      "```",
+      "## A heading that escaped a missing close",
+      "**bold** prose continues",
+    ].join("\n");
+    const out = balanceCodeFences(src);
+    expect(out).not.toMatch(/```[\s\S]*A heading/);
+  });
+
+  it("closes a genuinely unclosed code block at EOF", () => {
+    const src = ["Intro", "", "```", "real_code()", "more_code()"].join("\n");
     const out = balanceCodeFences(src);
     expect(out.endsWith("```")).toBe(true);
-    expect(out.match(/^```/gm)?.length).toBe(2);
+    expect(fenceLines(out)).toBe(2);
   });
 
   it("handles tilde fences", () => {
-    const src = ["~~~", "code", "", "## Heading"].join("\n");
+    const src = ["~~~", "real_code()", "more()"].join("\n");
     const out = balanceCodeFences(src);
-    expect(out).toContain("~~~\n\n## Heading");
+    expect(out.endsWith("~~~")).toBe(true);
   });
 });

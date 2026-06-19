@@ -1,32 +1,32 @@
 /**
- * Repairs unbalanced fenced code blocks in markdown before it reaches the
- * renderer.
+ * Repairs unbalanced fenced code blocks before markdown reaches the renderer.
  *
- * WHY: LLM-generated lessons (and pasted documents) routinely drop a closing
- * ` ``` `. CommonMark/micromark reacts catastrophically: a single unclosed
- * fence flips the polarity of *every* fence below it, so prose, headings and
- * blockquotes render inside code boxes while the real code diagrams render as
- * plain paragraphs (the "inverted markdown" bug). VS Code's markdown-it is more
- * forgiving; this brings our renderer to parity.
+ * WHY: two real-world sources produce an odd number of ``` fences:
+ *   1. LLM lessons that forget a closing ```.
+ *   2. The reader, which renders a SOURCE one chunk at a time — the chunker can
+ *      split a document mid-fence, so a chunk begins with an *orphan closing*
+ *      ``` (no matching open in that chunk).
+ * Either way micromark/markdown-it treats the stray fence as an OPEN and wraps
+ * the following prose, headings, tables and $$math$$ inside a code box (the
+ * "inverted markdown" bug). VS Code never shows this because it parses the whole
+ * file, where the fences are balanced.
  *
  * STRATEGY — surgical, never touches well-formed input:
- *   1. Walk the document with a CommonMark-ish fence state machine.
- *   2. If every fence is balanced, return the input UNCHANGED. This is the
- *      critical guard: a legitimate code block may contain `## comment`,
- *      `#define`, `---` etc., and we must never rewrite those.
- *   3. Only when a fence is left open do we repair: a code fence that is still
- *      open when an ATX heading or thematic break appears at column 0 is almost
- *      certainly a forgotten close, so we inject the closing fence there. Any
- *      fence still open at end-of-document is closed at EOF (matching
- *      markdown-it's "code runs to the end" behaviour instead of inverting).
+ *   1. If every fence is balanced, return the input UNCHANGED. A legitimate code
+ *      block may contain `## comment`, `---`, `|pipes|` etc., and must not be
+ *      rewritten.
+ *   2. Only when a fence is unbalanced do we repair. We scan each ``` region and
+ *      ask whether its body looks like real markdown (an ATX heading, a table
+ *      row, or a **bold label** line). If it does, the fence is spurious — we
+ *      drop the opening marker so the body renders as markdown instead of code.
+ *      Genuine code regions are emitted as proper fenced blocks (closing one at
+ *      EOF if needed).
  */
 
-// Opening fence: up to 3 leading spaces, then ≥3 backticks or tildes, optional
-// info string. Closing fence: same marker char, length ≥ opening, only trailing
-// whitespace allowed after it.
 const FENCE_OPEN = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 const ATX_HEADING = /^ {0,3}#{1,6}(\s|$)/;
-const THEMATIC_BREAK = /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;
+const TABLE_ROW = /^ {0,3}\|.*\|/;
+const BOLD_LABEL = /^\s*\*\*[^*]+\*\*/;
 
 function isClosingFence(line: string, marker: string): boolean {
   const m = line.match(/^( {0,3})(`{3,}|~{3,})\s*$/);
@@ -49,41 +49,50 @@ function hasUnbalancedFence(lines: string[]): boolean {
   return openMarker !== null;
 }
 
+/** A region whose body carries markdown structure is prose, not code. */
+function bodyLooksLikeMarkdown(body: string[]): boolean {
+  return body.some(
+    (l) => ATX_HEADING.test(l) || TABLE_ROW.test(l) || BOLD_LABEL.test(l),
+  );
+}
+
 export function balanceCodeFences(markdown: string): string {
   const lines = markdown.split("\n");
   if (!hasUnbalancedFence(lines)) return markdown;
 
   const out: string[] = [];
-  let openMarker: string | null = null;
-  for (const line of lines) {
-    if (openMarker === null) {
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    const m = line.match(FENCE_OPEN);
+    if (!m) {
       out.push(line);
-      const m = line.match(FENCE_OPEN);
-      if (m) openMarker = m[2] ?? "";
+      i += 1;
       continue;
     }
-    // Inside a fence. A real close ends it normally.
-    if (isClosingFence(line, openMarker)) {
-      out.push(line);
-      openMarker = null;
+    const marker = m[2] ?? "";
+    // Find the fence line that would close this one.
+    let j = i + 1;
+    while (j < lines.length && !isClosingFence(lines[j] ?? "", marker)) j += 1;
+    const body = lines.slice(i + 1, j);
+
+    if (bodyLooksLikeMarkdown(body)) {
+      // Spurious fence (orphan close, or a forgotten-close wrapping prose):
+      // drop just the opening marker and re-process the body as markdown.
+      i += 1;
       continue;
     }
-    // A heading or thematic break inside an open fence means the close was
-    // forgotten: inject it, then re-process this line as ordinary markdown.
-    if (ATX_HEADING.test(line) || THEMATIC_BREAK.test(line)) {
-      out.push(openMarker[0] === "~" ? "~~~" : "```");
-      out.push("");
-      openMarker = null;
-      out.push(line);
-      const m = line.match(FENCE_OPEN);
-      if (m) openMarker = m[2] ?? "";
-      continue;
-    }
+
+    // Genuine code: emit the block, synthesising a close at EOF if needed.
     out.push(line);
-  }
-  // Anything still open runs to EOF — close it so it cannot swallow nothing.
-  if (openMarker !== null) {
-    out.push(openMarker[0] === "~" ? "~~~" : "```");
+    for (const b of body) out.push(b);
+    if (j < lines.length) {
+      out.push(lines[j] ?? "");
+      i = j + 1;
+    } else {
+      out.push(marker[0] === "~" ? "~~~" : "```");
+      i = j;
+    }
   }
   return out.join("\n");
 }
