@@ -35,6 +35,9 @@ describe("migratePrefs v7 → v8", () => {
       embedPresetId: "gemini-004",
       flashcardGen: "claude-sonnet-4-6",
       roadmapGen: "claude-opus-4-7",
+      analysisExtract: "claude-haiku-4-5",
+      analysisSynthesize: "claude-sonnet-4-6",
+      analysisCritique: "claude-opus-4-7",
       researchProvider: "firecrawl",
     };
     const out = migratePrefs(
@@ -170,6 +173,52 @@ describe("migratePrefs v20 → v21 (roadmapGen binding)", () => {
     ) as { modelBindings: ModelBindings };
     expect(out.modelBindings.roadmapGen).toBe(
       DEFAULT_MODEL_BINDINGS.roadmapGen,
+    );
+  });
+});
+
+describe("migratePrefs v23 → v24 (article-analysis bindings)", () => {
+  it("backfills the three analysis bindings from sibling tiers, preserving others", () => {
+    const v23bindings = {
+      chat: "anthropic::claude-opus-4-7",
+      summary: "anthropic::claude-sonnet-4-6",
+      quick: "anthropic::claude-haiku-4-5",
+      embedPresetId: "openai-3-small",
+      flashcardGen: "anthropic::claude-sonnet-4-6",
+      roadmapGen: "anthropic::claude-sonnet-4-6",
+      researchProvider: "firecrawl",
+    };
+    const out = migratePrefs(
+      { ...PRE_V8_BASE, modelBindings: { ...v23bindings } },
+      23,
+    ) as { modelBindings: ModelBindings };
+    // extract ← quick, synthesize + critique ← summary
+    expect(out.modelBindings.analysisExtract).toBe("anthropic::claude-haiku-4-5");
+    expect(out.modelBindings.analysisSynthesize).toBe(
+      "anthropic::claude-sonnet-4-6",
+    );
+    expect(out.modelBindings.analysisCritique).toBe(
+      "anthropic::claude-sonnet-4-6",
+    );
+    // unrelated bindings survive
+    expect(out.modelBindings.chat).toBe("anthropic::claude-opus-4-7");
+    expect(out.modelBindings.researchProvider).toBe("firecrawl");
+  });
+
+  it("falls back to per-key defaults when sibling tiers are absent", () => {
+    const out = migratePrefs(
+      { ...PRE_V8_BASE, modelBindings: { chat: "x" } },
+      23,
+    ) as { modelBindings: ModelBindings };
+    // No quick/summary present → each new key takes its own default.
+    expect(out.modelBindings.analysisExtract).toBe(
+      DEFAULT_MODEL_BINDINGS.analysisExtract,
+    );
+    expect(out.modelBindings.analysisSynthesize).toBe(
+      DEFAULT_MODEL_BINDINGS.analysisSynthesize,
+    );
+    expect(out.modelBindings.analysisCritique).toBe(
+      DEFAULT_MODEL_BINDINGS.analysisCritique,
     );
   });
 });

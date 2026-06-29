@@ -12,7 +12,11 @@ import {
   createStudyJournalEntry,
 } from "@/lib/db/study";
 import { createPodcast } from "@/lib/db/podcasts";
-import { exportBackup, type BackupV9 } from "./export";
+import type {
+  ArticleAnalysisPayload,
+  ArticleAnalysisRecord,
+} from "@/lib/article-analysis/types";
+import { exportBackup, type BackupV10 } from "./export";
 
 beforeEach(async () => {
   await db.delete();
@@ -23,8 +27,76 @@ afterEach(async () => {
   await db.delete();
 });
 
-async function readPayload(blob: Blob): Promise<BackupV9> {
-  return JSON.parse(await blob.text()) as BackupV9;
+async function readPayload(blob: Blob): Promise<BackupV10> {
+  return JSON.parse(await blob.text()) as BackupV10;
+}
+
+function buildAnalysisPayload(): ArticleAnalysisPayload {
+  const claim = (text: string): ArticleAnalysisPayload["contributions"][number] => ({
+    text,
+    grounding: "source",
+    citations: [{ quote: text, chunkId: "chunk-x" }],
+  });
+  return {
+    tldr: "Short summary.",
+    ataGlance: {
+      paperType: "empirical",
+      field: "physics",
+      purpose: "Test alpha.",
+      headlineFinding: "Alpha works.",
+    },
+    fiveCs: {
+      category: "method",
+      context: "context",
+      correctness: "sound",
+      contributions: "novel",
+      clarity: "clear",
+    },
+    problemMotivation: [claim("Problem")],
+    priorWorkGap: [claim("Gap")],
+    contributions: [claim("Contribution")],
+    keyIdea: "Key idea.",
+    methodWalkthrough: [{ step: "Step 1", why: "Because." }],
+    howItSolves: [claim("Solves")],
+    keyResults: [claim("Result")],
+    critique: {
+      soundness: "ok",
+      novelty: "ok",
+      significance: "ok",
+      clarity: "ok",
+      weakestLink: "none",
+    },
+    assumptionsLimitations: [{ text: "Assumes X", grounding: "general" }],
+    reproducibility: "high",
+    questionsToAsk: ["Why?"],
+    soWhat: "It matters.",
+    whatToReadNext: [{ title: "Next paper", why: "Background." }],
+    glossary: [{ term: "alpha", tr: "alfa", en: "alpha" }],
+  };
+}
+
+function buildAnalysis(
+  workspaceId: string,
+  sourceId: string,
+): ArticleAnalysisRecord {
+  const now = Date.now();
+  return {
+    id: "analysis-1",
+    workspaceId,
+    sourceId,
+    title: "p.pdf",
+    targetLang: "en",
+    status: "ready",
+    modelSnapshot: {
+      extract: "anthropic::claude-haiku-4-5",
+      synthesize: "anthropic::claude-sonnet-4-6",
+      critique: "anthropic::claude-opus-4-7",
+    },
+    usage: { inputTokens: 1200, outputTokens: 600, costUsd: 0.01 },
+    payload: buildAnalysisPayload(),
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 describe("backup/export", () => {
@@ -154,11 +226,12 @@ describe("backup/export", () => {
       modelId: "test-model",
       generationPromptVersion: "podcast-script@1",
     });
+    await db.articleAnalyses.put(buildAnalysis(ws.id, src.id));
     const blob = await exportBackup();
     expect(blob.type).toBe("application/json");
     const parsed = await readPayload(blob);
 
-    expect(parsed.schemaVersion).toBe(9);
+    expect(parsed.schemaVersion).toBe(10);
     expect(parsed.app).toBe("tme");
     expect(parsed.workspaces).toHaveLength(1);
     expect(parsed.sources).toHaveLength(1);
@@ -176,6 +249,10 @@ describe("backup/export", () => {
     expect(parsed.podcasts[0]?.segments).toHaveLength(2);
     expect(Array.isArray(parsed.notes)).toBe(true);
     expect(Array.isArray(parsed.noteFolders)).toBe(true);
+    expect(parsed.articleAnalyses).toHaveLength(1);
+    expect(parsed.articleAnalyses[0]?.id).toBe("analysis-1");
+    expect(parsed.articleAnalyses[0]?.payload?.tldr).toBe("Short summary.");
+    expect(parsed.articleAnalyses[0]?.payload?.glossary).toHaveLength(1);
     expect(parsed.integrity).toMatch(/^[0-9a-f]{64}$/);
   });
 

@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  FileSearch,
   GitFork,
   Headphones,
   Home,
@@ -103,6 +104,14 @@ export const WORKSPACE_NAV: NavItem[] = [
     label: "Roadmap",
     labelEn: "Roadmap",
     icon: Route,
+    workspaceScoped: true,
+  },
+  {
+    key: "analysis",
+    href: "/w/{id}/analysis",
+    label: "Analiz",
+    labelEn: "Analysis",
+    icon: FileSearch,
     workspaceScoped: true,
   },
 ];

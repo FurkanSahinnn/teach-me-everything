@@ -143,7 +143,7 @@ fn export_shell_fallback(path: &str) -> Option<String> {
   // Note: `/w/<id>/chat` (the workspace chat) is a leaf route with no dynamic
   // child segment — like `/w/<id>/cards` — so it is fully handled by the
   // `segs[2]` workspace-id rewrite above and is NOT a dynamic parent here.
-  const DYN_PARENTS: [&str; 4] = ["audio", "read", "study", "roadmap"];
+  const DYN_PARENTS: [&str; 5] = ["audio", "read", "study", "roadmap", "analysis"];
   let mut i = 3;
   while i + 1 < segs.len() {
     if is_tree_marker(&segs[i]) {
@@ -240,6 +240,10 @@ mod export_fallback_tests {
     assert_eq!(
       export_shell_fallback("/w/abc/roadmap/rm2"),
       Some("/w/_/roadmap/_".to_string())
+    );
+    assert_eq!(
+      export_shell_fallback("/w/abc/analysis/an5"),
+      Some("/w/_/analysis/_".to_string())
     );
     assert_eq!(
       export_shell_fallback("/w/abc/audio/pod4/"),

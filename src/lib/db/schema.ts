@@ -37,6 +37,7 @@ import type {
   RoadmapNodeRecord,
   RoadmapRecord,
 } from "@/lib/roadmap/types";
+import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
 
 // Mirrors providers/types.ts CloudProviderId order; embed-only and non-AI
 // services are appended so the same table holds every key kind users may add.
@@ -122,6 +123,7 @@ export class TmeDb extends Dexie {
   roadmaps!: Table<RoadmapRecord, string>;
   roadmapNodes!: Table<RoadmapNodeRecord, string>;
   roadmapEdges!: Table<RoadmapEdgeRecord, string>;
+  articleAnalyses!: Table<ArticleAnalysisRecord, string>;
   seedFlags!: Table<SeedFlagRecord, string>;
 
   constructor() {
@@ -1061,6 +1063,20 @@ export class TmeDb extends Dexie {
     // Q&A 2026-05-25 and the spec mirrors that decision in §2 row 1.
     this.version(28).stores({
       planBlocks: null,
+    });
+
+    // v29: Article Analysis feature (docs/ARTICLE_ANALYSIS_SPEC.md). One
+    // `articleAnalyses` row per AI multi-stage analysis of a single PDF
+    // source; the structured `ArticleAnalysisPayload` is stored as a JSON
+    // blob on the row (the artifact is read whole — whole-analysis
+    // regenerate, no child table). Indexed on `workspaceId` for the list
+    // page and `sourceId` for per-source history; the compound
+    // `[workspaceId+createdAt]` / `[sourceId+createdAt]` indexes power
+    // "analyses in this workspace, newest first" and "analyses of this
+    // paper" queries. Pure additive — existing rows are untouched.
+    this.version(29).stores({
+      articleAnalyses:
+        "id, workspaceId, sourceId, createdAt, [workspaceId+createdAt], [sourceId+createdAt]",
     });
   }
 }

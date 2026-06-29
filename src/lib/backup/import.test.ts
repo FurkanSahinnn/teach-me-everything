@@ -11,6 +11,7 @@ import {
   createLessonNote,
   createStudyJournalEntry,
 } from "@/lib/db/study";
+import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
 import { exportBackup, type BackupV4 } from "./export";
 import {
   BackupIntegrityError,
@@ -30,6 +31,87 @@ afterEach(async () => {
 
 function blobToFile(blob: Blob, name = "backup.tmebak"): File {
   return new File([blob], name, { type: "application/json" });
+}
+
+async function sha256HexOf(value: unknown): Promise<string> {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    enc.encode(JSON.stringify(value)),
+  );
+  const bytes = new Uint8Array(buf);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    const b = bytes[i] ?? 0;
+    hex += b.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+function buildAnalysis(
+  workspaceId: string,
+  sourceId: string,
+): ArticleAnalysisRecord {
+  const now = Date.now();
+  return {
+    id: "analysis-test",
+    workspaceId,
+    sourceId,
+    title: "p1",
+    targetLang: "en",
+    status: "draft",
+    fallbackReason: "critique stage degraded",
+    modelSnapshot: {
+      extract: "anthropic::claude-haiku-4-5",
+      synthesize: "anthropic::claude-sonnet-4-6",
+      critique: "anthropic::claude-opus-4-7",
+    },
+    usage: { inputTokens: 800, outputTokens: 400 },
+    payload: {
+      tldr: "Short.",
+      ataGlance: {
+        paperType: "empirical",
+        field: "physics",
+        purpose: "Test.",
+        headlineFinding: "Works.",
+      },
+      fiveCs: {
+        category: "m",
+        context: "c",
+        correctness: "s",
+        contributions: "n",
+        clarity: "c",
+      },
+      problemMotivation: [
+        {
+          text: "Problem",
+          grounding: "source",
+          citations: [{ quote: "alpha", chunkId: "stale-chunk" }],
+        },
+      ],
+      priorWorkGap: [],
+      contributions: [],
+      keyIdea: "Key.",
+      methodWalkthrough: [{ step: "S", why: "W" }],
+      howItSolves: [],
+      keyResults: [],
+      critique: {
+        soundness: "ok",
+        novelty: "ok",
+        significance: "ok",
+        clarity: "ok",
+        weakestLink: "none",
+      },
+      assumptionsLimitations: [],
+      reproducibility: "high",
+      questionsToAsk: ["Why?"],
+      soWhat: "Matters.",
+      whatToReadNext: [{ title: "T", why: "W" }],
+      glossary: [{ term: "alpha", tr: "alfa", en: "alpha" }],
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 async function seedDataset() {
@@ -230,6 +312,7 @@ async function seedDataset() {
     sourceRefs: [{ sourceId: src1.id, chunkIds: [firstChunkId] }],
     tags: ["alpha"],
   });
+  await db.articleAnalyses.put(buildAnalysis(ws.id, src1.id));
   return {
     wsId: ws.id,
     src1Id: src1.id,
@@ -271,6 +354,11 @@ describe("backup/import round-trip", () => {
     expect(await db.curriculumItems.count()).toBe(1);
     expect(await db.lessonNotes.count()).toBe(1);
     expect(await db.studyJournalEntries.count()).toBe(1);
+    expect(await db.articleAnalyses.count()).toBe(1);
+    const restoredAnalysis = await db.articleAnalyses.get("analysis-test");
+    expect(restoredAnalysis?.status).toBe("draft");
+    expect(restoredAnalysis?.payload?.tldr).toBe("Short.");
+    expect(restoredAnalysis?.payload?.glossary).toHaveLength(1);
     expect(await db.decks.get(deckId)).toBeDefined();
 
     const chunks = await db.chunks
@@ -393,6 +481,21 @@ describe("backup/import round-trip", () => {
       .equals(newWs.id)
       .first();
     expect(remappedJournal?.lessonNoteId).toBe(remappedNote?.id);
+
+    // The original analysis survives untouched; the remapped clone rebinds to
+    // the new workspace + one of the remapped source ids.
+    expect(await db.articleAnalyses.count()).toBe(2);
+    expect(await db.articleAnalyses.get("analysis-test")).toMatchObject({
+      workspaceId: wsId,
+    });
+    const remappedAnalysis = await db.articleAnalyses
+      .where("workspaceId")
+      .equals(newWs.id)
+      .first();
+    expect(remappedAnalysis).toBeDefined();
+    expect(remappedAnalysis?.id).not.toBe("analysis-test");
+    expect(remappedSourceIds.has(remappedAnalysis?.sourceId ?? "")).toBe(true);
+    expect(remappedAnalysis?.payload?.tldr).toBe("Short.");
   });
 
   it("throws BackupSchemaError on schemaVersion mismatch", async () => {
@@ -434,5 +537,37 @@ describe("backup/import round-trip", () => {
     await expect(importBackup(file)).rejects.toBeInstanceOf(
       BackupIntegrityError,
     );
+  });
+
+  it("imports a legacy V9 backup with an empty articleAnalyses array", async () => {
+    await seedDataset();
+    const blob = await exportBackup();
+    // Simulate a pre-v10 (Roadmap-era) backup: drop the analyses table and
+    // stamp the older schema version, then re-seal the integrity hash so we
+    // exercise the legacy-normalisation path, not an integrity rejection.
+    const downgraded = JSON.parse(await blob.text()) as Record<string, unknown>;
+    delete downgraded.articleAnalyses;
+    downgraded.schemaVersion = 9;
+    const { integrity: _drop, ...rest } = downgraded;
+    void _drop;
+    downgraded.integrity = await sha256HexOf(rest);
+
+    // Land in a clean DB so the restore is unambiguous.
+    await db.delete();
+    await db.open();
+
+    const file = blobToFile(
+      new Blob([JSON.stringify(downgraded)], { type: "application/json" }),
+    );
+    const preview = await previewImport(file);
+    expect(preview.schemaVersion).toBe(9);
+
+    const result = await importBackup(file);
+    expect(result.imported).toBeGreaterThan(0);
+    // Other tables still round-trip from the older backup...
+    expect(await db.sources.count()).toBe(2);
+    expect(await db.roadmaps.count()).toBe(0);
+    // ...but the v10-only analyses table normalises to empty.
+    expect(await db.articleAnalyses.count()).toBe(0);
   });
 });

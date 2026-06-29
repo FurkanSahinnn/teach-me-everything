@@ -52,6 +52,7 @@ import type {
   RoadmapNodeRecord,
   RoadmapRecord,
 } from "@/lib/roadmap/types";
+import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
 
 // On-disk shape for a chunk: Float32Array embeddings cannot be JSON-serialized,
 // so we round-trip them through base64. `embedding === null` means no vector
@@ -278,6 +279,43 @@ export interface BackupV9 {
   integrity: string;
 }
 
+// v10 adds `articleAnalyses` (Article Analysis feature, schema v29 —
+// docs/ARTICLE_ANALYSIS_SPEC.md). Each row carries a structured JSON payload
+// (the multi-stage AI analysis of one PDF) plus its model/usage provenance —
+// all text/JSON, so the round-trip is trivial: no binary, no base64 hop. The
+// source PDF blob it analyses is still excluded (same `sourceBlobs` rule:
+// regenerated/re-uploaded on demand). Importing a pre-v10 backup yields
+// `articleAnalyses: []` (handled in `normalizeBackup`).
+export interface BackupV10 {
+  schemaVersion: 10;
+  exportedAt: number;
+  app: "tme";
+  workspaces: WorkspaceRecord[];
+  sources: SourceRecord[];
+  chunks: ChunkBackupShape[];
+  highlights: HighlightRecord[];
+  decks: DeckRecord[];
+  flashcards: FlashcardRecord[];
+  reviewLogs: ReviewLogRecord[];
+  chatThreads: ChatThreadRecord[];
+  chatMessages: ChatMessageRecord[];
+  quizSessions: QuizSessionRecord[];
+  concepts: ConceptRecord[];
+  conceptEdges: ConceptEdgeRecord[];
+  curricula: CurriculumRecord[];
+  curriculumItems: CurriculumItemRecord[];
+  lessonNotes: LessonNoteRecord[];
+  studyJournalEntries: StudyJournalEntryRecord[];
+  podcasts: PodcastRecord[];
+  notes: NoteRecord[];
+  noteFolders: NoteFolderRecord[];
+  roadmaps: RoadmapRecord[];
+  roadmapNodes: RoadmapNodeRecord[];
+  roadmapEdges: RoadmapEdgeRecord[];
+  articleAnalyses: ArticleAnalysisRecord[];
+  integrity: string;
+}
+
 export type BackupPayload =
   | BackupV2
   | BackupV3
@@ -286,9 +324,10 @@ export type BackupPayload =
   | BackupV6
   | BackupV7
   | BackupV8
-  | BackupV9;
+  | BackupV9
+  | BackupV10;
 
-export const BACKUP_SCHEMA_VERSION = 9 as const;
+export const BACKUP_SCHEMA_VERSION = 10 as const;
 
 // SECURITY: the `apiKeys` table is deliberately NEVER written to a backup.
 // Exporting credentials off-device would break the BYOK contract — even on
@@ -371,6 +410,7 @@ export async function exportBackup(): Promise<Blob> {
     roadmaps,
     roadmapNodes,
     roadmapEdges,
+    articleAnalyses,
   ] = await Promise.all([
     db.workspaces.toArray(),
     db.sources.toArray(),
@@ -394,11 +434,12 @@ export async function exportBackup(): Promise<Blob> {
     db.roadmaps.toArray(),
     db.roadmapNodes.toArray(),
     db.roadmapEdges.toArray(),
+    db.articleAnalyses.toArray(),
   ]);
 
   const chunks = rawChunks.map(chunkToBackupShape);
 
-  const payload: Omit<BackupV9, "integrity"> = {
+  const payload: Omit<BackupV10, "integrity"> = {
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: Date.now(),
     app: "tme",
@@ -424,12 +465,13 @@ export async function exportBackup(): Promise<Blob> {
     roadmaps,
     roadmapNodes,
     roadmapEdges,
+    articleAnalyses,
   };
 
   const json = JSON.stringify(payload);
   const integrity = await sha256Hex(json);
 
-  const final: BackupV9 = { ...payload, integrity };
+  const final: BackupV10 = { ...payload, integrity };
   const finalJson = JSON.stringify(final);
 
   return new Blob([finalJson], { type: "application/json" });

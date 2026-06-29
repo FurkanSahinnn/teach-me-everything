@@ -151,6 +151,9 @@ export default function SettingsPage() {
       "embedPresetId",
       "flashcardGen",
       "roadmapGen",
+      "analysisExtract",
+      "analysisSynthesize",
+      "analysisCritique",
     ];
     return keys.some((k) => draftBindings[k] !== modelBindings[k]);
   }, [draftBindings, modelBindings]);
@@ -167,6 +170,9 @@ export default function SettingsPage() {
       "embedPresetId",
       "flashcardGen",
       "roadmapGen",
+      "analysisExtract",
+      "analysisSynthesize",
+      "analysisCritique",
     ];
     for (const k of keys) {
       if (draftBindings[k] !== modelBindings[k]) {
@@ -515,6 +521,39 @@ export default function SettingsPage() {
                 hint={pick(
                   "Roadmap sihirbazı ve alt konu üretimi — dengeli bir model önerilir.",
                   "The roadmap wizard + subtask generation — a balanced model is recommended.",
+                )}
+              />
+              <ChatModelRow
+                label={pick("Makale analizi · Çıkarım", "Article analysis · Extraction")}
+                value={draftBindings.analysisExtract}
+                onChange={(v) => setDraftBinding("analysisExtract", v)}
+                options={summaryOptions}
+                keys={keys}
+                hint={pick(
+                  "Makale analizinin çıkarım adımı. OpenRouter ve özel modeller de seçilebilir.",
+                  "The extraction step of article analysis. OpenRouter and custom models are also selectable.",
+                )}
+              />
+              <ChatModelRow
+                label={pick("Makale analizi · Sentez", "Article analysis · Synthesis")}
+                value={draftBindings.analysisSynthesize}
+                onChange={(v) => setDraftBinding("analysisSynthesize", v)}
+                options={summaryOptions}
+                keys={keys}
+                hint={pick(
+                  "Makale analizinin sentez adımı. OpenRouter ve özel modeller de seçilebilir.",
+                  "The synthesis step of article analysis. OpenRouter and custom models are also selectable.",
+                )}
+              />
+              <ChatModelRow
+                label={pick("Makale analizi · Eleştiri", "Article analysis · Critique")}
+                value={draftBindings.analysisCritique}
+                onChange={(v) => setDraftBinding("analysisCritique", v)}
+                options={summaryOptions}
+                keys={keys}
+                hint={pick(
+                  "Makale analizinin eleştiri adımı. OpenRouter ve özel modeller de seçilebilir.",
+                  "The critique step of article analysis. OpenRouter and custom models are also selectable.",
                 )}
               />
               <ModelRow

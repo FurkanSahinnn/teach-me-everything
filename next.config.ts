@@ -19,6 +19,10 @@ function workspaceDevRewrites() {
       destination: "/w/_/roadmap/_?workspaceId=:id&roadmapId=:roadmapId",
     },
     {
+      source: "/w/:id/analysis/:analysisId",
+      destination: "/w/_/analysis/_?workspaceId=:id&analysisId=:analysisId",
+    },
+    {
       source: "/w/:id/study/journal",
       destination: "/w/_/study/journal?workspaceId=:id",
     },

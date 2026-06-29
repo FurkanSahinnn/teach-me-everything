@@ -56,6 +56,10 @@ import {
   listRoadmapsByWorkspace,
 } from "./roadmaps";
 import {
+  getAnalysis,
+  listAnalysesByWorkspace,
+} from "./article-analyses";
+import {
   getPodcast,
   getPodcastBlob,
   listPodcastsByWorkspace,
@@ -829,5 +833,30 @@ export function useRoadmapCompleteNodeIds(roadmapId: string | undefined) {
         : Promise.resolve<string[]>([]),
     [roadmapId],
     [] as string[],
+  );
+}
+
+// Article Analysis hooks. The list page feeds off `useArticleAnalysesByWorkspace`
+// (newest first) and the detail page off `useArticleAnalysis`; both re-fire as
+// the runner flips status generating → ready/draft/error and writes the payload.
+
+// No default value, so the hook returns `undefined` while the Dexie query is
+// still resolving and a concrete array once it settles. The list page uses
+// that to tell loading apart from genuinely empty (avoids an empty-state flash
+// on every navigation).
+export function useArticleAnalysesByWorkspace(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () =>
+      workspaceId
+        ? listAnalysesByWorkspace(workspaceId)
+        : Promise.resolve([]),
+    [workspaceId],
+  );
+}
+
+export function useArticleAnalysis(id: string | undefined) {
+  return useLiveQuery(
+    () => (id ? getAnalysis(id).then((r) => r ?? null) : Promise.resolve(null)),
+    [id],
   );
 }

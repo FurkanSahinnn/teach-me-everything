@@ -20,6 +20,8 @@ type Props<T extends string> = {
   className?: string;
   ariaLabel?: string;
   mono?: boolean;
+  /** When true, all segments are non-interactive (e.g. while a job runs). */
+  disabled?: boolean;
 };
 
 const SIZE_BUTTON: Record<Size, string> = {
@@ -63,14 +65,17 @@ export function SegmentedControl<T extends string>({
   className,
   ariaLabel,
   mono = false,
+  disabled = false,
 }: Props<T>) {
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
+      aria-disabled={disabled || undefined}
       className={cn(
         "inline-flex flex-wrap items-center gap-1.5 rounded-[12px] border p-1.5",
         TONE_CONTAINER[tone],
+        disabled && "opacity-60",
         className,
       )}
     >
@@ -82,12 +87,17 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(option.value)}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) onChange(option.value);
+            }}
             className={cn(
               "inline-flex items-center justify-center rounded-[10px] border font-semibold whitespace-nowrap",
               "transition-[background,color,box-shadow,border-color,transform] duration-[160ms] ease-[cubic-bezier(0.2,0.6,0.2,1)]",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-paper-3",
-              "active:scale-[0.97]",
+              disabled
+                ? "cursor-not-allowed"
+                : "active:scale-[0.97]",
               SIZE_BUTTON[size],
               mono && "font-mono",
               active ? TONE_ACTIVE[tone] : TONE_INACTIVE[tone],

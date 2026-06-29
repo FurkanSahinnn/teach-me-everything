@@ -29,6 +29,7 @@ const DYNAMIC_CHILD: Record<string, string> = {
   read: "sourceId",
   study: "lessonId",
   roadmap: "roadmapId",
+  analysis: "analysisId",
 };
 
 function childParamFor(parent: string | undefined, child: string | undefined) {

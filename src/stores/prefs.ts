@@ -59,6 +59,16 @@ export type ModelBindings = {
   // "Create subtasks"). Configured in Settings → Default models so the wizard
   // itself stays a clean Level/Goal step instead of a cramped 3-model picker.
   roadmapGen: string;
+  // Article Analysis pipeline — three per-stage model bindings so the cheap,
+  // high-volume Map stage and the strong reviewer-lens critic can use
+  // different tiers (and so the user can point any stage at an OpenRouter
+  // model). All configured in Settings → Default models.
+  //   analysisExtract    → Stage 1 Map (per-section summary + quote extraction)
+  //   analysisSynthesize → Stage 2 Reduce + Stage 4 final synthesis
+  //   analysisCritique   → reviewer-persona critic + threats-to-validity
+  analysisExtract: string;
+  analysisSynthesize: string;
+  analysisCritique: string;
   // Research provider id used by the AddUrl pipeline. Widened to plain
   // string so the store accepts future preset additions or migration
   // leftovers without losing the user's choice.
@@ -72,6 +82,9 @@ export const DEFAULT_MODEL_BINDINGS: ModelBindings = {
   embedPresetId: "openai-3-small",
   flashcardGen: "anthropic::claude-sonnet-4-6",
   roadmapGen: "anthropic::claude-sonnet-4-6",
+  analysisExtract: "anthropic::claude-haiku-4-5",
+  analysisSynthesize: "anthropic::claude-sonnet-4-6",
+  analysisCritique: "anthropic::claude-sonnet-4-6",
   researchProvider: "readability",
 };
 
@@ -276,7 +289,7 @@ function isValidVaultPrefs(value: unknown): value is VaultPrefs {
   return true;
 }
 
-const PREFS_VERSION = 23;
+const PREFS_VERSION = 24;
 
 // Phase 11.A — Local-first TTS. `piper` is the default because it ships
 // as a Tauri sidecar with a ~63MB Turkish voice (lazy-installed on first
@@ -300,6 +313,9 @@ const MODEL_BINDING_KEYS: readonly (keyof ModelBindings)[] = [
   "embedPresetId",
   "flashcardGen",
   "roadmapGen",
+  "analysisExtract",
+  "analysisSynthesize",
+  "analysisCritique",
   "researchProvider",
 ];
 
@@ -619,6 +635,35 @@ export function migratePrefs(
     // Additive: opt-in auto-check for desktop updates on launch (Tauri only).
     if (typeof next.autoCheckUpdates !== "boolean") {
       next.autoCheckUpdates = true;
+    }
+  }
+  if (version < 24) {
+    // Article Analysis gets three per-stage default-model bindings
+    // (Settings → Default models). Backfill each from a sensible sibling tier
+    // — extract from `quick` (cheap/Haiku), synthesize + critique from
+    // `summary` (balanced/Sonnet) — else the per-key default. Without this,
+    // the newly required keys would fail isValidModelBindings and reset ALL
+    // bindings to defaults. Same shape as the v21 roadmapGen branch.
+    if (next.modelBindings && typeof next.modelBindings === "object") {
+      const mb = next.modelBindings as Record<string, unknown>;
+      if (typeof mb.analysisExtract !== "string") {
+        mb.analysisExtract =
+          typeof mb.quick === "string"
+            ? mb.quick
+            : DEFAULT_MODEL_BINDINGS.analysisExtract;
+      }
+      if (typeof mb.analysisSynthesize !== "string") {
+        mb.analysisSynthesize =
+          typeof mb.summary === "string"
+            ? mb.summary
+            : DEFAULT_MODEL_BINDINGS.analysisSynthesize;
+      }
+      if (typeof mb.analysisCritique !== "string") {
+        mb.analysisCritique =
+          typeof mb.summary === "string"
+            ? mb.summary
+            : DEFAULT_MODEL_BINDINGS.analysisCritique;
+      }
     }
   }
   return next as PrefsState;

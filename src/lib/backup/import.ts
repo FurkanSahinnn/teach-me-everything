@@ -34,11 +34,12 @@ import type {
   RoadmapNodeRecord,
   RoadmapRecord,
 } from "@/lib/roadmap/types";
+import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
 import {
   BACKUP_SCHEMA_VERSION,
   computePayloadHash,
   type BackupPayload,
-  type BackupV9,
+  type BackupV10,
   type ChunkBackupShape,
 } from "./export";
 
@@ -254,25 +255,26 @@ async function verifyIntegrity(parsed: BackupPayload): Promise<void> {
 function ensureSchemaVersion(version: number): void {
   // Every prior major must be enumerated explicitly so a version bump never
   // accidentally rejects a backup the user took two phases ago.
-  if (![2, 3, 4, 5, 6, 7, 8, BACKUP_SCHEMA_VERSION].includes(version)) {
+  if (![2, 3, 4, 5, 6, 7, 8, 9, BACKUP_SCHEMA_VERSION].includes(version)) {
     throw new BackupSchemaError(
-      `Unsupported backup schemaVersion ${version} (expected 2, 3, 4, 5, 6, 7, 8, or ${BACKUP_SCHEMA_VERSION})`,
+      `Unsupported backup schemaVersion ${version} (expected 2, 3, 4, 5, 6, 7, 8, 9, or ${BACKUP_SCHEMA_VERSION})`,
       version,
     );
   }
 }
 
-function normalizeBackup(parsed: BackupPayload): BackupV9 {
+function normalizeBackup(parsed: BackupPayload): BackupV10 {
   if (parsed.schemaVersion === BACKUP_SCHEMA_VERSION) {
-    // Backfill the roadmap arrays for v9 backups produced before roadmap
-    // backup support landed (those payloads were exported without these
-    // tables). Integrity is verified against the original payload, so this
-    // post-verify backfill is safe.
+    // Backfill the roadmap + analysis arrays for v10 backups produced before
+    // those tables joined the backup payload (older exports omitted them).
+    // Integrity is verified against the original payload, so this post-verify
+    // backfill is safe.
     return {
       ...parsed,
       roadmaps: parsed.roadmaps ?? [],
       roadmapNodes: parsed.roadmapNodes ?? [],
       roadmapEdges: parsed.roadmapEdges ?? [],
+      articleAnalyses: parsed.articleAnalyses ?? [],
     };
   }
   const { integrity: _integrity, ...rest } = parsed;
@@ -283,7 +285,8 @@ function normalizeBackup(parsed: BackupPayload): BackupV9 {
     parsed.schemaVersion === 5 ||
     parsed.schemaVersion === 6 ||
     parsed.schemaVersion === 7 ||
-    parsed.schemaVersion === 8
+    parsed.schemaVersion === 8 ||
+    parsed.schemaVersion === 9
       ? {
           quizSessions: parsed.quizSessions,
           concepts: parsed.concepts,
@@ -299,7 +302,8 @@ function normalizeBackup(parsed: BackupPayload): BackupV9 {
     parsed.schemaVersion === 5 ||
     parsed.schemaVersion === 6 ||
     parsed.schemaVersion === 7 ||
-    parsed.schemaVersion === 8
+    parsed.schemaVersion === 8 ||
+    parsed.schemaVersion === 9
       ? {
           curricula: parsed.curricula,
           curriculumItems: parsed.curriculumItems,
@@ -316,21 +320,34 @@ function normalizeBackup(parsed: BackupPayload): BackupV9 {
     parsed.schemaVersion === 5 ||
     parsed.schemaVersion === 6 ||
     parsed.schemaVersion === 7 ||
-    parsed.schemaVersion === 8
+    parsed.schemaVersion === 8 ||
+    parsed.schemaVersion === 9
       ? { podcasts: parsed.podcasts }
       : { podcasts: [] };
   const v8Fields =
-    parsed.schemaVersion === 8
+    parsed.schemaVersion === 8 || parsed.schemaVersion === 9
       ? { notes: parsed.notes, noteFolders: parsed.noteFolders }
       : { notes: [], noteFolders: [] };
-  // Roadmap tables (v9) never existed in legacy v2-v8 payloads, so they
-  // always default to empty here; a genuine v9 backup short-circuits above.
+  // Roadmap tables first shipped in v9, so a v9 backup carries them; older
+  // v2-v8 payloads never had them and default to empty.
   const v9Fields: {
-    roadmaps: BackupV9["roadmaps"];
-    roadmapNodes: BackupV9["roadmapNodes"];
-    roadmapEdges: BackupV9["roadmapEdges"];
-  } = { roadmaps: [], roadmapNodes: [], roadmapEdges: [] };
-  // v6/v7/v8 carried `planBlocks` (Plan feature). v9 drops Plan entirely
+    roadmaps: BackupV10["roadmaps"];
+    roadmapNodes: BackupV10["roadmapNodes"];
+    roadmapEdges: BackupV10["roadmapEdges"];
+  } =
+    parsed.schemaVersion === 9
+      ? {
+          roadmaps: parsed.roadmaps,
+          roadmapNodes: parsed.roadmapNodes,
+          roadmapEdges: parsed.roadmapEdges,
+        }
+      : { roadmaps: [], roadmapNodes: [], roadmapEdges: [] };
+  // `articleAnalyses` (v10) never existed in any legacy v2-v9 payload, so it
+  // always defaults to empty here; a genuine v10 backup short-circuits above.
+  const v10Fields: { articleAnalyses: BackupV10["articleAnalyses"] } = {
+    articleAnalyses: [],
+  };
+  // v6/v7/v8 carried `planBlocks` (Plan feature). v9+ drops Plan entirely
   // (Roadmap supersedes it — docs/ROADMAP_FEATURE_SPEC.md). We strip the
   // field out of legacy payloads at restore time; the user explicitly
   // accepted that Plan data is not preserved during the Q&A 2026-05-25.
@@ -339,13 +356,14 @@ function normalizeBackup(parsed: BackupPayload): BackupV9 {
   void _legacyNotes;
   void _legacyNoteFolders;
   return {
-    ...(restWithoutLegacy as Omit<BackupV9, "schemaVersion" | "integrity" | "quizSessions" | "concepts" | "conceptEdges" | "curricula" | "curriculumItems" | "lessonNotes" | "studyJournalEntries" | "podcasts" | "notes" | "noteFolders" | "roadmaps" | "roadmapNodes" | "roadmapEdges">),
+    ...(restWithoutLegacy as Omit<BackupV10, "schemaVersion" | "integrity" | "quizSessions" | "concepts" | "conceptEdges" | "curricula" | "curriculumItems" | "lessonNotes" | "studyJournalEntries" | "podcasts" | "notes" | "noteFolders" | "roadmaps" | "roadmapNodes" | "roadmapEdges" | "articleAnalyses">),
     schemaVersion: BACKUP_SCHEMA_VERSION,
     ...v3Fields,
     ...v4Fields,
     ...v5Fields,
     ...v8Fields,
     ...v9Fields,
+    ...v10Fields,
     integrity: parsed.integrity,
   };
 }
@@ -629,6 +647,16 @@ export async function importBackup(
     }
   }
 
+  const existingAnalysisIds = new Set(
+    (await db.articleAnalyses.toArray()).map((a) => a.id),
+  );
+  const analysisRemap = new Map<string, string>();
+  for (const a of backup.articleAnalyses) {
+    if (remapsWholeWorkspace(a.workspaceId) || existingAnalysisIds.has(a.id)) {
+      analysisRemap.set(a.id, mintId());
+    }
+  }
+
   const remapWs = (id: string): string => workspaceRemap.get(id) ?? id;
   const remapSource = (id: string | undefined): string | undefined =>
     id === undefined ? undefined : (sourceRemap.get(id) ?? id);
@@ -896,6 +924,18 @@ export async function importBackup(
     fromNodeId: remapRoadmapNode(e.fromNodeId),
     toNodeId: remapRoadmapNode(e.toNodeId),
   }));
+  // An analysis binds to exactly one workspace + source. The structured
+  // payload also embeds best-effort `chunkId` citations, but those are
+  // re-resolved in code on the detail page (see article-analysis/types.ts),
+  // so we leave the JSON blob alone and only remap the row-level FKs.
+  const articleAnalyses: ArticleAnalysisRecord[] = backup.articleAnalyses.map(
+    (a) => ({
+      ...a,
+      id: analysisRemap.get(a.id) ?? a.id,
+      workspaceId: remapWs(a.workspaceId),
+      sourceId: remapSourceId(a.sourceId),
+    }),
+  );
   // Plan blocks (legacy v6-v8 payloads) are intentionally discarded here:
   // Roadmap replaces Plan and the Dexie table itself is gone.
   await db.transaction(
@@ -923,6 +963,7 @@ export async function importBackup(
       db.roadmaps,
       db.roadmapNodes,
       db.roadmapEdges,
+      db.articleAnalyses,
     ],
     async () => {
       // bulkPut so re-importing your own backup over a clean DB is idempotent
@@ -949,6 +990,7 @@ export async function importBackup(
       await db.roadmaps.bulkPut(roadmaps);
       await db.roadmapNodes.bulkPut(roadmapNodes);
       await db.roadmapEdges.bulkPut(roadmapEdges);
+      await db.articleAnalyses.bulkPut(articleAnalyses);
     },
   );
 
@@ -974,7 +1016,8 @@ export async function importBackup(
     notes.length +
     roadmaps.length +
     roadmapNodes.length +
-    roadmapEdges.length;
+    roadmapEdges.length +
+    articleAnalyses.length;
 
   return {
     imported,
@@ -1000,6 +1043,7 @@ export async function importBackup(
       noteRemap.size +
       roadmapRemap.size +
       roadmapNodeRemap.size +
-      roadmapEdgeRemap.size,
+      roadmapEdgeRemap.size +
+      analysisRemap.size,
   };
 }
