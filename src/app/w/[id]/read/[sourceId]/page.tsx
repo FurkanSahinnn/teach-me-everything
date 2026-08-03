@@ -6,7 +6,6 @@ import {
   BookText,
   ChevronDown,
   ChevronsLeft,
-  Check,
   CircleStop,
   CornerUpLeft,
   FileImage,
@@ -23,7 +22,6 @@ import {
   Settings2,
   Sparkles,
   SquareStack,
-  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -31,7 +29,7 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MarkdownPreview } from "@/components/markdown/MarkdownPreview";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
@@ -41,7 +39,6 @@ import { Button } from "@/components/ui/Button";
 import { Kbd } from "@/components/ui/Kbd";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
-  CitationChip,
   findChunkForRef,
   parseCitations,
 } from "@/components/notebook/CitationChip";
@@ -2047,10 +2044,15 @@ function ReaderPanel({
             ) : (
               <article>
                 {chunks.map((chunk) => (
+                  // `content-visibility: auto` lets the browser skip layout and
+                  // paint for chunks scrolled out of view — a long source is
+                  // hundreds of sections, and rendering them all on mount is
+                  // what makes the reader stall on big PDFs. The intrinsic-size
+                  // hint keeps the scrollbar stable before a chunk is measured.
                   <section
                     key={chunk.id}
                     id={`chunk-${chunk.id}`}
-                    className="mb-12 flex scroll-mt-24 flex-col"
+                    className="mb-12 flex scroll-mt-24 flex-col [content-visibility:auto] [contain-intrinsic-size:auto_600px]"
                   >
                     {chunk.section ? (
                       <h3 className="mb-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent-ink">
@@ -2117,7 +2119,14 @@ function ReaderPanel({
   );
 }
 
-function ReaderChunkMarkdown({ chunk }: { chunk: ChunkRecord }) {
+// Memoized on `chunk` identity: ReaderPanel re-renders on every panel-resize,
+// view-mode or chat interaction, and without this each one reconciles the full
+// markdown subtree of every chunk in the source.
+const ReaderChunkMarkdown = memo(function ReaderChunkMarkdown({
+  chunk,
+}: {
+  chunk: ChunkRecord;
+}) {
   const segments = useMemo(() => splitChunkIntoMarkdownSegments(chunk), [chunk]);
   return (
     <>
@@ -2132,7 +2141,7 @@ function ReaderChunkMarkdown({ chunk }: { chunk: ChunkRecord }) {
       ))}
     </>
   );
-}
+});
 
 function EmptyChunks({
   status,
@@ -2664,171 +2673,6 @@ function TypingDots({
       <span>{pick("Hazırlanıyor…", "Preparing…")}</span>
     </div>
   );
-}
-
-function ChatBubble({
-  message,
-  chunks,
-  isStreaming,
-  onJumpCitation,
-  pick,
-}: {
-  message: ChatMessageRecord;
-  chunks: ChunkRecord[];
-  isStreaming: boolean;
-  onJumpCitation: (chunk: ChunkRecord) => void;
-  pick: (tr: string, en: string) => string;
-}) {
-  const t = useTranslations("reader");
-  const isUser = message.role === "user";
-  const time = useMemo(() => formatTime(message.createdAt, pick), [message.createdAt, pick]);
-  const totalIn = (message.tokensIn ?? 0);
-  const cacheHit = (message.cacheReadTokens ?? 0) > 0;
-  const showMeta =
-    !isUser && (totalIn > 0 || (message.tokensOut ?? 0) > 0 || message.model);
-
-  const tokens = useMemo(
-    () => (isUser ? null : parseCitations(message.content ?? "")),
-    [isUser, message.content],
-  );
-
-  if (message.role === "tool") return null;
-  if (message.role === "assistant" && message.toolName) {
-    return <ToolActionBubble message={message} pick={pick} />;
-  }
-
-  return (
-    <div className={cn("flex flex-col gap-2", isUser && "items-end")}>
-      <div className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-4">
-        <span>{isUser ? t("sen") : "Claude"}</span>
-        <span>·</span>
-        <span>{time}</span>
-      </div>
-      <div
-        className={cn(
-          "max-w-[300px] whitespace-pre-wrap rounded-lg px-3.5 py-2.5 text-[13.5px] leading-[1.6]",
-          isUser
-            ? "border border-accent-soft/40 bg-accent-wash text-ink"
-            : "bg-paper-2 text-ink",
-          isStreaming && !isUser && "after:ml-0.5 after:inline-block after:h-3 after:w-1.5 after:animate-pulse after:bg-ink-4 after:align-middle",
-        )}
-      >
-        {isUser ? (
-          message.content
-        ) : tokens && tokens.length > 0 ? (
-          tokens.map((tok, i) => {
-            if (tok.kind === "text") {
-              return <span key={i}>{tok.text}</span>;
-            }
-            const chunk = findChunkForRef(tok.ref, chunks);
-            return (
-              <CitationChip
-                key={i}
-                ref={tok.ref}
-                active={!!chunk}
-                onActivate={() => chunk && onJumpCitation(chunk)}
-              />
-            );
-          })
-        ) : message.content ? (
-          message.content
-        ) : isStreaming ? (
-          ""
-        ) : (
-          "…"
-        )}
-      </div>
-      {showMeta ? (
-        <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">
-          {(message.tokensIn ?? 0)}↓ · {(message.tokensOut ?? 0)}↑
-          {" · "}
-          {pick("önbellek", "cache")}: {cacheHit ? pick("isabet", "hit") : pick("kaçık", "miss")}
-          {message.interrupted ? ` · ${pick("kesildi", "interrupted")}` : ""}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ToolActionBubble({
-  message,
-  pick,
-}: {
-  message: ChatMessageRecord;
-  pick: (tr: string, en: string) => string;
-}) {
-  const status = message.toolStatus ?? "pending";
-  const StatusIcon =
-    status === "ok" ? Check : status === "error" ? AlertCircle : Loader2;
-  const statusTone =
-    status === "ok"
-      ? "text-ok"
-      : status === "error"
-        ? "text-err"
-        : "text-ink-3";
-  const argsPreview = formatToolArgs(message.toolArgs);
-  const labelMap: Record<string, [string, string]> = {
-    add_flashcard: ["Karta ekle", "Add flashcard"],
-    open_citation: ["Alıntıya git", "Open citation"],
-    simplify_explanation: ["Daha basit anlat", "Simplify"],
-  };
-  const label = labelMap[message.toolName ?? ""];
-  const labelText = label
-    ? pick(label[0], label[1])
-    : (message.toolName ?? "");
-
-  return (
-    <div className="flex max-w-[300px] flex-col gap-1">
-      <div className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-4">
-        <Wrench className="h-3 w-3" aria-hidden />
-        <span>TOOL</span>
-        <span>·</span>
-        <span className="normal-case">{message.toolName}</span>
-      </div>
-      <div className="rounded-lg border border-rule bg-paper-2 px-3 py-2">
-        <div className="flex items-center gap-2 text-[12.5px] text-ink-2">
-          <StatusIcon
-            className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              statusTone,
-              status === "pending" && "animate-spin",
-            )}
-            aria-hidden
-          />
-          <span className="font-medium">{labelText}</span>
-        </div>
-        {argsPreview ? (
-          <pre className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink-3">
-            {argsPreview}
-          </pre>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function formatToolArgs(args: Record<string, unknown> | undefined): string {
-  if (!args) return "";
-  const entries = Object.entries(args).filter(
-    ([, v]) => v !== undefined && v !== "" && v !== null,
-  );
-  if (entries.length === 0) return "";
-  return entries
-    .map(([k, v]) => {
-      const text = typeof v === "string" ? v : JSON.stringify(v);
-      const trimmed = text.length > 120 ? `${text.slice(0, 120)}…` : text;
-      return `${k}: ${trimmed}`;
-    })
-    .join("\n");
-}
-
-function formatTime(ts: number, pick: (tr: string, en: string) => string): string {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return pick("şimdi", "now");
-  const date = new Date(ts);
-  const hh = date.getHours().toString().padStart(2, "0");
-  const mm = date.getMinutes().toString().padStart(2, "0");
-  return `${hh}:${mm}`;
 }
 
 // Renders nothing until selection state changes. Lives in its own subscriber

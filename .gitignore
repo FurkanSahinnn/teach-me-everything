@@ -24,9 +24,16 @@
 /blob-report/
 /.nyc_output/
 
+# generated analysis output (codemap diffs, audit scratch)
+/.reports/
+
 # env files and local secrets
 .env
 .env.*
+# ...but a committed template is how contributors learn which vars exist.
+# Without these negations `.env.*` above silently swallows them.
+!.env.example
+!.env.template
 *.pem
 *.key
 *.p8
@@ -54,22 +61,35 @@ secrets.*
 .codex/local.*
 .codex/*.local.*
 
-# project notes not intended for git
+# docs: default-private, with contributor-facing pages explicitly opted in.
+# A fork is MIT and self-hostable, so the docs a contributor actually needs to
+# build (architecture, design tokens, feature map, provider setup) ship with
+# the code; internal planning/audit scratch stays local.
 /docs/*
+!/docs/ARCHITECTURE.md
+!/docs/PROJECT_INDEX.md
+!/docs/FEATURES.md
+!/docs/DESIGN_SYSTEM.md
+!/docs/PROVIDERS.md
+!/docs/PROVIDERS_LOCAL.md
+!/docs/README.md
 !/docs/STATIC_EXPORT_WORKSPACE_ROUTING.md
+# Negating a directory needs the dir itself un-ignored before its contents
+# can match — `!/docs/CODEMAPS/**` alone would never be reached.
+!/docs/CODEMAPS/
+!/docs/CODEMAPS/**
+
+# project notes not intended for git
 /legacy/
 /AGENTS.md
-/CLAUDE.md
 
 # npm/package-manager local artifacts
+# (Yarn Berry dirs are already covered by the `.yarn/*` block at the top —
+# repeating cache/unplugged/build-state/install-state here was redundant.)
 /.npm/
 /.npmrc.local
 /.npmrc.*.local
 /.pnpm-store/
-/.yarn/cache/
-/.yarn/unplugged/
-/.yarn/build-state.yml
-/.yarn/install-state.gz
 /.parcel-cache/
 /.turbo/
 

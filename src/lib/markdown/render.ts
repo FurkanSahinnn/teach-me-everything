@@ -1,5 +1,10 @@
 import katexPlugin from "@vscode/markdown-it-katex";
-import hljs from "highlight.js";
+// `highlight.js` (the bare entry) registers all 192 bundled languages — ~1.5MB
+// of grammars in every route that renders markdown. `lib/common` is the same
+// API with the 37 mainstream languages only. The `hljs.getLanguage(lang)` guard
+// below already renders unknown languages as plain monospace, so a fence in a
+// language outside the common set degrades exactly like a bare ``` fence.
+import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
 import { findChunkForRef } from "@/components/notebook/CitationChip";
 import type { ChunkRecord } from "@/lib/db/types";

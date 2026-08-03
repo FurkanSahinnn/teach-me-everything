@@ -32,7 +32,7 @@ import type {
 } from "@/lib/db/types";
 import { computeSm2, formatNextDue, isLeech } from "@/lib/srs/sm2";
 import { buildSession } from "@/lib/srs/session";
-import { LeechBadge } from "@/components/cards/LeechBadge";
+import { LeechBadge } from "@/components/flashcards/LeechBadge";
 import { usePrefs } from "@/stores/prefs";
 import { useCurrentTime } from "@/hooks/useCurrentTime";
 
