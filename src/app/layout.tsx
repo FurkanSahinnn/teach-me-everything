@@ -3,11 +3,11 @@ import { Geist, JetBrains_Mono, Source_Serif_4 } from "next/font/google";
 import { IntlProvider } from "@/i18n/IntlProvider";
 import { ToastProvider } from "@/components/ui/Toast";
 import { VaultSetupBoot } from "@/components/vault/VaultSetupBoot";
-import { TrayMount } from "@/components/tray/TrayMount";
-import { DeepLinkMount } from "@/components/tray/DeepLinkMount";
-import { MenuMount } from "@/components/tray/MenuMount";
-import { EventBridgeMount } from "@/components/tray/EventBridgeMount";
-import { UpdateCheckMount } from "@/components/shell/UpdateCheckMount";
+import { TrayMount } from "@/components/mounts/TrayMount";
+import { DeepLinkMount } from "@/components/mounts/DeepLinkMount";
+import { MenuMount } from "@/components/mounts/MenuMount";
+import { EventBridgeMount } from "@/components/mounts/EventBridgeMount";
+import { UpdateCheckMount } from "@/components/mounts/UpdateCheckMount";
 import { themeInitScript } from "@/lib/utils/theme-script";
 import "./globals.css";
 

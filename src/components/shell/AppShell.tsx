@@ -6,12 +6,12 @@ import {
   useEffect,
   useState,
 } from "react";
-import { SeedBootstrap } from "@/components/SeedBootstrap";
+import { SeedBootstrap } from "@/components/mounts/SeedBootstrap";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
 import { BottomBar } from "@/components/shell/BottomBar";
 import { MobileDrawer } from "@/components/shell/MobileDrawer";
-import { SIDEBAR_TOGGLE_EVENT } from "@/components/tray/EventBridgeMount";
+import { SIDEBAR_TOGGLE_EVENT } from "@/components/mounts/EventBridgeMount";
 
 type AppShellProps = {
   workspaceId?: string | undefined;

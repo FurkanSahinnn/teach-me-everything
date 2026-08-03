@@ -58,6 +58,10 @@ export type WorkspaceChatPanelProps = {
   setSelectedSourceIds?: (next: string[]) => void;
 };
 
+// Stable identity for the "no explicit selection" case — see the matching
+// constant in ContextBar; an inline `?? []` re-renders the picker every turn.
+const NO_SOURCE_IDS: string[] = [];
+
 export function WorkspaceChatPanel({
   workspaceId,
   threads,
@@ -166,7 +170,7 @@ export function WorkspaceChatPanel({
         webEnabled={webSearchEnabled}
         onToggleWeb={setWebSearchEnabled}
         sources={pickableSources}
-        selectedSourceIds={selectedSourceIds ?? []}
+        selectedSourceIds={selectedSourceIds ?? NO_SOURCE_IDS}
         disabled={isBusy}
         {...(setSelectedSourceIds
           ? { onChangeSelectedSources: setSelectedSourceIds }

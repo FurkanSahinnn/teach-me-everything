@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { CommandPalette } from "@/components/palette/CommandPalette";
 import { ShortcutsHelpModal } from "@/components/shortcuts/ShortcutsHelpModal";
-import { PALETTE_OPEN_EVENT } from "@/components/tray/EventBridgeMount";
+import { PALETTE_OPEN_EVENT } from "@/components/mounts/EventBridgeMount";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Kbd } from "@/components/ui/Kbd";

@@ -3,30 +3,19 @@ import type {
   WebSearchUsage,
 } from "./web-search/types";
 
-// Pricing snapshot · provider invoice'u source of truth
+// Pricing table · provider invoice'u source of truth
 // AI pricing table — USD per 1M tokens, broken down by request shape.
 //
-// Numbers reflect public Anthropic / OpenAI list pricing as of the snapshot
-// date below and are only used to *estimate* user-visible cost. The provider's
-// invoice is the source of truth. We never call out to a billing API.
+// Numbers reflect public list pricing and are only used to *estimate*
+// user-visible cost. The provider's invoice is the source of truth. We never
+// call out to a billing API.
 //
-// Periodic sync: bump `PRICING_SNAPSHOT_DATE` (and any changed entries) when
-// you re-verify cloud prices. The pricing-freshness test fails CI once the
-// snapshot is older than `PRICING_FRESHNESS_DAYS_MAX` days, so the cadence
-// is enforced rather than aspirational. See `docs/PROVIDERS.md` § 5.
-export const PRICING_SNAPSHOT_DATE = "2026-04-29";
-export const PRICING_FRESHNESS_DAYS_MAX = 90;
-
-export function pricingSnapshotAgeDays(now: Date = new Date()): number {
-  const snap = new Date(`${PRICING_SNAPSHOT_DATE}T00:00:00Z`);
-  const ms = now.getTime() - snap.getTime();
-  return Math.floor(ms / (24 * 60 * 60 * 1000));
-}
-
-export function isPricingSnapshotStale(now: Date = new Date()): boolean {
-  return pricingSnapshotAgeDays(now) > PRICING_FRESHNESS_DAYS_MAX;
-}
-
+// There is deliberately NO global freshness gate on this table. Under BYOK the
+// user picks among many providers — each on its own pricing cadence, plus
+// OpenRouter and arbitrary custom endpoints whose rates we cannot know at all —
+// so a single repo-wide "snapshot date" could never describe whether the entry
+// a given user actually bills against is current. Update individual entries as
+// they change; see `docs/PROVIDERS.md` § 5.
 export interface ModelPricing {
   input: number;
   output: number;

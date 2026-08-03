@@ -37,6 +37,11 @@ type ContextBarProps = {
   disabled?: boolean;
 };
 
+// Stable identity for the "no explicit selection" case. Inlining `?? []` at the
+// call site would hand SourceScopePicker a fresh array every render, busting the
+// `useMemo(() => new Set(selectedSourceIds))` it builds from this prop.
+const NO_SOURCE_IDS: string[] = [];
+
 // The non-web grounding chips, in display order. Sources is first and defaults
 // on (the runner seeds `["sources"]`); the rest are opt-in study-context blocks.
 type ChipDef = {
@@ -147,7 +152,7 @@ export function ContextBar({
             sources.length >= 2 ? (
               <SourceScopePicker
                 sources={sources}
-                selectedSourceIds={selectedSourceIds ?? []}
+                selectedSourceIds={selectedSourceIds ?? NO_SOURCE_IDS}
                 onChange={onChangeSelectedSources}
                 disabled={disabled || !active.has("sources")}
               />
