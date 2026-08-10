@@ -9,16 +9,21 @@ import {
   ShieldQuestion,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
-import { CitationChip } from "@/components/notebook/CitationChip";
+import {
+  CitationChip,
+  type CitationTone,
+} from "@/components/notebook/CitationChip";
 import { useLocalePick } from "@/i18n/IntlProvider";
+import { scoreGrounding } from "@/lib/article-analysis/citation-verify";
 import type {
   AnalysisCitation,
   AnalysisClaim,
   ArticleAnalysisPayload,
   ArticleAnalysisRecord,
+  CitationVerification,
 } from "@/lib/article-analysis/types";
 import { cn } from "@/lib/utils/cn";
 
@@ -134,31 +139,88 @@ function GeneralBadge({ pick }: { pick: PickFn }) {
   );
 }
 
+// Legacy analyses (generated before quote verification existed) carry no
+// verdict; fall back to chunkId presence so they don't all read as fabricated.
+function verdictOf(c: AnalysisCitation): CitationVerification {
+  return c.verification ?? (c.chunkId ? "exact" : "unverified");
+}
+
+const VERDICT_TONE: Record<CitationVerification, CitationTone> = {
+  exact: "default",
+  fuzzy: "approx",
+  unverified: "unverified",
+};
+
+function verdictTitle(v: CitationVerification, pick: PickFn): string {
+  switch (v) {
+    case "exact":
+      return pick(
+        "Bu alıntı makalede birebir bulundu. Pasaja gitmek için tıkla.",
+        "Found verbatim in the paper. Click to jump to the passage.",
+      );
+    case "fuzzy":
+      return pick(
+        "Yaklaşık eşleşme — modelin alıntısı makaledeki metinden biraz farklı. Pasaja gitmek için tıkla.",
+        "Approximate match — the model's quote differs slightly from the paper. Click to jump to the passage.",
+      );
+    case "unverified":
+      return pick(
+        "Bu alıntı makalede bulunamadı. Kaynak metni olarak değil, model ifadesi olarak değerlendir.",
+        "This quote could not be found in the paper. Treat it as model prose, not source text.",
+      );
+  }
+}
+
 function CitationChips({
   citations,
+  pick,
   onJump,
 }: {
   citations: AnalysisCitation[];
+  pick: PickFn;
   onJump: (chunkId: string) => void;
 }) {
   return (
     <>
       {citations.map((c, i) => {
-        const active = Boolean(c.chunkId);
+        const verdict = verdictOf(c);
+        const active = Boolean(c.chunkId) && verdict !== "unverified";
         const display =
           c.quote.length > 56 ? `${c.quote.slice(0, 56)}…` : c.quote;
         return (
-          <CitationChip
-            key={i}
-            ref={display}
-            active={active}
-            onActivate={() => {
-              if (c.chunkId) onJump(c.chunkId);
-            }}
-          />
+          <span key={i} title={verdictTitle(verdict, pick)}>
+            <CitationChip
+              ref={display}
+              active={active}
+              tone={VERDICT_TONE[verdict]}
+              onActivate={() => {
+                if (c.chunkId) onJump(c.chunkId);
+              }}
+            />
+          </span>
         );
       })}
     </>
+  );
+}
+
+// A source-tagged claim that cites nothing at all promises paper backing and
+// delivers none — the same failure as an unverifiable quote, so it gets the
+// same visible caution rather than rendering as a bare bullet.
+function UncitedBadge({ pick }: { pick: PickFn }) {
+  return (
+    <Chip
+      variant="muted"
+      size="sm"
+      className="gap-1 border-dashed border-warn/40 bg-warn/10 text-[10px] uppercase tracking-[0.04em] text-warn"
+      title={pick(
+        "Kaynağa dayandığı belirtildi ama alıntı verilmedi.",
+        "Tagged as source-grounded but carries no quote.",
+      )}
+    >
+      <ShieldQuestion className="h-2.5 w-2.5" aria-hidden />
+      {pick("alıntısız", "uncited")}
+    </Chip>
   );
 }
 
@@ -193,10 +255,16 @@ function ClaimList({
           </div>
           <div className="flex flex-wrap items-center gap-1.5 pl-3">
             {claim.grounding === "general" ? <GeneralBadge pick={pick} /> : null}
-            {claim.grounding === "source" &&
-            claim.citations &&
-            claim.citations.length > 0 ? (
-              <CitationChips citations={claim.citations} onJump={onJump} />
+            {claim.grounding === "source" ? (
+              claim.citations && claim.citations.length > 0 ? (
+                <CitationChips
+                  citations={claim.citations}
+                  pick={pick}
+                  onJump={onJump}
+                />
+              ) : (
+                <UncitedBadge pick={pick} />
+              )
             ) : null}
           </div>
         </li>
@@ -527,6 +595,77 @@ function GlossaryTable({
 }
 
 // ---------------------------------------------------------------------------
+// Grounding score — how much of this analysis is actually backed by the paper
+// ---------------------------------------------------------------------------
+
+// Every claim array that carries grounding tags. Keep in sync with the payload
+// shape; `methodWalkthrough` is excluded (MethodStep has no grounding field).
+function groundedClaimLists(p: ArticleAnalysisPayload): AnalysisClaim[][] {
+  return [
+    p.problemMotivation,
+    p.priorWorkGap,
+    p.contributions,
+    p.howItSolves,
+    p.keyResults,
+    p.assumptionsLimitations,
+  ];
+}
+
+function GroundingSummary({
+  payload,
+  pick,
+}: {
+  payload: ArticleAnalysisPayload;
+  pick: PickFn;
+}) {
+  const score = useMemo(
+    () => scoreGrounding(groundedClaimLists(payload)),
+    [payload],
+  );
+  if (score.sourceClaims === 0) return null;
+
+  const pct = Math.round((score.verifiedClaims / score.sourceClaims) * 100);
+  // Three bands: mostly-verified reads as ok, a partially-verified analysis as
+  // a caution, and a mostly-unverifiable one as an error the reader must know
+  // about before trusting a single quote on the page.
+  const tone =
+    pct >= 80
+      ? { border: "border-ok/30", bg: "bg-ok/10", text: "text-ok" }
+      : pct >= 50
+        ? { border: "border-warn/30", bg: "bg-warn/10", text: "text-warn" }
+        : { border: "border-err/30", bg: "bg-err/10", text: "text-err" };
+
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border px-3 py-2 text-[12px]",
+        tone.border,
+        tone.bg,
+      )}
+    >
+      <span className={cn("font-medium", tone.text)}>
+        {pick(
+          `Kaynak doğrulaması: ${score.verifiedClaims}/${score.sourceClaims} ifade (%${pct})`,
+          `Source-verified: ${score.verifiedClaims}/${score.sourceClaims} claims (${pct}%)`,
+        )}
+      </span>
+      <span className="font-mono text-[11px] text-ink-4">
+        {pick(
+          `${score.exact} birebir · ${score.fuzzy} yaklaşık · ${score.unverified} bulunamadı`,
+          `${score.exact} exact · ${score.fuzzy} approx · ${score.unverified} not found`,
+        )}
+      </span>
+      <span className="w-full text-[11.5px] leading-relaxed text-ink-4">
+        {pick(
+          "Her alıntı makale metnine karşı denetlendi. Bulunamayan alıntılar modelin ifadesidir, makalenin değil.",
+          "Every quote was checked against the paper's text. Quotes marked not found are the model's wording, not the paper's.",
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 
@@ -535,11 +674,13 @@ export function AnalysisDetailView({ analysis }: Props) {
   const router = useRouter();
   const payload = analysis.payload;
 
-  // Active source citations jump to the reader for this analysis's single
-  // source. (Per-chunk anchoring isn't deep-linkable today; opening the source
-  // is the closest non-disruptive "jump".)
-  const onJump = (_chunkId: string): void => {
-    router.push(`/w/${analysis.workspaceId}/read/${analysis.sourceId}`);
+  // Source citations deep-link to the exact chunk in the reader, which scrolls
+  // it into view and pulses it (`?chunk=`). A chip that promised a jump and
+  // landed on page 1 made the grounding feel decorative.
+  const onJump = (chunkId: string): void => {
+    router.push(
+      `/w/${analysis.workspaceId}/read/${analysis.sourceId}?chunk=${encodeURIComponent(chunkId)}`,
+    );
   };
 
   if (!payload) {
@@ -566,6 +707,8 @@ export function AnalysisDetailView({ analysis }: Props) {
           </span>
         </div>
       ) : null}
+
+      <GroundingSummary payload={payload} pick={pick} />
 
       <Section
         title={pick("1 · Yönlendirme", "1 · Orientation")}

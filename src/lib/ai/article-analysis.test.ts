@@ -267,6 +267,37 @@ describe("runArticleAnalysis", () => {
     expect(resultCite?.chunkId).toBe("ck_1");
   });
 
+  it("stamps every citation with a verification verdict", async () => {
+    const result = await runArticleAnalysis(baseArgs());
+    expect(result.payload.problemMotivation[0]?.citations?.[0]).toMatchObject({
+      verification: "exact",
+      chunkId: "ck_0",
+    });
+  });
+
+  it("flags a quote absent from the paper as unverified with no jump target", async () => {
+    getChatProviderMock.mockReturnValue(
+      routingProvider({
+        reduce: {
+          ...VALID.reduce,
+          problemMotivation: [
+            {
+              text: "The problem is hard.",
+              grounding: "source",
+              citations: [
+                { quote: "this sentence never appears anywhere in the paper" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const result = await runArticleAnalysis(baseArgs());
+    const cite = result.payload.problemMotivation[0]?.citations?.[0];
+    expect(cite?.verification).toBe("unverified");
+    expect(cite?.chunkId).toBeUndefined();
+  });
+
   it("degrades to 'draft' with a fallbackReason when the Map stage is malformed", async () => {
     getChatProviderMock.mockReturnValue(routingProvider({ map: "malformed" }));
     const result = await runArticleAnalysis(baseArgs());

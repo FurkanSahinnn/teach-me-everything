@@ -13,7 +13,12 @@ export type CitationToken =
 // user-authored note (Phase 6 vault). The chip swaps the § marker for a
 // NotebookPen icon and the accent palette for the emerald embedded-source
 // palette so the user can spot note citations at a glance without hovering.
-export type CitationTone = "default" | "note";
+//
+// Article Analysis adds two verification tones. A model asked for a verbatim
+// quote can paraphrase or invent one, so the chip must show whether the quote
+// was actually found in the source: `approx` (anchored but reflowed) and
+// `unverified` (not found — model prose, not paper text).
+export type CitationTone = "default" | "note" | "approx" | "unverified";
 
 export function parseCitations(content: string): CitationToken[] {
   if (!content) return [];
@@ -80,29 +85,49 @@ export function CitationChip({
   tone?: CitationTone;
 }) {
   const isNote = tone === "note";
-  // Active + inactive palettes are pre-mixed so the render stays branchless.
-  // Emerald palette mirrors the embed button + Sources-page "from note"
-  // badge so a user clicking through a thread sees the same visual hook.
-  const activeClass = isNote
-    ? "mx-0.5 inline-flex items-baseline gap-0.5 rounded-[6px] border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-px font-mono text-[10.5px] uppercase tracking-[0.04em] text-emerald-700 transition-all duration-150 hover:-translate-y-px hover:border-emerald-500 hover:shadow-[var(--shadow-soft)]"
-    : "mx-0.5 inline-flex items-baseline gap-0.5 rounded-[6px] border border-accent-soft bg-accent-wash px-1.5 py-px font-mono text-[10.5px] uppercase tracking-[0.04em] text-accent-ink transition-all duration-150 hover:-translate-y-px hover:border-accent hover:shadow-[var(--shadow-soft)]";
-  const inactiveClass = isNote
-    ? "mx-0.5 inline-flex items-baseline gap-0.5 rounded-[6px] border border-rule bg-paper-2 px-1.5 py-px font-mono text-[10.5px] uppercase tracking-[0.04em] text-emerald-700/50 cursor-not-allowed"
-    : "mx-0.5 inline-flex items-baseline gap-0.5 rounded-[6px] border border-rule bg-paper-2 px-1.5 py-px font-mono text-[10.5px] uppercase tracking-[0.04em] text-ink-4 cursor-not-allowed";
+  // Active + inactive palettes are pre-mixed per tone so the render stays
+  // branchless. Emerald mirrors the embed button + Sources-page "from note"
+  // badge; warn mirrors the analysis "weakest link" callout so an unverifiable
+  // quote reads as a caution everywhere it appears.
+  const BASE =
+    "mx-0.5 inline-flex items-baseline gap-0.5 rounded-[6px] border px-1.5 py-px font-mono text-[10.5px] uppercase tracking-[0.04em]";
+  const HOVER =
+    "transition-all duration-150 hover:-translate-y-px hover:shadow-[var(--shadow-soft)]";
+  const PALETTE: Record<CitationTone, { active: string; inactive: string }> = {
+    default: {
+      active: `${BASE} border-accent-soft bg-accent-wash text-accent-ink ${HOVER} hover:border-accent`,
+      inactive: `${BASE} border-rule bg-paper-2 text-ink-4 cursor-not-allowed`,
+    },
+    note: {
+      active: `${BASE} border-emerald-500/40 bg-emerald-500/10 text-emerald-700 ${HOVER} hover:border-emerald-500`,
+      inactive: `${BASE} border-rule bg-paper-2 text-emerald-700/50 cursor-not-allowed`,
+    },
+    approx: {
+      active: `${BASE} border-dashed border-accent-soft bg-accent-wash/50 text-accent-ink ${HOVER} hover:border-accent`,
+      inactive: `${BASE} border-dashed border-rule bg-paper-2 text-ink-4 cursor-not-allowed`,
+    },
+    unverified: {
+      active: `${BASE} border-dashed border-warn/40 bg-warn/10 text-warn ${HOVER} hover:border-warn`,
+      inactive: `${BASE} border-dashed border-warn/30 bg-warn/5 text-warn/70 cursor-not-allowed`,
+    },
+  };
+  const palette = PALETTE[tone];
+  const marker =
+    tone === "unverified" ? "?" : tone === "approx" ? "≈" : "§";
   return (
     <button
       type="button"
       onClick={active ? onActivate : undefined}
       disabled={!active}
-      title={active ? (isNote ? `note · ${ref}` : `§${ref}`) : undefined}
+      title={active ? (isNote ? `note · ${ref}` : `${marker}${ref}`) : undefined}
       data-citation-ref={ref}
       data-citation-tone={tone}
-      className={active ? activeClass : inactiveClass}
+      className={active ? palette.active : palette.inactive}
     >
       {isNote ? (
         <NotebookPen className="h-2.5 w-2.5" aria-hidden />
       ) : (
-        <span aria-hidden>§</span>
+        <span aria-hidden>{marker}</span>
       )}
       <span className="normal-case tracking-normal">{ref}</span>
     </button>

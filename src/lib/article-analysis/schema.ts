@@ -20,8 +20,10 @@ import type { ArticleAnalysisPayload } from "@/lib/article-analysis/types";
 
 const GroundingKindSchema = z.enum(["source", "general"]);
 
-// The model emits `{ quote, page? }`; `chunkId` is resolved in code by matching
-// the quote back to a source chunk, so it is NOT part of the wire schema.
+// The model emits `{ quote, page? }`; `chunkId` and `verification` are BOTH
+// resolved in code by matching the quote back to a source chunk, so neither is
+// part of the wire schema — a model must never be able to declare its own quote
+// verified.
 const AnalysisCitationSchema = z.object({
   quote: z.string().min(1),
   page: z.number().optional(),
@@ -31,6 +33,20 @@ const AnalysisClaimSchema = z.object({
   text: z.string().min(1),
   grounding: GroundingKindSchema,
   citations: z.array(AnalysisCitationSchema).optional(),
+});
+
+// Persisted shape — the wire citation plus the code-assigned resolution fields.
+// `verification` is optional so analyses written before verification existed
+// still round-trip through backup import.
+const StoredCitationSchema = AnalysisCitationSchema.extend({
+  chunkId: z.string().optional(),
+  verification: z.enum(["exact", "fuzzy", "unverified"]).optional(),
+});
+
+const StoredClaimSchema = z.object({
+  text: z.string().min(1),
+  grounding: GroundingKindSchema,
+  citations: z.array(StoredCitationSchema).optional(),
 });
 
 const MethodStepSchema = z.object({
@@ -141,15 +157,15 @@ export const ArticleAnalysisPayloadSchema = z.object({
   tldr: z.string(),
   ataGlance: AtAGlanceSchema,
   fiveCs: FiveCsSchema,
-  problemMotivation: z.array(AnalysisClaimSchema),
-  priorWorkGap: z.array(AnalysisClaimSchema),
-  contributions: z.array(AnalysisClaimSchema),
+  problemMotivation: z.array(StoredClaimSchema),
+  priorWorkGap: z.array(StoredClaimSchema),
+  contributions: z.array(StoredClaimSchema),
   keyIdea: z.string(),
   methodWalkthrough: z.array(MethodStepSchema),
-  howItSolves: z.array(AnalysisClaimSchema),
-  keyResults: z.array(AnalysisClaimSchema),
+  howItSolves: z.array(StoredClaimSchema),
+  keyResults: z.array(StoredClaimSchema),
   critique: CritiqueBlockSchema,
-  assumptionsLimitations: z.array(AnalysisClaimSchema),
+  assumptionsLimitations: z.array(StoredClaimSchema),
   reproducibility: z.string(),
   questionsToAsk: z.array(z.string()),
   soWhat: z.string(),

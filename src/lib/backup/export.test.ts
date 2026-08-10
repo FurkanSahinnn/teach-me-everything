@@ -231,7 +231,7 @@ describe("backup/export", () => {
     expect(blob.type).toBe("application/json");
     const parsed = await readPayload(blob);
 
-    expect(parsed.schemaVersion).toBe(10);
+    expect(parsed.schemaVersion).toBe(11);
     expect(parsed.app).toBe("tme");
     expect(parsed.workspaces).toHaveLength(1);
     expect(parsed.sources).toHaveLength(1);

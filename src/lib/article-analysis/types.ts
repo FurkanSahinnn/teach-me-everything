@@ -29,14 +29,25 @@ export type AnalysisStatus = "generating" | "ready" | "draft" | "error";
 //             must be visually flagged so the reader knows it isn't in the paper
 export type GroundingKind = "source" | "general";
 
-// A verbatim span lifted from the paper. `chunkId` is resolved best-effort in
-// code (by matching the quote back to a source chunk) so the detail page can
-// render a CitationChip that jumps to the passage; when it can't be resolved
-// the chip still shows the quote text.
+// Re-exported so consumers of the payload type get the citation verdict union
+// without reaching into the verification module.
+export type { CitationVerification } from "@/lib/article-analysis/citation-verify";
+import type { CitationVerification } from "@/lib/article-analysis/citation-verify";
+
+// A verbatim span lifted from the paper. `chunkId` is resolved in code (by
+// matching the quote back to a source chunk) so the detail page can render a
+// CitationChip that jumps to the passage.
+//
+// `verification` records whether that match actually succeeded — a model can
+// paraphrase or invent a "verbatim" quote, and without an explicit verdict a
+// fabricated citation is indistinguishable from a real one in the UI. See
+// `./citation-verify`. Optional because analyses generated before verification
+// existed carry no verdict; the UI falls back to `chunkId` presence for those.
 export type AnalysisCitation = {
   quote: string;
   chunkId?: string | undefined;
   page?: number | undefined;
+  verification?: CitationVerification | undefined;
 };
 
 // A single analytical statement carrying its grounding provenance. Source

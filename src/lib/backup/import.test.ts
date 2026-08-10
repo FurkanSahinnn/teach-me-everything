@@ -12,6 +12,7 @@ import {
   createStudyJournalEntry,
 } from "@/lib/db/study";
 import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
+import type { CrossAnalysisRecord } from "@/lib/cross-analysis/types";
 import { exportBackup, type BackupV4 } from "./export";
 import {
   BackupIntegrityError,
@@ -46,6 +47,57 @@ async function sha256HexOf(value: unknown): Promise<string> {
     hex += b.toString(16).padStart(2, "0");
   }
   return hex;
+}
+
+function buildCrossAnalysis(
+  workspaceId: string,
+  sourceId: string,
+): CrossAnalysisRecord {
+  const now = Date.now();
+  const papers = [
+    { analysisId: "analysis-test", sourceId, title: "p1" },
+    { analysisId: "analysis-other", sourceId, title: "p2" },
+  ];
+  return {
+    id: "cross-test",
+    workspaceId,
+    title: "p1 vs p2",
+    targetLang: "en",
+    status: "ready",
+    analysisIds: ["analysis-test", "analysis-other"],
+    papers,
+    modelSnapshot: {
+      contradiction: "anthropic::claude-sonnet-4-6",
+      synthesis: "anthropic::claude-sonnet-4-6",
+    },
+    usage: { inputTokens: 200, outputTokens: 100 },
+    payload: {
+      matrix: {
+        papers,
+        rows: [
+          { key: "field", values: ["physics", "chemistry"], uniform: false },
+        ],
+      },
+      contradictions: [
+        {
+          a: { paperIndex: 0, ref: "p0.kr0", text: "goes up" },
+          b: { paperIndex: 1, ref: "p1.kr0", text: "goes down" },
+          kind: "direct",
+          explanation: "opposite direction",
+          grounded: false,
+        },
+      ],
+      consensus: ["both study X"],
+      divergences: ["different samples"],
+      readingOrder: [
+        { analysisId: "analysis-test", why: "start here" },
+        { analysisId: "analysis-other", why: "then this" },
+      ],
+      synthesis: "Together they disagree on direction.",
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 function buildAnalysis(
@@ -313,6 +365,7 @@ async function seedDataset() {
     tags: ["alpha"],
   });
   await db.articleAnalyses.put(buildAnalysis(ws.id, src1.id));
+  await db.crossAnalyses.put(buildCrossAnalysis(ws.id, src1.id));
   return {
     wsId: ws.id,
     src1Id: src1.id,
@@ -359,6 +412,17 @@ describe("backup/import round-trip", () => {
     expect(restoredAnalysis?.status).toBe("draft");
     expect(restoredAnalysis?.payload?.tldr).toBe("Short.");
     expect(restoredAnalysis?.payload?.glossary).toHaveLength(1);
+    expect(await db.crossAnalyses.count()).toBe(1);
+    const restoredCross = await db.crossAnalyses.get("cross-test");
+    expect(restoredCross?.analysisIds).toEqual([
+      "analysis-test",
+      "analysis-other",
+    ]);
+    expect(restoredCross?.payload?.contradictions).toHaveLength(1);
+    expect(restoredCross?.payload?.matrix.rows[0]?.values).toEqual([
+      "physics",
+      "chemistry",
+    ]);
     expect(await db.decks.get(deckId)).toBeDefined();
 
     const chunks = await db.chunks
@@ -496,6 +560,26 @@ describe("backup/import round-trip", () => {
     expect(remappedAnalysis?.id).not.toBe("analysis-test");
     expect(remappedSourceIds.has(remappedAnalysis?.sourceId ?? "")).toBe(true);
     expect(remappedAnalysis?.payload?.tldr).toBe("Short.");
+
+    // The comparison clone must follow the analysis remap everywhere it stores
+    // an analysis id, or its deep-links point at rows that no longer exist.
+    expect(await db.crossAnalyses.count()).toBe(2);
+    const remappedCross = await db.crossAnalyses
+      .where("workspaceId")
+      .equals(newWs.id)
+      .first();
+    expect(remappedCross).toBeDefined();
+    expect(remappedCross?.id).not.toBe("cross-test");
+    expect(remappedCross?.analysisIds[0]).toBe(remappedAnalysis?.id);
+    expect(remappedCross?.papers[0]?.analysisId).toBe(remappedAnalysis?.id);
+    expect(remappedCross?.payload?.matrix.papers[0]?.analysisId).toBe(
+      remappedAnalysis?.id,
+    );
+    expect(remappedCross?.payload?.readingOrder[0]?.analysisId).toBe(
+      remappedAnalysis?.id,
+    );
+    // Contradiction sides address papers positionally, so they need no remap.
+    expect(remappedCross?.payload?.contradictions[0]?.a.ref).toBe("p0.kr0");
   });
 
   it("throws BackupSchemaError on schemaVersion mismatch", async () => {
@@ -569,5 +653,38 @@ describe("backup/import round-trip", () => {
     expect(await db.roadmaps.count()).toBe(0);
     // ...but the v10-only analyses table normalises to empty.
     expect(await db.articleAnalyses.count()).toBe(0);
+    expect(await db.crossAnalyses.count()).toBe(0);
+  });
+
+  it("imports a legacy V10 backup, keeping analyses and emptying comparisons", async () => {
+    await seedDataset();
+    const blob = await exportBackup();
+    // A genuine v10 (Article-Analysis-era) export: analyses present, the v11
+    // comparisons table absent. This is the path that regressed silently when
+    // the current version moved off 10 and v10 stopped short-circuiting.
+    const downgraded = JSON.parse(await blob.text()) as Record<string, unknown>;
+    delete downgraded.crossAnalyses;
+    downgraded.schemaVersion = 10;
+    const { integrity: _drop10, ...rest10 } = downgraded;
+    void _drop10;
+    downgraded.integrity = await sha256HexOf(rest10);
+
+    await db.delete();
+    await db.open();
+
+    const file = blobToFile(
+      new Blob([JSON.stringify(downgraded)], { type: "application/json" }),
+    );
+    expect((await previewImport(file)).schemaVersion).toBe(10);
+
+    await importBackup(file);
+    // v10's own tables survive the normalisation...
+    expect(await db.articleAnalyses.count()).toBe(1);
+    expect(await db.sources.count()).toBe(2);
+    expect(await db.quizSessions.count()).toBe(1);
+    expect(await db.curricula.count()).toBe(1);
+    expect(await db.lessonNotes.count()).toBe(1);
+    // ...and only the v11-only table normalises to empty.
+    expect(await db.crossAnalyses.count()).toBe(0);
   });
 });

@@ -1326,6 +1326,30 @@ export default function NotebookReaderPage() {
     [pick, threadId, toast],
   );
 
+  // Deep link `?chunk=<id>` — Article Analysis citation chips land here so a
+  // grounded quote jumps to the exact passage instead of the top of the paper.
+  // MUST stay above the loading/not-found early returns below (rules-of-hooks),
+  // so it also waits on `ws`/`source`: firing while the skeleton is mounted
+  // would consume the param against a DOM that has no chunk nodes yet.
+  const consumedChunkParam = useRef<string | null>(null);
+  const chunkParam = searchParams.get("chunk");
+  useEffect(() => {
+    if (!chunkParam || !ws || !source || chunks.length === 0) return;
+    if (consumedChunkParam.current === chunkParam) return;
+    const target = chunks.find((c) => c.id === chunkParam);
+    consumedChunkParam.current = chunkParam;
+    // Strip the param so a later back-navigation doesn't re-scroll the reader
+    // out from under the user.
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.delete("chunk");
+    const qs = sp.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+    if (target) jumpToChunk(target);
+    // `jumpToChunk` is re-created every render; depending on it would re-fire
+    // the jump on unrelated re-renders. The ref guard is the real gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunkParam, chunks, ws, source, router, searchParams]);
+
   if (ws === undefined || source === undefined) {
     return (
       <AppShell workspaceId={workspaceId} breadcrumb={[t("dashboard"), pick("Yükleniyor…", "Loading…")]}>

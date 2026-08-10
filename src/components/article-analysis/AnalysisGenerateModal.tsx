@@ -18,6 +18,7 @@ import {
   type IngestPdfHandle,
 } from "@/lib/ingest/ingest-pdf-source";
 import type { AnalysisTargetLang } from "@/lib/article-analysis/types";
+import { ARTICLE_WINDOW_TOKENS } from "@/lib/article-analysis/token-budget";
 import { usePrefs } from "@/stores/prefs";
 import { cn } from "@/lib/utils/cn";
 
@@ -31,11 +32,13 @@ type Props = {
   onGenerated?: ((analysisId: string) => void) | undefined;
 };
 
-// Rough pre-run estimate. The pipeline windows the article text into the Map
-// stage once (extract model), into Reduce + Glossary + Reflection + Synthesize
-// (synthesize model, ~4 passes) and Critique once (critique model). We multiply
-// the source token sum through those passes — a "~tahmini", never an invoice.
-const SYNTHESIZE_PASSES = 4;
+// Rough pre-run estimate — a "~tahmini", never an invoice.
+//
+// Map sees the whole document once (extract model, chunked). The five later
+// stages each see the SHARED ARTICLE WINDOW, which is capped — so estimating
+// them off the raw source token sum overstated long papers badly. Clamp to the
+// window the pipeline will actually build.
+const SYNTHESIZE_PASSES = 4; // reduce + glossary + reflection + synthesize
 const OUTPUT_TOKENS_PER_STAGE = 2000;
 
 function bareModelId(binding: string): string {
@@ -47,16 +50,17 @@ function estimateCostUsd(
   bindings: { extract: string; synthesize: string; critique: string },
 ): number {
   if (tokenSum <= 0) return 0;
+  const windowTokens = Math.min(tokenSum, ARTICLE_WINDOW_TOKENS);
   const extract = computeCostUsd(bareModelId(bindings.extract), {
     input_tokens: tokenSum,
     output_tokens: OUTPUT_TOKENS_PER_STAGE,
   });
   const synthesize = computeCostUsd(bareModelId(bindings.synthesize), {
-    input_tokens: tokenSum * SYNTHESIZE_PASSES,
+    input_tokens: windowTokens * SYNTHESIZE_PASSES,
     output_tokens: OUTPUT_TOKENS_PER_STAGE * SYNTHESIZE_PASSES,
   });
   const critique = computeCostUsd(bareModelId(bindings.critique), {
-    input_tokens: tokenSum,
+    input_tokens: windowTokens,
     output_tokens: OUTPUT_TOKENS_PER_STAGE,
   });
   return extract + synthesize + critique;

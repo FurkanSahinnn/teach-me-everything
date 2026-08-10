@@ -53,6 +53,7 @@ import type {
   RoadmapRecord,
 } from "@/lib/roadmap/types";
 import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
+import type { CrossAnalysisRecord } from "@/lib/cross-analysis/types";
 
 // On-disk shape for a chunk: Float32Array embeddings cannot be JSON-serialized,
 // so we round-trip them through base64. `embedding === null` means no vector
@@ -316,6 +317,17 @@ export interface BackupV10 {
   integrity: string;
 }
 
+// v11 adds `crossAnalyses` (Cross-Analysis — schema v30). One row per
+// comparison of 2-4 already-analyzed papers; the payload is self-contained
+// (paper titles, resolved claim text and citations are all snapshotted at
+// generation time), so a restored comparison stays readable even if its
+// source analyses did not survive. Text/JSON only — no binary, no base64 hop.
+// Importing a pre-v11 backup yields `crossAnalyses: []` (see `normalizeBackup`).
+export interface BackupV11 extends Omit<BackupV10, "schemaVersion"> {
+  schemaVersion: 11;
+  crossAnalyses: CrossAnalysisRecord[];
+}
+
 export type BackupPayload =
   | BackupV2
   | BackupV3
@@ -325,9 +337,10 @@ export type BackupPayload =
   | BackupV7
   | BackupV8
   | BackupV9
-  | BackupV10;
+  | BackupV10
+  | BackupV11;
 
-export const BACKUP_SCHEMA_VERSION = 10 as const;
+export const BACKUP_SCHEMA_VERSION = 11 as const;
 
 // SECURITY: the `apiKeys` table is deliberately NEVER written to a backup.
 // Exporting credentials off-device would break the BYOK contract — even on
@@ -411,6 +424,7 @@ export async function exportBackup(): Promise<Blob> {
     roadmapNodes,
     roadmapEdges,
     articleAnalyses,
+    crossAnalyses,
   ] = await Promise.all([
     db.workspaces.toArray(),
     db.sources.toArray(),
@@ -435,11 +449,12 @@ export async function exportBackup(): Promise<Blob> {
     db.roadmapNodes.toArray(),
     db.roadmapEdges.toArray(),
     db.articleAnalyses.toArray(),
+    db.crossAnalyses.toArray(),
   ]);
 
   const chunks = rawChunks.map(chunkToBackupShape);
 
-  const payload: Omit<BackupV10, "integrity"> = {
+  const payload: Omit<BackupV11, "integrity"> = {
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: Date.now(),
     app: "tme",
@@ -466,12 +481,13 @@ export async function exportBackup(): Promise<Blob> {
     roadmapNodes,
     roadmapEdges,
     articleAnalyses,
+    crossAnalyses,
   };
 
   const json = JSON.stringify(payload);
   const integrity = await sha256Hex(json);
 
-  const final: BackupV10 = { ...payload, integrity };
+  const final: BackupV11 = { ...payload, integrity };
   const finalJson = JSON.stringify(final);
 
   return new Blob([finalJson], { type: "application/json" });
