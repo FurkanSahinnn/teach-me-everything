@@ -33,9 +33,15 @@ import {
   type SynthesizeStageOutput,
 } from "@/lib/article-analysis/schema";
 import {
+  buildArticleWindow,
   groupChunksIntoSections,
   groupToText,
 } from "@/lib/article-analysis/token-budget";
+import {
+  buildQuoteIndex,
+  verifyQuote,
+  type QuoteIndex,
+} from "@/lib/article-analysis/citation-verify";
 import type {
   AnalysisCitation,
   AnalysisClaim,
@@ -48,8 +54,6 @@ import type {
 } from "@/lib/article-analysis/types";
 import { listChunksBySource } from "@/lib/db/chunks";
 import { getSource } from "@/lib/db/sources";
-import type { ChunkRecord } from "@/lib/db/types";
-import { clampToBudget } from "@/lib/ai/context/budget";
 
 // Typed error for fatal pipeline failures. A SINGLE degraded stage never
 // throws — it downgrades the result to status "draft" with a fallbackReason.
@@ -73,12 +77,6 @@ export class ArticleAnalysisError extends Error {
 // the stage boundary and converted into a draft fallback. Never escapes.
 class StageError extends Error {}
 
-// Approx upper bound on the article text we window into each non-Map stage's
-// cached block (~12k tokens). Long papers are clamped; the Map stage still
-// covers the whole document group-by-group, so nothing is silently dropped
-// from the understanding — Reduce / Critique / Glossary all lean on the section
-// summaries for the tail they can't see verbatim.
-const ARTICLE_WINDOW_TOKENS = 12_000;
 // Default per-stage output cap. Lean stages (Map section summaries, Synthesize
 // orientation, Reflection) fit comfortably here.
 const STAGE_MAX_TOKENS = 4096;
@@ -279,37 +277,21 @@ async function callStage<T>(
 
 // ---- citation resolution ---------------------------------------------------
 
-function normalizeText(s: string): string {
-  return s.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-// Best-effort: find the chunk whose text verbatim-contains the quote. Uses a
-// leading probe (quotes can be lightly reflowed) and skips very short quotes
-// that would match almost anything. Returns undefined when unmatched — the
-// citation still renders, just without a jump target.
-function findChunkIdForQuote(
-  quote: string,
-  chunks: ChunkRecord[],
-): string | undefined {
-  const q = normalizeText(quote);
-  if (q.length < 12) return undefined;
-  const probe = q.slice(0, Math.min(q.length, 60));
-  for (const chunk of chunks) {
-    if (normalizeText(chunk.text).includes(probe)) return chunk.id;
-  }
-  return undefined;
-}
-
+// Every citation is checked against the real chunk text and carries the verdict
+// (exact / fuzzy / unverified) into the payload, so the UI can distinguish a
+// quote the paper actually contains from one the model manufactured. The index
+// is built once per run and threaded through — see `citation-verify`.
 function resolveCitations(
   citations: { quote: string; page?: number | undefined }[] | undefined,
-  chunks: ChunkRecord[],
+  index: QuoteIndex,
 ): AnalysisCitation[] | undefined {
   if (!citations || citations.length === 0) return undefined;
   return citations.map((c) => {
-    const chunkId = findChunkIdForQuote(c.quote, chunks);
+    const match = verifyQuote(c.quote, index);
     return {
       quote: c.quote,
-      ...(chunkId ? { chunkId } : {}),
+      verification: match.verification,
+      ...(match.chunkId ? { chunkId: match.chunkId } : {}),
       ...(c.page !== undefined ? { page: c.page } : {}),
     };
   });
@@ -321,9 +303,9 @@ function mapClaim(
     grounding: "source" | "general";
     citations?: { quote: string; page?: number | undefined }[] | undefined;
   },
-  chunks: ChunkRecord[],
+  index: QuoteIndex,
 ): AnalysisClaim {
-  const citations = resolveCitations(claim.citations, chunks);
+  const citations = resolveCitations(claim.citations, index);
   return {
     text: claim.text,
     grounding: claim.grounding,
@@ -337,9 +319,9 @@ function mapClaims(
     grounding: "source" | "general";
     citations?: { quote: string; page?: number | undefined }[] | undefined;
   }[],
-  chunks: ChunkRecord[],
+  index: QuoteIndex,
 ): AnalysisClaim[] {
-  return claims.map((c) => mapClaim(c, chunks));
+  return claims.map((c) => mapClaim(c, index));
 }
 
 // ---- empty defaults for degraded sections ----------------------------------
@@ -392,10 +374,15 @@ export async function runArticleAnalysis(
   }
   const models = await resolveModels(args.models);
 
-  const fullArticleText = clampToBudget(
-    chunks.map((c) => c.text).join("\n\n"),
-    ARTICLE_WINDOW_TOKENS,
-  );
+  // Shared, cached article window for every non-Map stage. Chunk-aligned and
+  // head+tail on overflow, so the paper's conclusions and limitations reach the
+  // reviewer even on a long document (see buildArticleWindow).
+  const articleWindow = buildArticleWindow(chunks);
+  const fullArticleText = articleWindow.text;
+  // Verification index over the WHOLE document, not just the window — a quote
+  // pulled by the Map stage from an elided section is still a real quote and
+  // must verify.
+  const quoteIndex = buildQuoteIndex(chunks);
   const userText = buildStageUserMessage(targetLang);
 
   let usage: Usage = {};
@@ -578,23 +565,23 @@ export async function runArticleAnalysis(
     ataGlance: orientation?.ataGlance ?? EMPTY_AT_A_GLANCE,
     fiveCs: orientation?.fiveCs ?? EMPTY_FIVE_CS,
     problemMotivation: understanding
-      ? mapClaims(understanding.problemMotivation, chunks)
+      ? mapClaims(understanding.problemMotivation, quoteIndex)
       : [],
     priorWorkGap: understanding
-      ? mapClaims(understanding.priorWorkGap, chunks)
+      ? mapClaims(understanding.priorWorkGap, quoteIndex)
       : [],
     contributions: understanding
-      ? mapClaims(understanding.contributions, chunks)
+      ? mapClaims(understanding.contributions, quoteIndex)
       : [],
     keyIdea: orientation?.keyIdea ?? "",
     methodWalkthrough: understanding?.methodWalkthrough ?? [],
     howItSolves: understanding
-      ? mapClaims(understanding.howItSolves, chunks)
+      ? mapClaims(understanding.howItSolves, quoteIndex)
       : [],
-    keyResults: understanding ? mapClaims(understanding.keyResults, chunks) : [],
+    keyResults: understanding ? mapClaims(understanding.keyResults, quoteIndex) : [],
     critique: critique?.critique ?? EMPTY_CRITIQUE,
     assumptionsLimitations: critique
-      ? mapClaims(critique.assumptionsLimitations, chunks)
+      ? mapClaims(critique.assumptionsLimitations, quoteIndex)
       : [],
     reproducibility: critique?.reproducibility ?? "",
     questionsToAsk: reflection?.questionsToAsk ?? [],

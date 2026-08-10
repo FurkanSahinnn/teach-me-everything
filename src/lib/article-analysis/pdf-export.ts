@@ -94,6 +94,11 @@ const STYLE_RULES = `
   font-size: 0.8em; color: var(--accent); border: 1px solid var(--accent);
   border-radius: 3px; padding: 0 0.3em; margin-left: 0.3em; white-space: nowrap;
 }
+/* Quote verification verdicts. The marker is textual (not colour-only) so the
+   distinction survives a black-and-white print. */
+.tme-an .quote.approx { border-left: 2px dashed var(--ink-3); padding-left: 4pt; }
+.tme-an .quote.unver { border-left: 2px dashed var(--accent); padding-left: 4pt; }
+.tme-an .verdict { font-size: 0.8em; font-style: normal; color: var(--accent); }
 .tme-an .why { color: var(--ink-3); }
 .tme-an .weakest { color: var(--accent); font-weight: 600; }
 .tme-an table.gloss { border-collapse: collapse; width: 100%; margin: 6pt 0; page-break-inside: auto; }
@@ -127,6 +132,8 @@ const L = {
     readNext: "Sırada ne okumalı",
     glossary: "Terim sözlüğü (TR / EN)",
     general: "genel bilgi",
+    approxQuote: "yaklaşık alıntı",
+    unverifiedQuote: "makalede bulunamadı",
     why: "Neden",
     exported: "Dışa aktarıldı",
     models: "Modeller",
@@ -161,6 +168,8 @@ const L = {
     readNext: "What to read next",
     glossary: "Glossary (TR / EN)",
     general: "general knowledge",
+    approxQuote: "approximate quote",
+    unverifiedQuote: "not found in paper",
     why: "Why",
     exported: "Exported",
     models: "Models",
@@ -211,7 +220,24 @@ function renderClaims(claims: AnalysisClaim[], t: Labels): string {
       const cites = (c.citations ?? [])
         .map((cit) => {
           const page = typeof cit.page === "number" ? ` (s.${cit.page})` : "";
-          return `<div class="quote">“${escapeHtml(cit.quote)}”${page}</div>`;
+          // Carry the verification verdict into the export — a printed
+          // analysis must not present an unverifiable quote as paper text.
+          // Legacy citations without a verdict fall back to chunkId presence.
+          const verdict =
+            cit.verification ?? (cit.chunkId ? "exact" : "unverified");
+          const cls =
+            verdict === "fuzzy"
+              ? " approx"
+              : verdict === "unverified"
+                ? " unver"
+                : "";
+          const tag =
+            verdict === "fuzzy"
+              ? ` <span class="verdict">[${escapeHtml(t.approxQuote)}]</span>`
+              : verdict === "unverified"
+                ? ` <span class="verdict">[${escapeHtml(t.unverifiedQuote)}]</span>`
+                : "";
+          return `<div class="quote${cls}">“${escapeHtml(cit.quote)}”${page}${tag}</div>`;
         })
         .join("");
       return `<li>${text}${cites}</li>`;

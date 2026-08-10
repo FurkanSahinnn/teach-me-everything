@@ -152,9 +152,9 @@ export function buildReduceSystem(input: ReduceSystemInput): SystemBlock[] {
 export type CritiqueSystemInput = {
   articleText: string;
   targetLang: AnalysisTargetLang;
-  // Whole-document section summaries (from Map). The article text above is
-  // windowed to the head of long papers, so these let the reviewer see
-  // limitations / detail stated in later sections it can't read verbatim.
+  // Whole-document section summaries (from Map). A very long paper's window
+  // elides the middle of the document, so these let the reviewer see anything
+  // stated in an elided section it can't read verbatim.
   sectionSummaries?: MapStageOutput[] | undefined;
 };
 
@@ -181,7 +181,7 @@ export function buildCritiqueSystem(
     '  "reproducibility": "string — can a competent reader reproduce it? code/data/hyperparams?"',
     "}",
     "",
-    "WHOLE-DOCUMENT SECTION SUMMARIES (the article text above may be windowed to the head of a long paper; use these so limitations, threats, and detail stated in LATER sections are not missed):",
+    "WHOLE-DOCUMENT SECTION SUMMARIES (on a very long paper the article text above keeps the front and the back and elides the middle; use these so anything stated in an elided section is not missed):",
     renderSectionSummaries(input.sectionSummaries ?? []),
     "",
     languageDirective(input.targetLang),
@@ -198,9 +198,9 @@ export type GlossarySystemInput = {
   // targetLang is accepted for signature symmetry but deliberately ignored:
   // the glossary is ALWAYS bilingual regardless of the analysis target lang.
   targetLang: AnalysisTargetLang;
-  // Whole-document section summaries (from Map). The article text above is
-  // windowed to the head of long papers; these surface late-introduced jargon
-  // from sections the glossary stage can't read verbatim.
+  // Whole-document section summaries (from Map). A very long paper's window
+  // elides the middle of the document; these surface jargon introduced in a
+  // section the glossary stage can't read verbatim.
   sectionSummaries?: MapStageOutput[] | undefined;
 };
 
@@ -220,7 +220,7 @@ export function buildGlossarySystem(
     "}",
     "Order terms by importance. Omit `symbol` when the term has no notation.",
     "",
-    "WHOLE-DOCUMENT SECTION SUMMARIES (the article text above may be windowed to the head of a long paper; use these so jargon introduced in LATER sections is also covered):",
+    "WHOLE-DOCUMENT SECTION SUMMARIES (on a very long paper the article text above elides the middle; use these so jargon introduced in an elided section is also covered):",
     renderSectionSummaries(input.sectionSummaries ?? []),
   ].join("\n");
   return [buildArticleBlock(input.articleText), instructionBlock(instructions)];
