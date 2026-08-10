@@ -38,6 +38,7 @@ import type {
   RoadmapRecord,
 } from "@/lib/roadmap/types";
 import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
+import type { CrossAnalysisRecord } from "@/lib/cross-analysis/types";
 
 // Mirrors providers/types.ts CloudProviderId order; embed-only and non-AI
 // services are appended so the same table holds every key kind users may add.
@@ -124,6 +125,7 @@ export class TmeDb extends Dexie {
   roadmapNodes!: Table<RoadmapNodeRecord, string>;
   roadmapEdges!: Table<RoadmapEdgeRecord, string>;
   articleAnalyses!: Table<ArticleAnalysisRecord, string>;
+  crossAnalyses!: Table<CrossAnalysisRecord, string>;
   seedFlags!: Table<SeedFlagRecord, string>;
 
   constructor() {
@@ -1077,6 +1079,16 @@ export class TmeDb extends Dexie {
     this.version(29).stores({
       articleAnalyses:
         "id, workspaceId, sourceId, createdAt, [workspaceId+createdAt], [sourceId+createdAt]",
+    });
+
+    // v30: Cross-Analysis — one `crossAnalyses` row per comparison of 2-4
+    // already-analyzed papers. Payload is a JSON blob on the row, same as
+    // articleAnalyses (read whole, regenerated whole). `*analysisIds` is a
+    // multiEntry index so deleting one analysis can find every comparison that
+    // referenced it without scanning the table. Pure additive.
+    this.version(30).stores({
+      crossAnalyses:
+        "id, workspaceId, createdAt, *analysisIds, [workspaceId+createdAt]",
     });
   }
 }

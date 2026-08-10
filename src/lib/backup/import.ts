@@ -35,11 +35,12 @@ import type {
   RoadmapRecord,
 } from "@/lib/roadmap/types";
 import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
+import type { CrossAnalysisRecord } from "@/lib/cross-analysis/types";
 import {
   BACKUP_SCHEMA_VERSION,
   computePayloadHash,
   type BackupPayload,
-  type BackupV10,
+  type BackupV11,
   type ChunkBackupShape,
 } from "./export";
 
@@ -252,18 +253,28 @@ async function verifyIntegrity(parsed: BackupPayload): Promise<void> {
   }
 }
 
+// Oldest payload `normalizeBackup` still knows how to upgrade.
+const OLDEST_SUPPORTED_BACKUP_VERSION = 2;
+
 function ensureSchemaVersion(version: number): void {
-  // Every prior major must be enumerated explicitly so a version bump never
-  // accidentally rejects a backup the user took two phases ago.
-  if (![2, 3, 4, 5, 6, 7, 8, 9, BACKUP_SCHEMA_VERSION].includes(version)) {
+  // A CONTIGUOUS RANGE, not a hand-written list. The previous form enumerated
+  // 2-9 and then jumped straight to BACKUP_SCHEMA_VERSION, so raising the
+  // constant from 10 to 11 silently orphaned every v10 backup a user had
+  // already taken — the one failure mode the enumeration was meant to prevent.
+  // Deriving the bound makes that unrepresentable.
+  const supported =
+    Number.isInteger(version) &&
+    version >= OLDEST_SUPPORTED_BACKUP_VERSION &&
+    version <= BACKUP_SCHEMA_VERSION;
+  if (!supported) {
     throw new BackupSchemaError(
-      `Unsupported backup schemaVersion ${version} (expected 2, 3, 4, 5, 6, 7, 8, 9, or ${BACKUP_SCHEMA_VERSION})`,
+      `Unsupported backup schemaVersion ${version} (expected ${OLDEST_SUPPORTED_BACKUP_VERSION}-${BACKUP_SCHEMA_VERSION})`,
       version,
     );
   }
 }
 
-function normalizeBackup(parsed: BackupPayload): BackupV10 {
+function normalizeBackup(parsed: BackupPayload): BackupV11 {
   if (parsed.schemaVersion === BACKUP_SCHEMA_VERSION) {
     // Backfill the roadmap + analysis arrays for v10 backups produced before
     // those tables joined the backup payload (older exports omitted them).
@@ -275,6 +286,7 @@ function normalizeBackup(parsed: BackupPayload): BackupV10 {
       roadmapNodes: parsed.roadmapNodes ?? [],
       roadmapEdges: parsed.roadmapEdges ?? [],
       articleAnalyses: parsed.articleAnalyses ?? [],
+      crossAnalyses: parsed.crossAnalyses ?? [],
     };
   }
   const { integrity: _integrity, ...rest } = parsed;
@@ -286,7 +298,8 @@ function normalizeBackup(parsed: BackupPayload): BackupV10 {
     parsed.schemaVersion === 6 ||
     parsed.schemaVersion === 7 ||
     parsed.schemaVersion === 8 ||
-    parsed.schemaVersion === 9
+    parsed.schemaVersion === 9 ||
+    parsed.schemaVersion === 10
       ? {
           quizSessions: parsed.quizSessions,
           concepts: parsed.concepts,
@@ -303,7 +316,8 @@ function normalizeBackup(parsed: BackupPayload): BackupV10 {
     parsed.schemaVersion === 6 ||
     parsed.schemaVersion === 7 ||
     parsed.schemaVersion === 8 ||
-    parsed.schemaVersion === 9
+    parsed.schemaVersion === 9 ||
+    parsed.schemaVersion === 10
       ? {
           curricula: parsed.curricula,
           curriculumItems: parsed.curriculumItems,
@@ -321,31 +335,40 @@ function normalizeBackup(parsed: BackupPayload): BackupV10 {
     parsed.schemaVersion === 6 ||
     parsed.schemaVersion === 7 ||
     parsed.schemaVersion === 8 ||
-    parsed.schemaVersion === 9
+    parsed.schemaVersion === 9 ||
+    parsed.schemaVersion === 10
       ? { podcasts: parsed.podcasts }
       : { podcasts: [] };
   const v8Fields =
-    parsed.schemaVersion === 8 || parsed.schemaVersion === 9
+    parsed.schemaVersion === 8 ||
+    parsed.schemaVersion === 9 ||
+    parsed.schemaVersion === 10
       ? { notes: parsed.notes, noteFolders: parsed.noteFolders }
       : { notes: [], noteFolders: [] };
   // Roadmap tables first shipped in v9, so a v9 backup carries them; older
   // v2-v8 payloads never had them and default to empty.
   const v9Fields: {
-    roadmaps: BackupV10["roadmaps"];
-    roadmapNodes: BackupV10["roadmapNodes"];
-    roadmapEdges: BackupV10["roadmapEdges"];
+    roadmaps: BackupV11["roadmaps"];
+    roadmapNodes: BackupV11["roadmapNodes"];
+    roadmapEdges: BackupV11["roadmapEdges"];
   } =
-    parsed.schemaVersion === 9
+    parsed.schemaVersion === 9 || parsed.schemaVersion === 10
       ? {
           roadmaps: parsed.roadmaps,
           roadmapNodes: parsed.roadmapNodes,
           roadmapEdges: parsed.roadmapEdges,
         }
       : { roadmaps: [], roadmapNodes: [], roadmapEdges: [] };
-  // `articleAnalyses` (v10) never existed in any legacy v2-v9 payload, so it
-  // always defaults to empty here; a genuine v10 backup short-circuits above.
-  const v10Fields: { articleAnalyses: BackupV10["articleAnalyses"] } = {
-    articleAnalyses: [],
+  // `articleAnalyses` shipped in v10. Since the current version is 11, a v10
+  // payload no longer short-circuits above and must be carried through here;
+  // v2-v9 never had the table and default to empty.
+  const v10Fields: { articleAnalyses: BackupV11["articleAnalyses"] } =
+    parsed.schemaVersion === 10
+      ? { articleAnalyses: parsed.articleAnalyses ?? [] }
+      : { articleAnalyses: [] };
+  // `crossAnalyses` (v11) never existed in any legacy payload.
+  const v11Fields: { crossAnalyses: BackupV11["crossAnalyses"] } = {
+    crossAnalyses: [],
   };
   // v6/v7/v8 carried `planBlocks` (Plan feature). v9+ drops Plan entirely
   // (Roadmap supersedes it — docs/ROADMAP_FEATURE_SPEC.md). We strip the
@@ -356,7 +379,7 @@ function normalizeBackup(parsed: BackupPayload): BackupV10 {
   void _legacyNotes;
   void _legacyNoteFolders;
   return {
-    ...(restWithoutLegacy as Omit<BackupV10, "schemaVersion" | "integrity" | "quizSessions" | "concepts" | "conceptEdges" | "curricula" | "curriculumItems" | "lessonNotes" | "studyJournalEntries" | "podcasts" | "notes" | "noteFolders" | "roadmaps" | "roadmapNodes" | "roadmapEdges" | "articleAnalyses">),
+    ...(restWithoutLegacy as Omit<BackupV11, "schemaVersion" | "integrity" | "quizSessions" | "concepts" | "conceptEdges" | "curricula" | "curriculumItems" | "lessonNotes" | "studyJournalEntries" | "podcasts" | "notes" | "noteFolders" | "roadmaps" | "roadmapNodes" | "roadmapEdges" | "articleAnalyses" | "crossAnalyses">),
     schemaVersion: BACKUP_SCHEMA_VERSION,
     ...v3Fields,
     ...v4Fields,
@@ -364,6 +387,7 @@ function normalizeBackup(parsed: BackupPayload): BackupV10 {
     ...v8Fields,
     ...v9Fields,
     ...v10Fields,
+    ...v11Fields,
     integrity: parsed.integrity,
   };
 }
@@ -657,6 +681,16 @@ export async function importBackup(
     }
   }
 
+  const existingCrossIds = new Set(
+    (await db.crossAnalyses.toArray()).map((c) => c.id),
+  );
+  const crossRemap = new Map<string, string>();
+  for (const c of backup.crossAnalyses) {
+    if (remapsWholeWorkspace(c.workspaceId) || existingCrossIds.has(c.id)) {
+      crossRemap.set(c.id, mintId());
+    }
+  }
+
   const remapWs = (id: string): string => workspaceRemap.get(id) ?? id;
   const remapSource = (id: string | undefined): string | undefined =>
     id === undefined ? undefined : (sourceRemap.get(id) ?? id);
@@ -936,6 +970,44 @@ export async function importBackup(
       sourceId: remapSourceId(a.sourceId),
     }),
   );
+  // A comparison points at the analyses it compared, so every analysis id it
+  // carries has to follow `analysisRemap` — otherwise a restored comparison
+  // deep-links to an id that no longer exists. Those ids appear in four places:
+  // the indexed `analysisIds`, the `papers` snapshot, the payload's mirrored
+  // matrix papers, and `readingOrder`.
+  //
+  // Contradiction sides need no remap by construction: they address papers
+  // positionally (`paperIndex`) and claims by ref, never by database id.
+  const remapAnalysisId = (id: string): string => analysisRemap.get(id) ?? id;
+  const remapComparedPaper = <T extends { analysisId: string; sourceId: string }>(
+    paper: T,
+  ): T => ({
+    ...paper,
+    analysisId: remapAnalysisId(paper.analysisId),
+    sourceId: remapSourceId(paper.sourceId),
+  });
+  const crossAnalyses: CrossAnalysisRecord[] = backup.crossAnalyses.map((c) => ({
+    ...c,
+    id: crossRemap.get(c.id) ?? c.id,
+    workspaceId: remapWs(c.workspaceId),
+    analysisIds: c.analysisIds.map(remapAnalysisId),
+    papers: c.papers.map(remapComparedPaper),
+    ...(c.payload
+      ? {
+          payload: {
+            ...c.payload,
+            matrix: {
+              ...c.payload.matrix,
+              papers: c.payload.matrix.papers.map(remapComparedPaper),
+            },
+            readingOrder: c.payload.readingOrder.map((step) => ({
+              ...step,
+              analysisId: remapAnalysisId(step.analysisId),
+            })),
+          },
+        }
+      : {}),
+  }));
   // Plan blocks (legacy v6-v8 payloads) are intentionally discarded here:
   // Roadmap replaces Plan and the Dexie table itself is gone.
   await db.transaction(
@@ -964,6 +1036,7 @@ export async function importBackup(
       db.roadmapNodes,
       db.roadmapEdges,
       db.articleAnalyses,
+      db.crossAnalyses,
     ],
     async () => {
       // bulkPut so re-importing your own backup over a clean DB is idempotent
@@ -991,6 +1064,7 @@ export async function importBackup(
       await db.roadmapNodes.bulkPut(roadmapNodes);
       await db.roadmapEdges.bulkPut(roadmapEdges);
       await db.articleAnalyses.bulkPut(articleAnalyses);
+      await db.crossAnalyses.bulkPut(crossAnalyses);
     },
   );
 
@@ -1017,7 +1091,8 @@ export async function importBackup(
     roadmaps.length +
     roadmapNodes.length +
     roadmapEdges.length +
-    articleAnalyses.length;
+    articleAnalyses.length +
+    crossAnalyses.length;
 
   return {
     imported,
@@ -1044,6 +1119,7 @@ export async function importBackup(
       roadmapRemap.size +
       roadmapNodeRemap.size +
       roadmapEdgeRemap.size +
-      analysisRemap.size,
+      analysisRemap.size +
+      crossRemap.size,
   };
 }

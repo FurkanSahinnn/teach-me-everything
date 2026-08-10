@@ -60,6 +60,10 @@ import {
   listAnalysesByWorkspace,
 } from "./article-analyses";
 import {
+  getCrossAnalysis,
+  listCrossAnalysesByWorkspace,
+} from "./cross-analyses";
+import {
   getPodcast,
   getPodcastBlob,
   listPodcastsByWorkspace,
@@ -857,6 +861,25 @@ export function useArticleAnalysesByWorkspace(workspaceId: string | undefined) {
 export function useArticleAnalysis(id: string | undefined) {
   return useLiveQuery(
     () => (id ? getAnalysis(id).then((r) => r ?? null) : Promise.resolve(null)),
+    [id],
+  );
+}
+
+// Cross-Analysis hooks — same undefined-while-loading contract as above.
+export function useCrossAnalysesByWorkspace(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () =>
+      workspaceId
+        ? listCrossAnalysesByWorkspace(workspaceId)
+        : Promise.resolve([]),
+    [workspaceId],
+  );
+}
+
+export function useCrossAnalysis(id: string | undefined) {
+  return useLiveQuery(
+    () =>
+      id ? getCrossAnalysis(id).then((r) => r ?? null) : Promise.resolve(null),
     [id],
   );
 }
