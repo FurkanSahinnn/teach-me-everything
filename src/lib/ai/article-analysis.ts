@@ -18,6 +18,12 @@ import type {
   Usage,
 } from "@/lib/ai/providers/types";
 import {
+  isRetryableStreamError,
+  mapWithConcurrency,
+  ProviderStreamError,
+  runWithRetry,
+} from "@/lib/ai/stage-runner";
+import {
   parseCritiqueStage,
   parseGlossaryStage,
   parseMapStage,
@@ -86,6 +92,20 @@ const STAGE_MAX_TOKENS = 4096;
 // (20+ bilingual terms). A truncated buffer yields unbalanced braces → a draft
 // with that whole section silently dropped, so these get the headroom.
 const RICH_STAGE_MAX_TOKENS = 8192;
+
+// The Map stage used to launch every section call at once. On a paper that
+// groups into a dozen sections that burst is exactly what trips a provider's
+// per-minute request/token limit, and a single shed call downgraded the whole
+// run to "draft". Sections are independent and each is small, so capping the
+// in-flight width spreads token consumption over time at the cost of a few
+// extra seconds on a pipeline that already runs for minutes.
+export const MAP_CONCURRENCY = 3;
+
+// Several Map sections failing at once nearly always share ONE cause (the same
+// shed burst, the same schema slip). Repeating it once per section would bury
+// the signal in the fallbackReason, so distinct reasons are collapsed and the
+// list is capped.
+const MAX_REPORTED_MAP_REASONS = 2;
 
 export type ArticleAnalysisStageEvent =
   | { stage: "map"; index: number; total: number }
@@ -162,7 +182,7 @@ async function drainStream(
         usage = { ...usage, ...event.usage };
         stopReason = event.stopReason ?? stopReason;
       } else if (event.kind === "error") {
-        throw new Error(`Provider error ${event.status}: ${event.message}`);
+        throw new ProviderStreamError(event.status, event.message);
       } else if (event.kind === "abort") {
         throw new ArticleAnalysisError("aborted", "Analysis aborted");
       }
@@ -186,6 +206,14 @@ function rethrowIfFatal(err: unknown): void {
 function stageFailureDetail(err: unknown): string {
   const msg = err instanceof Error ? err.message.trim() : String(err).trim();
   return msg.length > 0 ? msg : "unknown error";
+}
+
+// Collapse the per-section reasons of a fan-out failure into one short clause.
+function summarizeReasons(reasons: readonly string[]): string {
+  const distinct = [...new Set(reasons)];
+  const shown = distinct.slice(0, MAX_REPORTED_MAP_REASONS).join("; ");
+  const rest = distinct.length - MAX_REPORTED_MAP_REASONS;
+  return rest > 0 ? `${shown}; +${rest} more` : shown;
 }
 
 async function resolveModels(models: {
@@ -394,38 +422,66 @@ export async function runArticleAnalysis(
     costUsd += computeCostUsd(out.model, out.usage);
   };
 
-  // ---- Stage 1 — MAP (parallel over section groups) ----------------------
+  // ---- Stage 1 — MAP (bounded-width fan-out over section groups) ---------
   const groups = groupChunksIntoSections(chunks);
-  const mapSettled = await Promise.allSettled(
-    groups.map(async (group, index) => {
-      const out = await callStage(
-        models.extract,
-        buildMapSystem({
-          articleText: groupToText(group),
-          targetLang,
-          ...(group.sectionTitle ? { sectionTitle: group.sectionTitle } : {}),
-        }),
-        userText,
-        parseMapStage,
-        signal,
-      );
-      onStage?.({ stage: "map", index, total: groups.length });
-      return out;
-    }),
+  // Counts SETTLED sections, not the group index, so the progress the UI shows
+  // advances monotonically instead of jumping around with completion order.
+  let mapSettledCount = 0;
+  const mapSettled = await mapWithConcurrency(
+    groups,
+    MAP_CONCURRENCY,
+    async (group) => {
+      // Queued sections must not start a call after the user cancelled. This
+      // is also what makes `runWithRetry` abort-safe: it cuts its backoff short
+      // and re-enters here, where the fatal error is thrown.
+      if (signal?.aborted) {
+        throw new ArticleAnalysisError("aborted", "Analysis aborted");
+      }
+      try {
+        return await runWithRetry(
+          () =>
+            callStage(
+              models.extract,
+              buildMapSystem({
+                articleText: groupToText(group),
+                targetLang,
+                ...(group.sectionTitle
+                  ? { sectionTitle: group.sectionTitle }
+                  : {}),
+              }),
+              userText,
+              parseMapStage,
+              signal,
+            ),
+          { isRetryable: isRetryableStreamError, ...(signal ? { signal } : {}) },
+        );
+      } finally {
+        mapSettledCount += 1;
+        onStage?.({
+          stage: "map",
+          index: mapSettledCount - 1,
+          total: groups.length,
+        });
+      }
+    },
   );
   const sectionSummaries: MapStageOutput[] = [];
-  let mapFailures = 0;
+  const mapFailureReasons: string[] = [];
   for (const r of mapSettled) {
     if (r.status === "fulfilled") {
       sectionSummaries.push(r.value.value);
       accrue(r.value);
     } else {
       rethrowIfFatal(r.reason);
-      mapFailures += 1;
+      mapFailureReasons.push(stageFailureDetail(r.reason));
     }
   }
-  if (mapFailures > 0) {
-    failedStages.push(`map (${mapFailures}/${groups.length} sections)`);
+  if (mapFailureReasons.length > 0) {
+    // Spelled out rather than "map (1/11 sections)", which read as "1 of 11
+    // done" when it always meant "1 of 11 failed".
+    failedStages.push(
+      `map (${mapFailureReasons.length} of ${groups.length} sections failed: ${summarizeReasons(mapFailureReasons)})`,
+    );
   }
 
   // ---- Stage 2 — REDUCE (sequential) -------------------------------------

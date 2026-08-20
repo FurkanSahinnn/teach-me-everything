@@ -29,9 +29,8 @@ vi.mock("@/lib/ai/anthropic-credential", () => ({
   resolveChatCredentialForPreset: (p: string) => resolveCredMock(p),
 }));
 
-const { runArticleAnalysis, ArticleAnalysisError } = await import(
-  "./article-analysis"
-);
+const { runArticleAnalysis, ArticleAnalysisError, MAP_CONCURRENCY } =
+  await import("./article-analysis");
 const { encodeChatModelBinding } = await import("./model-options");
 
 const SONNET = encodeChatModelBinding("anthropic", "claude-sonnet-4-6");
@@ -149,22 +148,84 @@ function streamFor(spec: StageSpec): StreamEvent[] {
   ];
 }
 
+const CAPABILITIES = {
+  cacheControl: true,
+  toolUse: "native",
+  streaming: true,
+  vision: false,
+} as const;
+
+function stageOf(req: ChatRequest): Stage {
+  return detectStage(req.system.map((b) => b.text).join("\n"));
+}
+
+function handleFor(events: StreamEvent[]): ChatStreamHandle {
+  async function* gen(): AsyncGenerator<StreamEvent> {
+    for (const e of events) yield e;
+  }
+  return { events: gen(), abort: () => {} };
+}
+
 function routingProvider(overrides: Partial<Record<Stage, StageSpec>>): ChatProvider {
   return {
     id: "anthropic",
-    capabilities: {
-      cacheControl: true,
-      toolUse: "native",
-      streaming: true,
-      vision: false,
-    },
+    capabilities: CAPABILITIES,
     streamChat(req: ChatRequest): ChatStreamHandle {
-      const system = req.system.map((b) => b.text).join("\n");
-      const stage = detectStage(system);
-      const spec = overrides[stage] ?? VALID[stage];
-      const events = streamFor(spec);
+      const stage = stageOf(req);
+      return handleFor(streamFor(overrides[stage] ?? VALID[stage]));
+    },
+  };
+}
+
+// Sheds the first `failures` Map calls with a 429 and serves everything else
+// normally — the shape of a provider trimming a burst rather than rejecting the
+// request outright.
+function shedsMapCalls(failures: number): ChatProvider {
+  let remaining = failures;
+  return {
+    id: "anthropic",
+    capabilities: CAPABILITIES,
+    streamChat(req: ChatRequest): ChatStreamHandle {
+      const stage = stageOf(req);
+      if (stage === "map" && remaining > 0) {
+        remaining -= 1;
+        return handleFor([
+          { kind: "start", model: "claude-sonnet-4-6", usage: {} },
+          { kind: "error", status: 429, message: "rate limited" },
+        ]);
+      }
+      return handleFor(streamFor(VALID[stage]));
+    },
+  };
+}
+
+// Records the high-water mark of simultaneously-open Map streams. The await
+// between the first and second event is what makes overlap observable at all.
+function concurrencyProbeProvider(probe: { peak: number }): ChatProvider {
+  let inFlight = 0;
+  return {
+    id: "anthropic",
+    capabilities: CAPABILITIES,
+    streamChat(req: ChatRequest): ChatStreamHandle {
+      const stage = stageOf(req);
       async function* gen(): AsyncGenerator<StreamEvent> {
-        for (const e of events) yield e;
+        const counted = stage === "map";
+        if (counted) {
+          inFlight += 1;
+          probe.peak = Math.max(probe.peak, inFlight);
+        }
+        try {
+          yield { kind: "start", model: "claude-sonnet-4-6", usage: {} };
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          yield { kind: "text", delta: JSON.stringify(VALID[stage]) };
+          yield {
+            kind: "delta",
+            stopReason: "end_turn",
+            usage: { input_tokens: 100, output_tokens: 50 },
+          };
+        } finally {
+          if (counted) inFlight -= 1;
+        }
       }
       return { events: gen(), abort: () => {} };
     },
@@ -209,6 +270,22 @@ function chunks(): ChunkRecord[] {
       createdAt: 0,
     },
   ];
+}
+
+// One distinct `section` per chunk, so groupChunksIntoSections yields one group
+// per chunk and the Map fan-out is wider than MAP_CONCURRENCY.
+function manyChunks(count: number): ChunkRecord[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `ck_${i}`,
+    sourceId: "src_1",
+    workspaceId: "ws_1",
+    index: i,
+    text: `Section ${i} describes a distinct part of the method in detail.`,
+    tokenCount: 100,
+    section: `Section ${i}`,
+    page: i + 1,
+    createdAt: 0,
+  }));
 }
 
 function baseArgs() {
@@ -303,9 +380,77 @@ describe("runArticleAnalysis", () => {
     const result = await runArticleAnalysis(baseArgs());
 
     expect(result.status).toBe("draft");
-    expect(result.fallbackReason).toContain("map");
+    // Spelled out: "map (1/11 sections)" read as "1 of 11 done" when it always
+    // meant the opposite, and it named no cause.
+    expect(result.fallbackReason).toContain("map (2 of 2 sections failed");
+    expect(result.fallbackReason).toContain("no_json");
     // Other stages still produced a usable payload.
     expect(result.payload.tldr).toBe("A short plain-language summary.");
+  });
+
+  it("collapses repeated Map failure causes instead of listing one per section", async () => {
+    listChunksBySourceMock.mockResolvedValue(manyChunks(6));
+    getChatProviderMock.mockReturnValue(routingProvider({ map: "malformed" }));
+    const result = await runArticleAnalysis(baseArgs());
+
+    expect(result.fallbackReason).toContain("map (6 of 6 sections failed");
+    expect(result.fallbackReason?.match(/no_json/g)).toHaveLength(1);
+  });
+
+  it("retries a shed Map section instead of downgrading the run to draft", async () => {
+    vi.useFakeTimers();
+    try {
+      getChatProviderMock.mockReturnValue(shedsMapCalls(1));
+      const running = runArticleAnalysis(baseArgs());
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await running;
+
+      expect(result.status).toBe("ready");
+      expect(result.fallbackReason).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry a malformed Map section — same prompt, same answer", async () => {
+    const inner = routingProvider({ map: "malformed" });
+    let mapCalls = 0;
+    getChatProviderMock.mockReturnValue({
+      ...inner,
+      streamChat(req: ChatRequest): ChatStreamHandle {
+        if (stageOf(req) === "map") mapCalls += 1;
+        return inner.streamChat(req);
+      },
+    });
+
+    await runArticleAnalysis(baseArgs());
+
+    expect(mapCalls).toBe(2);
+  });
+
+  it("caps how many Map sections are in flight at once", async () => {
+    listChunksBySourceMock.mockResolvedValue(manyChunks(9));
+    const probe = { peak: 0 };
+    getChatProviderMock.mockReturnValue(concurrencyProbeProvider(probe));
+
+    const result = await runArticleAnalysis(baseArgs());
+
+    expect(result.status).toBe("ready");
+    expect(probe.peak).toBe(MAP_CONCURRENCY);
+  });
+
+  it("reports Map progress monotonically as sections settle", async () => {
+    listChunksBySourceMock.mockResolvedValue(manyChunks(6));
+    const seen: number[] = [];
+    await runArticleAnalysis({
+      ...baseArgs(),
+      onStage: (ev) => {
+        if (ev.stage === "map") seen.push(ev.index);
+      },
+    });
+
+    // Completion order varies; the number the UI renders must not.
+    expect(seen).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
   it("still produces a payload when a single specialist rejects", async () => {

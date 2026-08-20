@@ -41,6 +41,108 @@ export class StageBindingError extends Error {
 // A stage's stream or parse failed. Recoverable: the runner degrades to draft.
 export class StageError extends Error {}
 
+// The provider ended the stream with an error event. Carries the HTTP status as
+// a field rather than only baking it into the message, so retry policy can read
+// it without parsing prose. The message string is unchanged from the plain
+// Error this replaced, because it is persisted verbatim in `fallbackReason`.
+export class ProviderStreamError extends Error {
+  constructor(
+    public readonly status: number,
+    providerMessage: string,
+  ) {
+    super(`Provider error ${status}: ${providerMessage}`);
+    this.name = "ProviderStreamError";
+  }
+}
+
+// 429 (rate limit) and 529 (overloaded) are what a parallel fan-out actually
+// trips: N stage calls leave together and the provider sheds part of the burst.
+// Other 5xx and status 0 (transport/network) are transient for the same reason.
+// A non-429 4xx is a real request defect — retrying only burns tokens. A parse
+// failure (StageError) is deliberately NOT retryable here: same prompt, same
+// model, and the runner already degrades it to a diagnosable draft.
+export function isRetryableStreamError(err: unknown): boolean {
+  if (!(err instanceof ProviderStreamError)) return false;
+  const { status } = err;
+  return status === 429 || status === 0 || (status >= 500 && status < 600);
+}
+
+// One retry is the deliberate ceiling: it clears a shed burst or a blip without
+// turning a genuinely exhausted rate limit into a long silent stall.
+export const STAGE_RETRY_DELAYS_MS: readonly number[] = [1_200];
+
+export type RetryOptions = {
+  isRetryable: (err: unknown) => boolean;
+  delaysMs?: readonly number[] | undefined;
+  signal?: AbortSignal | undefined;
+};
+
+// Resolves early on abort instead of rejecting — see runWithRetry.
+function sleep(ms: number, signal?: AbortSignal | undefined): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+  });
+}
+
+export async function runWithRetry<T>(
+  fn: () => Promise<T>,
+  opts: RetryOptions,
+): Promise<T> {
+  const delays = opts.delaysMs ?? STAGE_RETRY_DELAYS_MS;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= delays.length || !opts.isRetryable(err)) throw err;
+      // An abort during the backoff cuts the wait short and lets `fn` run once
+      // more, where the CALLER's own abort guard throws its own fatal error.
+      // That keeps this helper free of any pipeline-specific error type.
+      await sleep(delays[attempt] ?? 0, opts.signal);
+    }
+  }
+}
+
+// Bounded-width fan-out. Mirrors Promise.allSettled's contract — never rejects,
+// results in INPUT order regardless of completion order — but keeps at most
+// `limit` tasks in flight, so a paper that groups into a dozen sections doesn't
+// hand the provider a dozen simultaneous requests.
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results = new Array<PromiseSettledResult<R>>(items.length);
+  if (items.length === 0) return results;
+  const width = Math.max(1, Math.min(Math.floor(limit), items.length));
+  // Safe without a lock: the read-and-advance below has no await between its
+  // two statements, so no other worker can interleave.
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = cursor;
+      cursor += 1;
+      if (i >= items.length) return;
+      try {
+        results[i] = {
+          status: "fulfilled",
+          value: await task(items[i] as T, i),
+        };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: width }, () => worker()));
+  return results;
+}
+
 export type ResolvedModel = {
   presetId: ProviderId;
   modelId: string;
@@ -128,7 +230,7 @@ async function drainStream(
       usage = { ...usage, ...event.usage };
       stopReason = event.stopReason ?? stopReason;
     } else if (event.kind === "error") {
-      throw new Error(`Provider error ${event.status}: ${event.message}`);
+      throw new ProviderStreamError(event.status, event.message);
     } else if (event.kind === "abort") {
       throw new StageAbortError();
     }
