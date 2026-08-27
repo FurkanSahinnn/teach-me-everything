@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Moon, Sun } from "lucide-react";
+import { BookOpen, GitBranch, Moon, Sun } from "lucide-react";
 import { type Theme, usePrefs } from "@/stores/prefs";
 import { cn } from "@/lib/utils/cn";
 
@@ -14,6 +14,7 @@ const OPTIONS: readonly Option[] = [
   { value: "white", icon: Sun, label: "White" },
   { value: "sepia", icon: BookOpen, label: "Sepia" },
   { value: "dark", icon: Moon, label: "Dark" },
+  { value: "github", icon: GitBranch, label: "GitHub" },
 ];
 
 type Props = {

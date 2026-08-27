@@ -34,7 +34,7 @@ import {
 } from "@/lib/ai/quick-start-presets";
 import { type Provider } from "@/lib/db/schema";
 import { cn } from "@/lib/utils/cn";
-import { type ModelBindings, usePrefs } from "@/stores/prefs";
+import { type ModelBindings, type Theme, usePrefs } from "@/stores/prefs";
 import { BackupSection } from "@/components/settings/BackupSection";
 import { QuotaSection } from "@/components/settings/QuotaSection";
 import { AILocaleSection } from "@/components/settings/AILocaleSection";
@@ -1514,11 +1514,12 @@ function PreferencesSection({ pick }: { pick: (tr: string, en: string) => string
         label={t("tema")}
         icon={<Palette className="h-4 w-4" aria-hidden />}
         value={theme}
-        onChange={(v) => setTheme(v as "white" | "sepia" | "dark")}
+        onChange={(v) => setTheme(v as Theme)}
         options={[
           { value: "white", tr: "Beyaz", en: "White" },
           { value: "sepia", tr: "Sepya", en: "Sepia" },
           { value: "dark", tr: "Koyu", en: "Dark" },
+          { value: "github", tr: "GitHub", en: "GitHub" },
         ]}
         pick={pick}
         variant="theme"
@@ -1640,6 +1641,9 @@ const THEME_SWATCH: Record<string, { bg: string; accent: string }> = {
   white: { bg: "#FFFFFF", accent: "#F4F4F2" },
   sepia: { bg: "#F6EAD2", accent: "#E5D2AC" },
   dark: { bg: "#0E0E10", accent: "#242428" },
+  // İkinci yarı burada yüzey değil aksan: GitHub'ın #0D1117/#21262D çifti
+  // 28px'lik çipte "dark"tan ayırt edilemiyordu, imza mavisi ayırt ediyor.
+  github: { bg: "#0D1117", accent: "#1F6FEB" },
 };
 
 function ToggleGroupRow({
@@ -1667,7 +1671,7 @@ function ToggleGroupRow({
           <span className="font-serif text-[14px] font-medium">{label}</span>
         </div>
         {variant === "theme" ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             {options.map((o) => {
               const swatch = THEME_SWATCH[o.value];
               const active = value === o.value;

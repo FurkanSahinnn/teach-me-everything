@@ -4,10 +4,11 @@
 /* =========================================================================
    Teach Me Everything — Design System v2
    ─────────────────────────────────────────────────────────────────────────
-   Üç tema:
+   Dört tema:
      • dark    → varsayılan premium akademik workspace
      • sepia   → warm paper, reader/focus karakteri
      • white   → temiz fallback
+     • github  → GitHub Dark (Primer paleti), kod/geliştirici karakteri
    Genel dil: koyu-first, dengeli yoğunluk, ölçülü akademik karakter.
    Surface karakteri tema-bazlı (shadow yoğunluğu / border ağırlığı override).
    ========================================================================= */
@@ -191,6 +192,50 @@
   --shadow-medium:      0 1px 0 rgb(255 244 224 / 0.04), 0 20px 56px -28px rgb(0 0 0 / 0.90);
   --shadow-deep:        0 1px 0 rgb(255 244 224 / 0.05), 0 30px 80px -26px rgb(0 0 0 / 0.95);
   --shadow-lift:        0 1px 0 rgb(255 244 224 / 0.05), 0 18px 44px -28px rgb(0 0 0 / 0.90);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   THEME · GITHUB (GitHub Dark · Primer paleti)
+   Kaynak: @primer/primitives → dist/css/functional/themes/dark.css
+   (bgColor-default #0d1117 · borderColor-default #30363d · fgColor #e6edf3 ·
+   fgColor-accent #58a6ff · bgColor-accent-emphasis #1f6feb) — base gri
+   skalası Obsidian "GitHub Theme" (krios2146) ile birebir aynı.
+   Surface stratejisi: GitHub gibi border-first; shadow yalnızca floating
+   katmanda ve orada da ring (0 0 0 1px rule) ile birlikte — GitHub kartları
+   düz, sadece overlay'ler yükselir.
+   ========================================================================= */
+[data-theme="github"] {
+  --color-paper:        #0D1117;  /* canvas.default            */
+  --color-paper-2:      #161B22;  /* canvas.subtle · sidebar   */
+  --color-paper-3:      #21262D;  /* btn.bg · hover            */
+  --color-paper-4:      #30363D;  /* btn.hoverBg · pressed     */
+
+  --color-rule:         #30363D;  /* border.default            */
+  --color-rule-soft:    #21262D;  /* border.muted              */
+  --color-rule-strong:  #6E7681;  /* neutral.emphasis · hover  */
+
+  --color-ink:          #E6EDF3;  /* fg.default                */
+  --color-ink-2:        #C9D1D9;
+  --color-ink-3:        #8B949E;  /* fg.muted                  */
+  --color-ink-4:        #6E7681;  /* fg.subtle                 */
+  --color-ink-5:        #484F58;  /* fg.disabled               */
+
+  --color-accent:       #58A6FF;  /* link blue                 */
+  --color-accent-hot:   #1F6FEB;  /* accent.emphasis · CTA     */
+  --color-accent-soft:  #1E4273;  /* accent.muted border       */
+  --color-accent-wash:  #121D2F;  /* accent.subtle bg          */
+  --color-accent-ink:   #A5D6FF;  /* wash üstü accent yazı     */
+
+  --color-ok:           #3FB950;  /* success.fg                */
+  --color-warn:         #D29922;  /* attention.fg              */
+  --color-err:          #F85149;  /* danger.fg                 */
+
+  --shadow-soft:        0 1px 1px 0 rgb(1 4 9 / 0.60), 0 1px 3px 0 rgb(1 4 9 / 0.60);
+  --shadow-medium:      0 1px 1px 0 rgb(1 4 9 / 0.40), 0 3px 6px 0 rgb(1 4 9 / 0.80);
+  --shadow-deep:        0 0 0 1px #30363D, 0 24px 48px 0 rgb(1 4 9 / 0.85);
+  --shadow-lift:        0 0 0 1px #30363D, 0 6px 12px -3px rgb(1 4 9 / 0.40), 0 6px 18px 0 rgb(1 4 9 / 0.40);
 
   color-scheme: dark;
 }
@@ -573,7 +618,8 @@ html.theme-init-complete body {
   --md-inline-code-bg: #eff1f3;
 }
 [data-theme="dark"] .markdown-preview,
-[data-theme="sepia"] .markdown-preview {
+[data-theme="sepia"] .markdown-preview,
+[data-theme="github"] .markdown-preview {
   --md-code-bg: #0d1117;
   --md-code-border: #30363d;
   --md-code-fg: #e6edf3;

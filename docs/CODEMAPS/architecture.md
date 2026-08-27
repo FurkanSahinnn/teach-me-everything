@@ -62,7 +62,7 @@ Runtime gate: `isTauriEnvWithOverride()` — [src/lib/tauri/env.ts](src/lib/taur
 - **No telemetry.** Never log prompts, responses, or keys.
 - **BYOK everywhere** — no bundled keys; `apiKeys` table or OS keychain.
 - **i18n TR/EN** via `next-intl`; every string through `src/i18n/messages.ts`.
-- **3 themes** (white/sepia/dark) via `data-theme`, never `dark:` prefix.
+- **4 themes** (white/sepia/dark/github) via `data-theme`, never `dark:` prefix.
 - **Static-export dynamic routes**: two-level child routes need `workspaceDevRewrites()` in [next.config.ts](next.config.ts) + `DYNAMIC_CHILD` in [route-params.ts](src/lib/utils/route-params.ts) + `DYN_PARENTS` in [lib.rs](src-tauri/src/lib.rs).
 
 ## Verification Gates

@@ -1,6 +1,6 @@
 # Design System v2 — Teach Me Everything
 
-> **Son güncelleme:** 2026-04-28 · v2 (UI overhaul)
+> **Son güncelleme:** 2026-08-27 · v2 (UI overhaul) + `github` teması · Dark sütunu globals.css ile senkronlandı
 > Tek doğruluk kaynağı: `src/app/globals.css`. Bu dokümandan farklı değer
 > kullanma; ne renk, ne radius, ne shadow. Yeni token önerin varsa önce
 > burayı güncelle, sonra `globals.css`'e ekle.
@@ -16,8 +16,8 @@
 **Planlanan yön:** dark-first premium akademik çalışma alanı · dengeli yoğunluk · sepia güçlü reader modu · landing ve tüm app ekranlarında tutarlı responsive yapı.
 
 - Genel dil **Linear / Notion** sadeliği — temiz boşluk, tutarlı 12px radius, ölçülü shadow
-- **Premium amber** dual-token (`--color-accent` daha akademik, `--color-accent-hot` CTA) — 3 temada da çalışır
-- **3 tema · 3 yoğunluk · 2 dil** kullanıcı tercihi → `data-theme`, `data-density`, `lang` attribute'larıyla anında değişir
+- **Premium amber** dual-token (`--color-accent` daha akademik, `--color-accent-hot` CTA) — white/sepia/dark üçlüsünde ortak. `github` teması bunun tek istisnası: GitHub'ın kimliği mavi link rengi olduğu için aksanı da mavi (`#58A6FF` / `#1F6FEB`)
+- **4 tema · 3 yoğunluk · 2 dil** kullanıcı tercihi → `data-theme`, `data-density`, `lang` attribute'larıyla anında değişir
 - Tipografi: **Source Serif 4** (display), **Inter** (UI), **JetBrains Mono** (code)
 - Tüm ikonografi `lucide-react` üzerinden — `src/components/icons/index.ts` barrel'ından tüketilir
 
@@ -25,15 +25,18 @@
 
 ## 2. Tema Mimarisi
 
-### Üç tema
+### Dört tema
 
 | Tema | Default | Karakter | Surface stratejisi |
 |------|---------|----------|--------------------|
-| `white` | ✅ (sistem light ise) | Modern minimal · saf beyaz · Linear/Notion | Border + soft shadow |
+| `white` | — (sistem takibi açıksa, light) | Modern minimal · saf beyaz · Linear/Notion | Border + soft shadow |
 | `sepia` | — | Akademik · warm parchment · okuma odaklı | Border ağırlıklı · shadow minimal |
-| `dark` | ✅ (sistem dark ise) | Sofistike · ink-black · gece modu | Border + belirgin shadow |
+| `dark` | ✅ (temiz kurulum) | Sofistike · warm ink-black · gece modu | Border + belirgin shadow |
+| `github` | — | GitHub Dark · Primer paleti · kod/geliştirici karakteri | Border-first · shadow yalnızca floating katmanda (+ring) |
 
-İlk açılışta `prefers-color-scheme` dinlenir (`white` veya `dark` seçilir). Kullanıcı tema değiştirdiğinde `themeFollowsSystem: false` set edilir ve tercih persist olur.
+**Default `dark`, sistem tercihi değil.** Temiz kurulumda `prefers-color-scheme` **dinlenmez**: `prefs.ts` `theme: "dark"` + `themeFollowsSystem: false` ile başlar, `theme-script.ts` de localStorage boşken `dark` yazar. Sistem tercihi yalnızca kullanıcı "sistemi takip et"i açtığında (`setThemeFollowsSystem(true)`) devreye girer; o zaman `getSystemTheme()` `white`/`dark` döndürür ve bir `matchMedia` listener'ı canlı takip eder. Kullanıcı elle tema seçtiğinde `themeFollowsSystem` tekrar `false` olur ve tercih persist edilir.
+
+`github` **sistem tercihinden asla otomatik seçilmez** — `getSystemTheme()` yalnızca `white`/`dark` döndürür; GitHub teması açık bir kullanıcı seçimidir.
 
 ### Theme switching akışı
 
@@ -63,9 +66,19 @@
 }
 
 [data-theme="dark"] {
-  --color-paper: #0E0E10;
-  --color-ink:   #F4F2EE;
-  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.40), 0 4px 12px -4px rgb(0 0 0 / 0.40);
+  --color-paper: #11100E;
+  --color-ink:   #F5F0E7;
+  --shadow-soft: 0 1px 0 rgb(255 244 224 / 0.03), 0 16px 40px -32px rgb(0 0 0 / 0.85);
+}
+
+/* GitHub Dark — değerler @primer/primitives dark.css'ten birebir alınır,
+   tahmin edilmez. Yeni bir GitHub token'ı lazımsa kaynağı orası. */
+[data-theme="github"] {
+  --color-paper:      #0D1117;  /* bgColor-default   */
+  --color-rule:       #30363D;  /* borderColor-default */
+  --color-ink:        #E6EDF3;  /* fgColor-default   */
+  --color-accent:     #58A6FF;  /* fgColor-accent    */
+  --color-accent-hot: #1F6FEB;  /* bgColor-accent-emphasis */
 }
 ```
 
@@ -75,28 +88,28 @@
 
 ### 3.1 Color (her tema kendi değerini override eder)
 
-| Token | White | Sepia | Dark | Kullanım |
-|-------|-------|-------|------|----------|
-| `--color-paper` | `#FFFFFF` | `#F6EAD2` | `#0E0E10` | Primary surface |
-| `--color-paper-2` | `#FAFAF9` | `#EFDFC0` | `#1A1A1D` | Sunken surface, sidebar |
-| `--color-paper-3` | `#F4F4F2` | `#E5D2AC` | `#242428` | Hover state |
-| `--color-paper-4` | `#EDEDEA` | `#DCC79A` | `#2D2D32` | Pressed state |
-| `--color-rule` | `#E5E5E1` | `#C9B68F` | `#2E2E33` | Default border |
-| `--color-rule-soft` | `#EFEEEA` | `#D6C4A0` | `#26262A` | Subtle divider |
-| `--color-rule-strong` | `#D4D3CD` | `#A6925F` | `#404048` | Hover border |
-| `--color-ink` | `#0F0F0E` | `#2E1F0E` | `#F4F2EE` | Primary text |
-| `--color-ink-2` | `#2B2B29` | `#4A331A` | `#D4D1CC` | Secondary text |
-| `--color-ink-3` | `#5C5B57` | `#6B4F30` | `#948F87` | Tertiary text, icons |
-| `--color-ink-4` | `#8B8A85` | `#8E7651` | `#6B6760` | Placeholder, eyebrow |
-| `--color-ink-5` | `#B8B7B1` | `#B19979` | `#4A463F` | Disabled / muted |
-| `--color-accent` | `#B86A2B` | `#B86A2B` | `#E89757` | Aksanlı vurgu (akademik) |
-| `--color-accent-hot` | `#C26A2E` | `#B25920` | `#F5A56B` | Primary CTA |
-| `--color-accent-soft` | `#E8C9A8` | `#DDB988` | `#7A4419` | Tinted surface |
-| `--color-accent-wash` | `#FCEFDC` | `#ECD8B0` | `#2E2012` | Highlight bg |
-| `--color-accent-ink` | `#6E3A0F` | `#5C2E08` | `#F6D0A8` | Accent text on wash |
-| `--color-ok` | `#4E6E3E` | `#4E6E3E` | `#4E6E3E` | Başarı |
-| `--color-warn` | `#A86A1C` | `#A86A1C` | `#A86A1C` | Uyarı |
-| `--color-err` | `#8E2F2F` | `#8E2F2F` | `#8E2F2F` | Hata |
+| Token | White | Sepia | Dark | GitHub | Kullanım |
+|-------|-------|-------|------|--------|----------|
+| `--color-paper` | `#FFFFFF` | `#F6EAD2` | `#11100E` | `#0D1117` | Primary surface |
+| `--color-paper-2` | `#FAFAF9` | `#EFDFC0` | `#1B1814` | `#161B22` | Sunken surface, sidebar |
+| `--color-paper-3` | `#F4F4F2` | `#E5D2AC` | `#282219` | `#21262D` | Hover state |
+| `--color-paper-4` | `#EDEDEA` | `#DCC79A` | `#342B20` | `#30363D` | Pressed state |
+| `--color-rule` | `#E5E5E1` | `#C9B68F` | `#473B2D` | `#30363D` | Default border |
+| `--color-rule-soft` | `#EFEEEA` | `#D6C4A0` | `#322A21` | `#21262D` | Subtle divider |
+| `--color-rule-strong` | `#D4D3CD` | `#A6925F` | `#6D5A42` | `#6E7681` | Hover border |
+| `--color-ink` | `#0F0F0E` | `#2E1F0E` | `#F5F0E7` | `#E6EDF3` | Primary text |
+| `--color-ink-2` | `#2B2B29` | `#4A331A` | `#DCD2C1` | `#C9D1D9` | Secondary text |
+| `--color-ink-3` | `#5C5B57` | `#6B4F30` | `#A99D8B` | `#8B949E` | Tertiary text, icons |
+| `--color-ink-4` | `#8B8A85` | `#8E7651` | `#776D60` | `#6E7681` | Placeholder, eyebrow |
+| `--color-ink-5` | `#B8B7B1` | `#B19979` | `#524B42` | `#484F58` | Disabled / muted |
+| `--color-accent` | `#B86A2B` | `#B86A2B` | `#D99A5E` | `#58A6FF` | Aksanlı vurgu (akademik) |
+| `--color-accent-hot` | `#C26A2E` | `#B25920` | `#E8A764` | `#1F6FEB` | Primary CTA |
+| `--color-accent-soft` | `#E8C9A8` | `#DDB988` | `#6F4A27` | `#1E4273` | Tinted surface |
+| `--color-accent-wash` | `#FCEFDC` | `#ECD8B0` | `#2F2417` | `#121D2F` | Highlight bg |
+| `--color-accent-ink` | `#6E3A0F` | `#5C2E08` | `#F2C995` | `#A5D6FF` | Accent text on wash |
+| `--color-ok` | `#4E6E3E` | `#4E6E3E` | `#7BA85F` | `#3FB950` | Başarı |
+| `--color-warn` | `#A86A1C` | `#A86A1C` | `#D89A4A` | `#D29922` | Uyarı |
+| `--color-err` | `#8E2F2F` | `#8E2F2F` | `#C9594A` | `#F85149` | Hata |
 
 ### 3.2 Radius (12px central)
 
@@ -118,6 +131,8 @@
 | `--shadow-medium` | Floating menu | Çok hafif |
 | `--shadow-deep` | Modal, drawer | Modal, drawer |
 | `--shadow-lift` | Hover-lift state | Hover-lift state |
+
+`github` teması GitHub'ın düz yüzey dilini izler: `soft`/`medium` neredeyse görünmez (`#010409` tabanlı), `deep`/`lift` ise gölgeye ek olarak `0 0 0 1px #30363D` ring taşır — GitHub'ta kartlar düz durur, sadece overlay'ler yükselir.
 
 ### 3.4 Density (compact / normal / comfy)
 
@@ -320,7 +335,7 @@ Reader prose (`/notebook`) için ayrı `prose-tme` utility — Source Serif 4, 1
 | Inline SVG ikonlar | `lucide-react` barrel | `components/icons/index.ts` |
 | Sabit 248px sidebar | 260px desktop + drawer mobile | `AppShell` responsive grid |
 | `accent: #B8601C` (tek) | `accent: #B86A2B` + `accent-hot: #C26A2E` | Dual-token; `accent-hot` CTA-only |
-| `themeFollowsSystem` yok | Var (default `true`) | İlk açılış `prefers-color-scheme` |
+| `themeFollowsSystem` yok | Var (default `false`) | Opt-in; kapalıyken ilk açılış `dark` |
 | FOUC riski | `theme-init-script` inline `<head>` | Hydrate öncesi data-theme set |
 
 ---

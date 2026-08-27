@@ -1,6 +1,6 @@
 # Teach Me Everything — Project Index
 
-> **UI durumu:** UI v2 baseline (3 tema, mobile-first shell) çalışıyor; tüm sayfalar Dexie hook'larına bağlı. Settings'te EmbedSection + ReembedModal + per-görev ModelRow (sağlayıcı bazlı dinamik model listesi, OpenRouter + özel model ID dahil).
+> **UI durumu:** UI v2 baseline (4 tema, mobile-first shell) çalışıyor; tüm sayfalar Dexie hook'larına bağlı. Settings'te EmbedSection + ReembedModal + per-görev ModelRow (sağlayıcı bazlı dinamik model listesi, OpenRouter + özel model ID dahil).
 > **Lisans:** MIT (açık kaynak, yerel çalışır — BYOK)
 > **Versiyon:** v1.0.0-rc13 · Phase 0–13 ✅ · Dexie **v29** · prefs **v24** · Backup **V10** · Vitest 195 test dosyası + 17 Playwright spec · `npm run typecheck` 0 hata
 

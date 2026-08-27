@@ -27,7 +27,7 @@ export const themeInitScript = `
       var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       theme = followSystem ? (prefersDark ? 'dark' : 'white') : 'dark';
     }
-    if (theme !== 'white' && theme !== 'sepia' && theme !== 'dark') theme = 'dark';
+    if (theme !== 'white' && theme !== 'sepia' && theme !== 'dark' && theme !== 'github') theme = 'dark';
     if (density !== 'compact' && density !== 'normal' && density !== 'comfy') density = 'normal';
     if (locale !== 'tr' && locale !== 'en') locale = 'tr';
     var root = document.documentElement;

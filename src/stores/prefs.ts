@@ -21,7 +21,7 @@ import {
 } from "@/lib/vault/conflict-policy";
 import type { TtsProviderId } from "@/lib/podcast/adapter";
 
-export type Theme = "white" | "sepia" | "dark";
+export type Theme = "white" | "sepia" | "dark" | "github";
 export type Density = "compact" | "normal" | "comfy";
 export type Locale = "tr" | "en";
 export type AnthropicAuthPreference = "oauth" | "api-key";
@@ -303,7 +303,7 @@ const VALID_TTS_PROVIDERS: readonly TtsProviderId[] = [
   "vibevoice",
 ];
 const DEFAULT_TTS_PROVIDER: TtsProviderId = "piper";
-const VALID_THEMES: readonly Theme[] = ["white", "sepia", "dark"];
+const VALID_THEMES: readonly Theme[] = ["white", "sepia", "dark", "github"];
 const VALID_AI_LOCALES: readonly AiResponseLocale[] = ["tr", "en", "follow_source"];
 const VALID_READER_WIDTHS: readonly ReaderWidth[] = ["narrow", "full"];
 const MODEL_BINDING_KEYS: readonly (keyof ModelBindings)[] = [

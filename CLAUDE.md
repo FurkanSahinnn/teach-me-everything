@@ -243,7 +243,7 @@ npm run tauri:build
 4. **Sketch a small plan (3–5 bullets)** before changing code.
 5. **Local-first** — if you want server state, document why first.
 6. **TR / EN every string** via i18n — no hardcoded text.
-7. **Don't change design tokens / fonts** — `DESIGN_SYSTEM.md` is the gate. 3 themes (white / sepia / dark) cascade via `data-theme`; don't use `dark:` prefix.
+7. **Don't change design tokens / fonts** — `DESIGN_SYSTEM.md` is the gate. 4 themes (white / sepia / dark / github) cascade via `data-theme`; don't use `dark:` prefix.
 8. **BYOK security is conservative** — when in doubt, ask. Tauri uses OS keychain; web is dev-only plaintext.
 9. **Open-source mindset** — friendly errors, README screenshots, demo GIFs.
 10. **Phase detail lives in memory** — `memory/project_phase{45,5,55,6,69,7,8,9}_plan.md`. Pull from there before re-deriving context; don't re-bloat this file.
