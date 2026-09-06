@@ -31,6 +31,9 @@ describe("deriveConnectOrigins — preset coverage", () => {
     const origins = deriveConnectOrigins();
     for (const preset of Object.values(PROVIDER_PRESETS)) {
       if (!preset) continue;
+      // A process-based provider never opens a connection, so it contributes no
+      // origin — and carries no URL to parse.
+      if (preset.family === "agent-cli") continue;
       const u = new URL(preset.baseUrl);
       const host = u.host.replace(/:\d+$/, "");
       // local presets (ollama / lm-studio / llama-cpp) are filtered by URL.

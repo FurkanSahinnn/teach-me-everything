@@ -1,6 +1,7 @@
 import { findCustomEndpoint } from "@/stores/prefs";
 import { AnthropicChatProvider } from "./anthropic";
 import { getAnthropicOAuthChatProvider } from "./anthropic-oauth";
+import { ClaudeCliChatProvider } from "./claude-cli";
 import { CohereEmbedProvider } from "./embed-cohere";
 import { GeminiEmbedProvider } from "./embed-gemini";
 import { HuggingFaceEmbedProvider } from "./embed-hf";
@@ -60,6 +61,10 @@ function synthesizeCustomPreset(id: ProviderId): ProviderPreset | undefined {
 
 function constructChatProvider(id: ProviderId): ChatProvider {
   if (id === "anthropic") return new AnthropicChatProvider();
+  // Spawns the local CLI rather than making a request. Its preset carries the
+  // non-HTTP family "agent-cli", so it must be picked off by id here — the
+  // family dispatch below would otherwise reject it as unimplemented.
+  if (id === "claude-cli") return new ClaudeCliChatProvider();
   // Responses API uses a dedicated provider class — Chat Completions can't
   // accept the `web_search` built-in tool that drives chat-LLM search.
   if (id === "openai-responses") return new OpenAIResponsesChatProvider();

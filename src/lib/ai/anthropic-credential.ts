@@ -1,6 +1,8 @@
 import { getApiKey } from "@/lib/db/api-keys-repo";
 import { type Provider } from "@/lib/db/schema";
 import { usePrefs } from "@/stores/prefs";
+import { getPreset } from "@/lib/ai/providers/presets";
+import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
 import type { ProviderId } from "@/lib/ai/providers/types";
 
 export type AnthropicAuthKind = "oauth" | "api-key";
@@ -71,6 +73,12 @@ export async function resolveChatCredentialForPreset(
     if (!cred) return null;
     return { apiKey: cred.key, authKind: cred.kind };
   }
+  // A provider that authenticates outside TME has no key to look up: the local
+  // agent CLI signs requests with the user's own subscription session. Without
+  // this branch every stage runner fails with `no_credential` before the
+  // provider is ever given a chance to spawn.
+  if (getPreset(presetId)?.externalAuth) return { apiKey: "" };
+
   let key: string | null = null;
   try {
     key = await getApiKey(presetId as Provider);
@@ -79,4 +87,20 @@ export async function resolveChatCredentialForPreset(
   }
   if (!key) return null;
   return { apiKey: key };
+}
+
+/**
+ * True when TME does not have to supply an API key for this preset.
+ *
+ * Two unrelated reasons land here: a self-hosted endpoint on the user's own
+ * machine accepts an empty bearer, and a provider like the local agent CLI
+ * authenticates entirely outside the app against the user's own subscription.
+ *
+ * Call sites used to test `isLocalUrl(preset.baseUrl)` directly, which silently
+ * excluded the second case — a process-based provider has no URL at all, so the
+ * check returned false and the caller demanded a key that can never exist.
+ */
+export function presetIsKeyless(presetId: ProviderId, baseUrl: string): boolean {
+  if (getPreset(presetId)?.externalAuth === true) return true;
+  return isLocalUrl(baseUrl);
 }

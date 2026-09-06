@@ -3,6 +3,37 @@ import type { CloudProviderId, ProviderId, ProviderPreset } from "./types";
 // Partial because embed-only literals (voyage / cohere / jina / huggingface)
 // have no chat preset — they live in EMBED_PRESETS only.
 export const PROVIDER_PRESETS: Partial<Record<CloudProviderId, ProviderPreset>> = {
+  "claude-cli": {
+    id: "claude-cli",
+    label: "Claude Code (local CLI)",
+    family: "agent-cli",
+    kind: "chat",
+    // Never dialled. The provider spawns a process instead of making a request,
+    // so the URL helpers that read baseUrl skip this preset on an empty string.
+    baseUrl: "",
+    auth: { kind: "bearer" },
+    capabilities: {
+      cacheControl: false,
+      toolUse: "json",
+      streaming: true,
+      vision: false,
+    },
+    defaultModels: { chat: "sonnet" },
+    // The CLI's own aliases rather than pinned ids, so a user tracking the
+    // latest model gets it without TME shipping a new build.
+    availableModels: [
+      { id: "opus", displayName: "Opus", tier: "flagship", hint: "Most capable" },
+      { id: "sonnet", displayName: "Sonnet", tier: "balanced", hint: "Default" },
+      { id: "haiku", displayName: "Haiku", tier: "fast", hint: "Fastest" },
+    ],
+    // Authenticated by the CLI against the user's own plan — there is no key to
+    // store, and no per-token price to quote. Leaving these ids out of PRICING
+    // is deliberate: it hides the price chip instead of printing a dollar
+    // figure a subscriber never pays, or "Free" for something they do.
+    externalAuth: true,
+    freeTier: false,
+    docsUrl: "https://docs.claude.com/en/docs/claude-code",
+  },
   anthropic: {
     id: "anthropic",
     label: "Anthropic",

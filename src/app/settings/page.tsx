@@ -43,6 +43,7 @@ import { SearchProvidersSection } from "@/components/settings/SearchProvidersSec
 import { DailyNotesSection } from "@/components/settings/DailyNotesSection";
 import { VaultSection } from "@/components/settings/VaultSection";
 import { AutoLaunchSection } from "@/components/settings/AutoLaunchSection";
+import { AgentCliSection } from "@/components/settings/AgentCliSection";
 import { UpdatesSection } from "@/components/settings/UpdatesSection";
 import { TtsProviderSection } from "@/components/settings/TtsProviderSection";
 import { PodcastFeatureSection } from "@/components/settings/PodcastFeatureSection";
@@ -63,6 +64,7 @@ import {
   type ChatOption,
 } from "@/lib/ai/model-options";
 import type { ModelTier, ProviderId } from "@/lib/ai/providers/types";
+import { getPreset } from "@/lib/ai/providers/presets";
 import { useProviderChatModels } from "@/hooks/useProviderChatModels";
 import { supportsModelFetch } from "@/lib/ai/providers/model-fetch/adapter";
 
@@ -641,6 +643,7 @@ export default function SettingsPage() {
               <DailyNotesSection />
               <VaultSection />
               <AutoLaunchSection />
+              <AgentCliSection />
               <PodcastFeatureSection />
             </>
           ) : null}
@@ -1128,10 +1131,13 @@ function ChatModelRow({
   // separate sentinel that lives outside this picker — only check stored
   // status when the provider actually maps to a Provider literal we manage.
   const presetIdStr = selectedProvider?.presetId ?? "";
+  // A preset that authenticates outside TME (the local agent CLI) has no key
+  // to store either, so it is read off the preset rather than re-listed here.
   const isLocalProvider =
     presetIdStr === "ollama" ||
     presetIdStr === "lm-studio" ||
-    presetIdStr === "llama-cpp";
+    presetIdStr === "llama-cpp" ||
+    getPreset(presetIdStr as ProviderId)?.externalAuth === true;
   const keyStored = selectedProvider
     ? keys.isStored(selectedProvider.presetId as Provider)
     : false;

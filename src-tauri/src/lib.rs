@@ -3,6 +3,7 @@
 // business logic lives in TS / React; this file is intentionally a thin
 // integration layer.
 
+mod agent_cli;
 mod keychain;
 mod sysinfo;
 mod tts;
@@ -48,6 +49,10 @@ pub fn run() {
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_shell::init())
     .invoke_handler(tauri::generate_handler![
+      agent_cli::agent_cli_probe,
+      agent_cli::agent_cli_start,
+      agent_cli::agent_cli_write,
+      agent_cli::agent_cli_stop,
       keychain::keychain_get,
       keychain::keychain_set,
       keychain::keychain_delete,
@@ -60,6 +65,7 @@ pub fn run() {
       sysinfo::sysinfo_probe,
       sysinfo::sysinfo_gpu,
     ])
+    .manage(agent_cli::AgentCliState::default())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

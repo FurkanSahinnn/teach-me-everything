@@ -11,7 +11,7 @@ import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
 import { findChatOption } from "@/lib/ai/model-options";
 import { getWebSearchAdapter } from "@/lib/ai/web-search/adapter";
 import type { WebCitation, WebSearchUsage } from "@/lib/ai/web-search/types";
-import { resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
+import { presetIsKeyless, resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
 import { buildWorkspaceChatSystem } from "@/lib/ai/prompts/workspace-chat";
 import type { WorkspaceSource } from "@/lib/ai/prompts/workspace-chat";
 import { gatherContextBlocks } from "@/lib/ai/context";
@@ -426,7 +426,7 @@ export function useWorkspaceChat(
       const chatModelId = chosen.modelId;
       const chatPreset = getPreset(chatPresetId);
       const chatPresetLabel = chatPreset?.label ?? String(chatPresetId);
-      const chatIsLocal = chatPreset ? isLocalUrl(chatPreset.baseUrl) : false;
+      const chatIsKeyless = presetIsKeyless(chatPresetId, chatPreset?.baseUrl ?? "");
 
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
@@ -461,7 +461,7 @@ export function useWorkspaceChat(
         }
         apiKey = credential.key;
         authKind = credential.kind;
-      } else if (chatIsLocal) {
+      } else if (chatIsKeyless) {
         apiKey = "";
       } else {
         let key: string | null = null;

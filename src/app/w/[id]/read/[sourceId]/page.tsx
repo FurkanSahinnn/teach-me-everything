@@ -9,6 +9,7 @@ import {
   CircleStop,
   CornerUpLeft,
   FileImage,
+  Gauge,
   Globe,
   Highlighter,
   KeyRound,
@@ -56,7 +57,8 @@ import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
 import { findChatOption } from "@/lib/ai/model-options";
 import { getWebSearchAdapter } from "@/lib/ai/web-search/adapter";
 import type { WebCitation, WebSearchUsage } from "@/lib/ai/web-search/types";
-import { resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
+import { presetIsKeyless, resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
+import { deriveContextFill } from "@/lib/ai/context-window";
 import { buildNotebookSystem } from "@/lib/ai/prompts/notebook-chat";
 import { buildNotebookTools, type AnthropicTool } from "@/lib/ai/tools";
 import { ingestResearchUrl } from "@/lib/research/ingest";
@@ -652,7 +654,7 @@ export default function NotebookReaderPage() {
       const chatModelId = chosen.modelId;
       const chatPreset = getPreset(chatPresetId);
       const chatPresetLabel = chatPreset?.label ?? String(chatPresetId);
-      const chatIsLocal = chatPreset ? isLocalUrl(chatPreset.baseUrl) : false;
+      const chatIsKeyless = presetIsKeyless(chatPresetId, chatPreset?.baseUrl ?? "");
 
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
@@ -689,7 +691,7 @@ export default function NotebookReaderPage() {
         }
         apiKey = credential.key;
         authKind = credential.kind;
-      } else if (chatIsLocal) {
+      } else if (chatIsKeyless) {
         // Local self-hosted endpoints (Ollama / LM Studio / llama.cpp) skip
         // the proxy entirely and accept an empty bearer.
         apiKey = "";
@@ -2296,6 +2298,12 @@ function ChatPanel({
   // still render a disabled greyed-out chip when unsupported so the user
   // can see the feature exists; tooltip points at Settings → Models.
   const webSearchAvailable = Boolean(onWebSearchToggle);
+
+  // Context fill is derived from the last assistant turn rather than tracked in
+  // separate state: the message record already carries the model and all three
+  // token buckets. Cached tokens count toward it — billing treats them
+  // differently, the context limit does not.
+  const contextFill = useMemo(() => deriveContextFill(messages), [messages]);
   const webSearchSupported = chatOptionMeta?.supportsWebSearch ?? false;
   const isStreaming = chatStatus.kind === "streaming";
   const isPreparing = chatStatus.kind === "preparing";
@@ -2636,6 +2644,22 @@ function ChatPanel({
                 <Globe className="h-3 w-3" aria-hidden />
                 <span>{tWebSearch("toggle_label")}</span>
               </button>
+            ) : null}
+            {contextFill ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 font-mono text-[10.5px]",
+                  contextFill.pct >= 80 ? "text-amber-600" : "text-ink-4",
+                )}
+                title={pick(
+                  `Bağlam ${contextFill.prompt.toLocaleString()} / ${contextFill.size.toLocaleString()} token · ${contextFill.model}`,
+                  `Context ${contextFill.prompt.toLocaleString()} / ${contextFill.size.toLocaleString()} tokens · ${contextFill.model}`,
+                )}
+                data-testid="context-fill"
+              >
+                <Gauge className="h-3 w-3" aria-hidden />
+                {contextFill.pct}%
+              </span>
             ) : null}
             <span>
               {messages.length} {t("mesaj")}

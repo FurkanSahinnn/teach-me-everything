@@ -59,7 +59,7 @@ import type {
   QuizOpenAnswer,
   QuizOpenItem,
 } from "@/lib/quiz/types";
-import { resolveChatCredentialForPreset } from "@/lib/ai/anthropic-credential";
+import { presetIsKeyless, resolveChatCredentialForPreset } from "@/lib/ai/anthropic-credential";
 import { useVault } from "@/stores/vault";
 import { findCustomEndpoint, usePrefs } from "@/stores/prefs";
 import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
@@ -290,7 +290,7 @@ function SetupView({
           ? findCustomEndpoint(presetId.slice("custom:".length))
           : undefined;
       const baseUrl = customEndpoint?.baseUrl ?? preset?.baseUrl;
-      const isLocal = Boolean(baseUrl && isLocalUrl(baseUrl));
+      const isLocal = presetIsKeyless(presetId, baseUrl ?? "");
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
       if (!isLocal) {
@@ -1031,7 +1031,7 @@ function OpenCard({
           ? findCustomEndpoint(presetId.slice("custom:".length))
           : undefined;
       const baseUrl = customEndpoint?.baseUrl ?? preset?.baseUrl;
-      const isLocal = Boolean(baseUrl && isLocalUrl(baseUrl));
+      const isLocal = presetIsKeyless(presetId, baseUrl ?? "");
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
       if (!isLocal) {

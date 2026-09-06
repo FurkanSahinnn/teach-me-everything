@@ -15,7 +15,7 @@ const SSE_MIME = "text/event-stream";
 type SSEFrame = { event: string; data: string };
 
 // Anthropic SSE payload shape is canon — adapter normalises it into provider-agnostic StreamEvent.
-type AnthropicStreamPayload =
+export type AnthropicStreamPayload =
   | {
       type: "message_start";
       message?: { model?: string; usage?: Usage };
@@ -171,20 +171,40 @@ export async function* consumeAnthropicStream(
   signal: AbortSignal,
   opts: { fallbackModel?: string } = {},
 ): AsyncGenerator<StreamEvent> {
+  yield* consumeAnthropicPayloads(sseToPayloads(body), signal, opts);
+}
+
+async function* sseToPayloads(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<AnthropicStreamPayload> {
+  for await (const frame of parseSSE(body)) {
+    if (frame.event === "ping") continue;
+    try {
+      yield JSON.parse(frame.data) as AnthropicStreamPayload;
+    } catch {
+      continue;
+    }
+  }
+}
+
+/**
+ * Payload → StreamEvent mapping, split out of consumeAnthropicStream so a
+ * non-SSE transport can reuse it verbatim. The local Claude Code CLI wraps
+ * exactly this payload vocabulary inside its `stream_event` NDJSON lines, so
+ * unwrapping that envelope is all that separates the two transports.
+ */
+export async function* consumeAnthropicPayloads(
+  payloads: AsyncIterable<AnthropicStreamPayload>,
+  signal: AbortSignal,
+  opts: { fallbackModel?: string } = {},
+): AsyncGenerator<StreamEvent> {
   const usage: Usage = {};
   let model = opts.fallbackModel ?? "";
   try {
-    for await (const frame of parseSSE(body)) {
+    for await (const payload of payloads) {
       if (signal.aborted) {
         yield { kind: "abort" };
         return;
-      }
-      if (frame.event === "ping") continue;
-      let payload: AnthropicStreamPayload;
-      try {
-        payload = JSON.parse(frame.data) as AnthropicStreamPayload;
-      } catch {
-        continue;
       }
       // Phase 5.5.C.B — surface the raw payload before any typed yield so
       // web-search adapters (claude.ts) can pick out web_search_tool_result

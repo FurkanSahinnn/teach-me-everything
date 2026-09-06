@@ -1,6 +1,6 @@
 import { ProviderError, type ProviderId } from "./types";
 import type { AnthropicTool } from "../tools";
-import type { ToolResultBlock, ToolUseBlock } from "./types";
+import type { StreamEvent, ToolResultBlock, ToolUseBlock, Usage } from "./types";
 
 // `[\s\S]` instead of `.` so newlines inside the block match; non-greedy `*?`
 // so two adjacent blocks don't merge. Built fresh per call (factory) because
@@ -363,4 +363,58 @@ function cryptoRandomId(): string {
   const g = (globalThis as { crypto?: Crypto }).crypto;
   if (g && typeof g.randomUUID === "function") return g.randomUUID();
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/**
+ * Wraps a provider stream so tool calls the model emitted as fenced JSON are
+ * replayed as native tool events. Used by transports that cannot carry a tool
+ * schema on the wire: an OpenAI-compatible server that ignores `tools`, and the
+ * local agent CLI, whose own tool machinery is disabled on purpose.
+ *
+ * Buffers assistant text, scans it once at `stop`, and rewrites the trailing
+ * `delta` to stopReason "tool_use" when anything was extracted, so a reader's
+ * tool loop continues exactly as it does for a native caller.
+ */
+export async function* withJsonToolFallback(
+  base: AsyncIterable<StreamEvent>,
+): AsyncGenerator<StreamEvent> {
+  let bufferedText = "";
+  let pendingDelta:
+    | { kind: "delta"; stopReason: string | null; usage: Usage }
+    | null = null;
+
+  for await (const event of base) {
+    if (event.kind === "text") {
+      bufferedText += event.delta;
+      yield event;
+      continue;
+    }
+    if (event.kind === "delta") {
+      pendingDelta = event;
+      continue;
+    }
+    if (event.kind === "stop") {
+      const { toolUses } = parseJsonToolUseFromText(bufferedText);
+      for (let i = 0; i < toolUses.length; i += 1) {
+        const tu = toolUses[i]!;
+        yield { kind: "tool_start", index: i, id: tu.id, name: tu.name };
+        yield {
+          kind: "tool_input_delta",
+          index: i,
+          partial: JSON.stringify(tu.input),
+        };
+        yield { kind: "tool_stop", index: i };
+      }
+      if (pendingDelta) {
+        yield toolUses.length > 0
+          ? { ...pendingDelta, stopReason: "tool_use" }
+          : pendingDelta;
+        pendingDelta = null;
+      }
+      yield event;
+      return;
+    }
+    yield event;
+  }
+  if (pendingDelta) yield pendingDelta;
 }

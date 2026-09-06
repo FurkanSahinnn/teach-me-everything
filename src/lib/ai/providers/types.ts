@@ -59,6 +59,9 @@ export type StreamEvent =
 
 export type CloudProviderId =
   | "anthropic"
+  // Local Claude Code CLI. Not an HTTP endpoint at all: the provider spawns
+  // the binary the user already installed and streams its NDJSON stdout.
+  | "claude-cli"
   | "openai"
   // Distinct provider for OpenAI's `/v1/responses` endpoint — needed by the
   // chat-LLM-search wrapper because the built-in `web_search` server tool
@@ -86,7 +89,15 @@ export type CustomProviderId = `custom:${string}`;
 
 export type ProviderId = CloudProviderId | CustomProviderId;
 
-export type ProviderFamily = "anthropic" | "openai-compat" | "gemini";
+// "agent-cli" is not an HTTP family: nothing dials a URL for it, so the request
+// builders and proxy routes must never match it. Keeping it out of "anthropic"
+// is what stops buildChatUpstream from constructing a /v1/messages call for a
+// provider that spawns a process instead.
+export type ProviderFamily =
+  | "anthropic"
+  | "openai-compat"
+  | "gemini"
+  | "agent-cli";
 
 export type ProviderKind = "chat" | "embed" | "both";
 
@@ -133,6 +144,12 @@ export type ProviderPreset = {
   // Optional so synthesized custom-endpoint presets and embed-only providers
   // don't have to declare it; ChatModelRow falls back to defaultModels.chat.
   availableModels?: ModelDescriptor[];
+  /**
+   * True when the provider authenticates outside TME. The local agent CLI
+   * signs requests with the user's own subscription session, so there is no
+   * key to store and the credential resolver must not demand one.
+   */
+  externalAuth?: boolean;
   freeTier?: boolean;
   docsUrl: string;
 };

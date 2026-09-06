@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleStop, Loader2, MessagesSquare, Plus, Send } from "lucide-react";
+import { CircleStop, Gauge, Loader2, MessagesSquare, Plus, Send } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,6 +17,7 @@ import type {
   SourceRecord,
 } from "@/lib/db/types";
 import { cn } from "@/lib/utils/cn";
+import { deriveContextFill, type ContextFill } from "@/lib/ai/context-window";
 
 // Structural mirror of the reader page's local `ChatStatus`. The workspace
 // runner produces the same discriminated union; declared here (not imported)
@@ -106,6 +107,10 @@ export function WorkspaceChatPanel({
   const isPreparing = chatStatus.kind === "preparing";
   const isBusy = isStreaming || isPreparing;
   const isError = chatStatus.kind === "error";
+
+  // Same derivation as the reader panel: the last assistant message already
+  // carries the model and all three token buckets, so no extra state is needed.
+  const contextFill = useMemo(() => deriveContextFill(messages), [messages]);
 
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -231,6 +236,7 @@ export function WorkspaceChatPanel({
         isStreaming={isStreaming}
         isPreparing={isPreparing}
         messageCount={messages.length}
+        contextFill={contextFill}
       />
     </div>
   );
@@ -303,12 +309,14 @@ function Composer({
   isStreaming,
   isPreparing,
   messageCount,
+  contextFill,
 }: {
   onSend: (text: string) => void;
   onCancel: () => void;
   isStreaming: boolean;
   isPreparing: boolean;
   messageCount: number;
+  contextFill: ContextFill | null;
 }) {
   const t = useTranslations("workspace_chat");
   const pick = useLocalePick();
@@ -389,9 +397,27 @@ function Composer({
             </>
           ) : null}
         </div>
-        <span>
-          {messageCount} {pick("mesaj", "messages")}
-        </span>
+        <div className="flex items-center gap-2">
+          {contextFill ? (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 font-mono text-[10.5px]",
+                contextFill.pct >= 80 ? "text-amber-600" : "text-ink-4",
+              )}
+              title={pick(
+                `Bağlam ${contextFill.prompt.toLocaleString()} / ${contextFill.size.toLocaleString()} token · ${contextFill.model}`,
+                `Context ${contextFill.prompt.toLocaleString()} / ${contextFill.size.toLocaleString()} tokens · ${contextFill.model}`,
+              )}
+              data-testid="context-fill"
+            >
+              <Gauge className="h-3 w-3" aria-hidden />
+              {contextFill.pct}%
+            </span>
+          ) : null}
+          <span>
+            {messageCount} {pick("mesaj", "messages")}
+          </span>
+        </div>
       </div>
     </div>
   );
