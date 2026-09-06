@@ -9,6 +9,7 @@ import MarkdownIt from "markdown-it";
 import { findChunkForRef } from "@/components/notebook/CitationChip";
 import type { ChunkRecord } from "@/lib/db/types";
 import { balanceCodeFences } from "./balance-code-fences";
+import { obsidianPlugin } from "./obsidian-plugins";
 
 /**
  * Markdown → HTML using the same engine stack VS Code's preview uses:
@@ -69,6 +70,10 @@ md.disable("code");
 // VS Code's own KaTeX plugin (handles $…$, $$…$$ and the awkward edge cases).
 const useKatex = (katexPlugin as { default?: typeof katexPlugin }).default ?? katexPlugin;
 md.use(useKatex, { throwOnError: false });
+
+// Task lists, callouts, wikilinks, footnotes, ==mark== — what an Obsidian note
+// needs beyond CommonMark to look like it did in Obsidian.
+md.use(obsidianPlugin);
 
 // Inline code: tag it so the existing .markdown-inline-code styling applies.
 md.renderer.rules.code_inline = (tokens, idx) =>

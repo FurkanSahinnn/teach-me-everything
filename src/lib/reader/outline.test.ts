@@ -63,6 +63,23 @@ describe("buildReaderOutline", () => {
     expect(outline.map((item) => item.label)).toEqual(["2.1 Real Heading"]);
   });
 
+  it("keeps an ordered list in one segment when the document uses # headings", () => {
+    const segments = splitChunkIntoMarkdownSegments(
+      chunk("ck_1", "## Steps\n\n1. First\n2. Second\n3. Third"),
+    );
+    expect(segments).toHaveLength(1);
+  });
+
+  it("does not read ordered-list items or numbered sentences as headings in plain text", () => {
+    const outline = buildReaderOutline([
+      chunk(
+        "ck_1",
+        "1. First item here\n2. Second item here\n3. Third item here\n\n2.1. Dead neurons are a problem that appears when the input is negative.\n\n2.2 Real Heading",
+      ),
+    ]);
+    expect(outline.map((item) => item.label)).toEqual(["2.2 Real Heading"]);
+  });
+
   it("splits chunk markdown at heading anchors", () => {
     const segments = splitChunkIntoMarkdownSegments(
       chunk("ck_1", "Lead text\n## First\nBody\n### Second\nMore"),

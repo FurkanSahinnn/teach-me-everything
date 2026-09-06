@@ -483,18 +483,17 @@ export function SourceUploadProvider({
           byteSize: parsed.meta.byteSize,
         });
 
-        // Persist the original binary so the reader can render the source
-        // visually (e.g. PDF canvas + textLayer) instead of only the chunked
-        // plain text. Stored only for formats whose viewer benefits from
-        // visual fidelity — txt/md ship as plain text already.
-        if (type === "pdf" || type === "docx") {
-          try {
-            await saveSourceBlob(sid, targetFile);
-          } catch {
-            // Storing the blob is best-effort; the chunked reader still works
-            // without it. A failed save (quota / private mode) just means the
-            // "Original PDF" toggle will surface the missing-blob banner.
-          }
+        // Persist the original file. For PDF/DOCX the reader renders it
+        // visually (canvas + textLayer); for every type it is what a later
+        // re-chunk (Settings → Source structure) rebuilds the chunks from —
+        // chunk text alone cannot be re-split once structure is lost.
+        try {
+          await saveSourceBlob(sid, targetFile);
+        } catch {
+          // Storing the blob is best-effort; the chunked reader still works
+          // without it. A failed save (quota / private mode) just means the
+          // "Original PDF" toggle will surface the missing-blob banner and
+          // re-chunking will ask for a re-upload.
         }
 
         await setIngestStatus(sid, "ready");

@@ -135,6 +135,50 @@ describe("chunkPages", () => {
     expect(body).toMatch(/param\.requires_grad = False\n\nmodel\.classifier/);
   });
 
+  it("keeps blank lines so a rule after a paragraph stays a rule, not a setext heading", () => {
+    const text = "# T\n\nFirst paragraph.\n\nSecond paragraph.\n\n---\n\n## Next";
+    const body = chunkPages({ pages: [{ page: 1, text }] })[0]?.text ?? "";
+    expect(body).toContain("First paragraph.\n\nSecond paragraph.\n\n---\n\n## Next");
+  });
+
+  it("collapses runs of blank lines to one", () => {
+    const text = "# T\n\n\n\nA\n\n\n\nB";
+    const body = chunkPages({ pages: [{ page: 1, text }] })[0]?.text ?? "";
+    expect(body).toBe("# T\n\nA\n\nB");
+  });
+
+  it("keeps nested-list indentation in markdown", () => {
+    const text = "# T\n\n- top\n  - nested one\n  - nested two\n- top two";
+    const body = chunkPages({ pages: [{ page: 1, text }] })[0]?.text ?? "";
+    expect(body).toContain("- top\n  - nested one\n  - nested two\n- top two");
+  });
+
+  it("does not mistake ordered-list items for headings in markdown", () => {
+    const text = "# T\n\n1. First Item\n2. Second Item\n3. Third Item";
+    const out = chunkPages({ pages: [{ page: 1, text }] });
+    expect(out[0]?.headings).toEqual(["# T"]);
+    expect(out[0]?.section).toBe("# T");
+  });
+
+  it("still trims and applies heuristics for plain extracted text", () => {
+    const text = "   1.1 Section Name\n   body line";
+    const out = chunkPages({ pages: [{ page: 1, text }], format: "plain" });
+    expect(out[0]?.text).toBe("1.1 Section Name\nbody line");
+    expect(out[0]?.section).toBe("1.1 Section Name");
+  });
+
+  it("labels a chunk with the section in force at its first line", () => {
+    const text = ["## A", paragraph(3200), "", "## B", paragraph(3200), "", "## C", "tail"].join("\n");
+    const out = chunkPages({ pages: [{ page: 1, text }] });
+    expect(out.length).toBeGreaterThanOrEqual(2);
+    // No chunk may claim a section that starts after its own first line.
+    for (const c of out) {
+      const firstLine = c.text.split("\n")[0] ?? "";
+      if (firstLine.startsWith("## ")) expect(c.section).toBe(firstLine);
+    }
+    expect(out[0]?.section).toBe("## A");
+  });
+
   it("does not treat indented Python lines as headings inside fences", () => {
     const text = [
       "```python",

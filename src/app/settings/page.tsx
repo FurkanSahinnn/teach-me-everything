@@ -44,6 +44,7 @@ import { DailyNotesSection } from "@/components/settings/DailyNotesSection";
 import { VaultSection } from "@/components/settings/VaultSection";
 import { AutoLaunchSection } from "@/components/settings/AutoLaunchSection";
 import { AgentCliSection } from "@/components/settings/AgentCliSection";
+import { RechunkSection } from "@/components/settings/RechunkSection";
 import { UpdatesSection } from "@/components/settings/UpdatesSection";
 import { TtsProviderSection } from "@/components/settings/TtsProviderSection";
 import { PodcastFeatureSection } from "@/components/settings/PodcastFeatureSection";
@@ -620,6 +621,7 @@ export default function SettingsPage() {
               )}
             >
               <EmbedSection />
+              <RechunkSection />
             </Section>
           ) : null}
 
