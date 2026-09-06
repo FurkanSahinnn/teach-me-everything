@@ -72,6 +72,37 @@ export async function updateSource(
   await db.sources.update(id, { ...patch, updatedAt: Date.now() });
 }
 
+/**
+ * Manual ("custom") order: positioned sources first by `sortOrder`, then the
+ * never-positioned ones newest-first, so a freshly added source lands at the
+ * bottom rather than scattering the arrangement the user made.
+ */
+export function compareManualOrder(a: SourceRecord, b: SourceRecord): number {
+  const ao = a.sortOrder ?? Number.POSITIVE_INFINITY;
+  const bo = b.sortOrder ?? Number.POSITIVE_INFINITY;
+  if (ao !== bo) return ao - bo;
+  return b.createdAt - a.createdAt;
+}
+
+/**
+ * Persist a drag-and-drop arrangement. Writes `sortOrder = index` for every
+ * id in `orderedIds`; deliberately does NOT touch `updatedAt`, which the
+ * "Updated" column and sort read as "content changed".
+ */
+export async function reorderSources(
+  workspaceId: string,
+  orderedIds: string[],
+): Promise<void> {
+  await db.transaction("rw", db.sources, async () => {
+    for (let i = 0; i < orderedIds.length; i += 1) {
+      const id = orderedIds[i]!;
+      const row = await db.sources.get(id);
+      if (!row || row.workspaceId !== workspaceId) continue;
+      if (row.sortOrder !== i) await db.sources.update(id, { sortOrder: i });
+    }
+  });
+}
+
 export async function setIngestStatus(
   id: string,
   status: IngestStatus,

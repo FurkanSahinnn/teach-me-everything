@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronDown,
   FileText,
+  GripVertical,
   Headphones,
   Highlighter,
   Layers,
@@ -20,7 +21,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { Input } from "@/components/ui/Input";
@@ -61,7 +62,7 @@ import { usePrefs } from "@/stores/prefs";
 import { useVault } from "@/stores/vault";
 import { useToast } from "@/components/ui/Toast";
 import { getApiKey, hasApiKey } from "@/lib/db/api-keys-repo";
-import { deleteSource } from "@/lib/db/sources";
+import { compareManualOrder, deleteSource, reorderSources } from "@/lib/db/sources";
 import { runReembed, presetToProviderId } from "@/lib/ingest/reembed";
 import { EMBED_PRESETS, type EmbedPresetId } from "@/lib/ai/providers/embed-presets";
 import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
@@ -69,6 +70,7 @@ import { buildSourceClickHref } from "@/lib/notes/source-routing";
 import type { Provider } from "@/lib/db/schema";
 
 type SortKey =
+  | "manual"
   | "updated_desc"
   | "updated_asc"
   | "created_desc"
@@ -78,6 +80,7 @@ type SortKey =
   | "size_desc";
 
 const SORT_LABEL: Record<SortKey, { tr: string; en: string }> = {
+  manual: { tr: "Özel sıra (sürükle)", en: "Custom order (drag)" },
   updated_desc: { tr: "Güncellenme (yeni → eski)", en: "Updated (newest)" },
   updated_asc: { tr: "Güncellenme (eski → yeni)", en: "Updated (oldest)" },
   created_desc: { tr: "Eklenme (yeni → eski)", en: "Added (newest)" },
@@ -88,6 +91,7 @@ const SORT_LABEL: Record<SortKey, { tr: string; en: string }> = {
 };
 
 const SORT_ORDER: SortKey[] = [
+  "manual",
   "updated_desc",
   "updated_asc",
   "created_desc",
@@ -99,6 +103,8 @@ const SORT_ORDER: SortKey[] = [
 
 function compareSources(a: SourceRecord, b: SourceRecord, key: SortKey): number {
   switch (key) {
+    case "manual":
+      return compareManualOrder(a, b);
     case "updated_desc":
       return b.updatedAt - a.updatedAt;
     case "updated_asc":
@@ -249,7 +255,32 @@ function WorkspaceView({ id }: { id: string }) {
 
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | SourceType>("all");
-  const [sort, setSort] = useState<SortKey>("updated_desc");
+  const [sort, setSort] = useState<SortKey>("manual");
+  // Drag-and-drop reorder (desktop table only). The id being dragged and the
+  // row currently hovered, for the insertion indicator.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  // Mirror of draggingId that the drop handler reads: drop can land before
+  // the dragstart state update has re-rendered the row's closure.
+  const draggingRef = useRef<string | null>(null);
+
+  const handleReorder = useCallback(
+    async (draggedId: string, targetId: string) => {
+      if (draggedId === targetId) return;
+      // Work on the FULL manual order, not the filtered view: dropping onto a
+      // visible row means "place it right before that row" in the whole
+      // list, so hidden sources keep their relative positions.
+      const ordered = [...sources].sort(compareManualOrder).map((s) => s.id);
+      const from = ordered.indexOf(draggedId);
+      if (from === -1) return;
+      ordered.splice(from, 1);
+      const to = ordered.indexOf(targetId);
+      if (to === -1) return;
+      ordered.splice(to, 0, draggedId);
+      await reorderSources(id, ordered);
+    },
+    [sources, id],
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -688,14 +719,14 @@ function WorkspaceView({ id }: { id: string }) {
                     )}
                     {...(query ||
                     typeFilter !== "all" ||
-                    sort !== "updated_desc"
+                    sort !== "manual"
                       ? {
                           action: {
                             label: pick("Filtreleri sıfırla", "Reset filters"),
                             onClick: () => {
                               setQuery("");
                               setTypeFilter("all");
-                              setSort("updated_desc");
+                              setSort("manual");
                             },
                           },
                         }
@@ -705,7 +736,8 @@ function WorkspaceView({ id }: { id: string }) {
               ) : (
                 <>
                   <Card className="hidden overflow-hidden md:block">
-                    <div className="grid grid-cols-[28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 border-b border-rule-soft bg-paper-2 px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.04em] text-ink-3">
+                    <div className="grid grid-cols-[20px_28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 border-b border-rule-soft bg-paper-2 px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.04em] text-ink-3">
+                      <span aria-hidden />
                       <SelectAllCheckbox
                         allSelected={allVisibleSelected}
                         someSelected={someVisibleSelected}
@@ -730,6 +762,26 @@ function WorkspaceView({ id }: { id: string }) {
                         selected={selected.has(s.id)}
                         onToggleSelect={toggleSelect}
                         onRequestDelete={setDeleteTargetId}
+                        dragEnabled={sort === "manual"}
+                        dragging={draggingId === s.id}
+                        dragOver={dragOverId === s.id && draggingId !== s.id}
+                        onDragStart={(sid) => {
+                          draggingRef.current = sid;
+                          setDraggingId(sid);
+                        }}
+                        onDragOver={setDragOverId}
+                        onDrop={(targetId) => {
+                          const from = draggingRef.current;
+                          draggingRef.current = null;
+                          setDraggingId(null);
+                          setDragOverId(null);
+                          if (from) void handleReorder(from, targetId);
+                        }}
+                        onDragEnd={() => {
+                          draggingRef.current = null;
+                          setDraggingId(null);
+                          setDragOverId(null);
+                        }}
                       />
                     ))}
                   </Card>
@@ -1259,6 +1311,13 @@ function SourceRow({
   selected,
   onToggleSelect,
   onRequestDelete,
+  dragEnabled,
+  dragging,
+  dragOver,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   source: SourceRecord;
   href: string;
@@ -1268,17 +1327,68 @@ function SourceRow({
   selected: boolean;
   onToggleSelect: (id: string) => void;
   onRequestDelete: (id: string) => void;
+  dragEnabled: boolean;
+  dragging: boolean;
+  dragOver: boolean;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string) => void;
+  onDrop: (targetId: string) => void;
+  onDragEnd: () => void;
 }) {
   const locale = usePrefs((s) => s.locale);
   return (
     <Link
       href={href}
+      // The row is the drop target; the grip is the only drag origin, so a
+      // plain click still navigates and text selection still works.
+      onDragOver={(e) => {
+        if (!dragEnabled) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOver(source.id);
+      }}
+      onDragLeave={() => {
+        if (dragOver) onDragOver("");
+      }}
+      onDrop={(e) => {
+        if (!dragEnabled) return;
+        e.preventDefault();
+        onDrop(source.id);
+      }}
       className={cn(
-        "grid grid-cols-[28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 px-4 py-3 transition-colors hover:bg-paper-2",
+        "relative grid grid-cols-[20px_28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 px-4 py-3 transition-colors hover:bg-paper-2",
         bordered && "border-b border-rule-soft",
         selected && "bg-accent-wash hover:bg-accent-wash",
+        dragging && "opacity-40",
+        // Insertion line: the dragged row will land right above this one.
+        dragOver &&
+          "before:absolute before:inset-x-3 before:top-0 before:h-0.5 before:rounded-full before:bg-accent",
       )}
     >
+      {dragEnabled ? (
+        <span
+          draggable
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", source.id);
+            onDragStart(source.id);
+          }}
+          onDragEnd={onDragEnd}
+          className="flex h-6 w-5 cursor-grab items-center justify-center rounded text-ink-4 hover:bg-paper-3 hover:text-ink-2 active:cursor-grabbing"
+          title={pick("Sürükleyerek sırala", "Drag to reorder")}
+          aria-label={pick("Sürükleyerek sırala", "Drag to reorder")}
+          data-testid="source-drag-handle"
+        >
+          <GripVertical className="h-3.5 w-3.5" aria-hidden />
+        </span>
+      ) : (
+        <span aria-hidden />
+      )}
       <RowSelectCheckbox
         checked={selected}
         onToggle={() => onToggleSelect(source.id)}
