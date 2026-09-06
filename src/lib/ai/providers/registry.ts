@@ -2,6 +2,7 @@ import { findCustomEndpoint } from "@/stores/prefs";
 import { AnthropicChatProvider } from "./anthropic";
 import { getAnthropicOAuthChatProvider } from "./anthropic-oauth";
 import { ClaudeCliChatProvider } from "./claude-cli";
+import { CodexCliChatProvider } from "./codex-cli";
 import { CohereEmbedProvider } from "./embed-cohere";
 import { GeminiEmbedProvider } from "./embed-gemini";
 import { HuggingFaceEmbedProvider } from "./embed-hf";
@@ -65,6 +66,7 @@ function constructChatProvider(id: ProviderId): ChatProvider {
   // non-HTTP family "agent-cli", so it must be picked off by id here — the
   // family dispatch below would otherwise reject it as unimplemented.
   if (id === "claude-cli") return new ClaudeCliChatProvider();
+  if (id === "codex-cli") return new CodexCliChatProvider();
   // Responses API uses a dedicated provider class — Chat Completions can't
   // accept the `web_search` built-in tool that drives chat-LLM search.
   if (id === "openai-responses") return new OpenAIResponsesChatProvider();

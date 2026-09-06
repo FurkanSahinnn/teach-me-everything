@@ -2,11 +2,11 @@
 
 // Local agent CLI settings.
 //
-// Detects the `claude` binary the user already installed and lets them point at
-// it explicitly when auto-detection misses. Once found, "Claude Code (local
-// CLI)" becomes selectable in Settings → Default models like any other
-// provider, and requests run against the user's own Claude subscription with no
-// API key stored anywhere.
+// One row per supported CLI (`claude`, `codex`): detects the binary the user
+// already installed and lets them point at it explicitly when auto-detection
+// misses. Once found, the matching "(local CLI)" provider becomes selectable
+// in Settings → Default models like any other provider, and requests run
+// against the user's own subscription with no API key stored anywhere.
 //
 // Desktop only, like AutoLaunchSection: a browser cannot spawn a process, so on
 // the web build this renders nothing rather than offering a control that could
@@ -24,52 +24,69 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { isTauriEnvWithOverride } from "@/lib/tauri/env";
 import { probeAgentCli, type AgentCliProbe } from "@/lib/tauri/agent-cli";
 import { CLAUDE_CLI_BINARY } from "@/lib/ai/providers/claude-cli";
-import { usePrefs } from "@/stores/prefs";
+import { CODEX_CLI_BINARY } from "@/lib/ai/providers/codex-cli";
+import { usePrefs, type AgentCliPrefs } from "@/stores/prefs";
 
 type ProbeState =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "done"; probe: AgentCliProbe };
 
+type PathKey = "claudePath" | "codexPath";
+
+type CliSpec = {
+  cli: string;
+  pathKey: PathKey;
+  title: [tr: string, en: string];
+  blurb: [tr: string, en: string];
+  notFound: [tr: string, en: string];
+  installHint: [tr: string, en: string];
+  placeholder: string;
+};
+
+const CLIS: readonly CliSpec[] = [
+  {
+    cli: CLAUDE_CLI_BINARY,
+    pathKey: "claudePath",
+    title: ["Claude Code CLI", "Claude Code CLI"],
+    blurb: [
+      "Bilgisayarında kurulu olan claude komutunu kullan. İstekler senin Claude aboneliğin üzerinden gider; uygulamada saklanan bir API anahtarı olmaz ve süresi dolabilecek bir token yapıştırman gerekmez.",
+      "Use the claude command already installed on your machine. Requests run against your own Claude subscription — no API key is stored in the app, and there is no token to paste that can later expire.",
+    ],
+    notFound: [
+      "claude komutu bilinen konumlarda bulunamadı.",
+      "The claude command was not found in any known location.",
+    ],
+    installHint: [
+      "npm ile kurduysan .cmd dosyasını değil, paketin cli.js dosyasını göster — Windows kabuk sarmalayıcılarını doğrudan çalıştırmaya izin vermiyor. Yerel kurulumda claude.exe yolunu kullan.",
+      "If you installed via npm, point at the package's cli.js rather than the .cmd file — Windows does not allow launching shell wrappers directly. For a native install, use the claude.exe path.",
+    ],
+    placeholder: "C:/Users/you/.local/bin/claude.exe",
+  },
+  {
+    cli: CODEX_CLI_BINARY,
+    pathKey: "codexPath",
+    title: ["Codex CLI", "Codex CLI"],
+    blurb: [
+      "Bilgisayarında kurulu olan codex komutunu kullan. İstekler senin ChatGPT aboneliğin üzerinden gider — bu planın API karşılığı yoktur, tek yol budur. Uygulamada saklanan bir anahtar olmaz.",
+      "Use the codex command already installed on your machine. Requests run against your own ChatGPT subscription — that plan has no API equivalent, so this is the only route. No key is stored in the app.",
+    ],
+    notFound: [
+      "codex komutu bilinen konumlarda bulunamadı.",
+      "The codex command was not found in any known location.",
+    ],
+    installHint: [
+      "npm ile kurduysan paketin içindeki codex.exe dosyasını göster (node_modules/@openai/codex/…/bin/codex.exe); .cmd sarmalayıcısı çalıştırılamaz.",
+      "If you installed via npm, point at the codex.exe inside the package (node_modules/@openai/codex/…/bin/codex.exe); the .cmd wrapper cannot be launched.",
+    ],
+    placeholder: "C:/Users/you/AppData/Roaming/npm/node_modules/@openai/codex/.../codex.exe",
+  },
+];
+
 export function AgentCliSection(): React.ReactElement | null {
   const pick = useLocalePick();
-  const agentCli = usePrefs((s) => s.agentCli);
-  const setAgentCli = usePrefs((s) => s.setAgentCli);
-
-  const [draftPath, setDraftPath] = useState(agentCli?.claudePath ?? "");
-  const [state, setState] = useState<ProbeState>({ kind: "idle" });
-
-  const runProbe = useCallback(async (path: string) => {
-    setState({ kind: "checking" });
-    const probe = await probeAgentCli(
-      CLAUDE_CLI_BINARY,
-      path.trim().length > 0 ? path.trim() : undefined,
-    );
-    setState(probe ? { kind: "done", probe } : { kind: "idle" });
-  }, []);
-
-  // The podcast hardware probe caches for the session because hardware does not
-  // change mid-run; a typed binary path does, so this re-runs when it changes.
-  // runProbe is stable (useCallback with no deps), so listing it does not add a
-  // second trigger.
-  const savedPath = agentCli?.claudePath ?? "";
-  useEffect(() => {
-    void runProbe(savedPath);
-  }, [savedPath, runProbe]);
 
   if (!isTauriEnvWithOverride()) return null;
-
-  const probe = state.kind === "done" ? state.probe : null;
-  const ok = probe?.found === true;
-
-  const save = (): void => {
-    const next = draftPath.trim();
-    // Clearing the path must not also discard `env`; only the path is edited
-    // here.
-    const { claudePath: _dropped, ...rest } = agentCli ?? {};
-    void _dropped;
-    setAgentCli(next.length > 0 ? { ...rest, claudePath: next } : rest);
-  };
 
   return (
     <section
@@ -85,19 +102,73 @@ export function AgentCliSection(): React.ReactElement | null {
         </span>
         <div className="flex-1">
           <h2 className="text-sm font-semibold text-ink">
-            {pick("Yerel Claude Code CLI", "Local Claude Code CLI")}
+            {pick("Yerel ajan CLI'ları", "Local agent CLIs")}
           </h2>
           <p className="mt-1 text-xs text-ink-soft">
             {pick(
-              "Bilgisayarında kurulu olan claude komutunu kullan. İstekler senin Claude aboneliğin üzerinden gider; uygulamada saklanan bir API anahtarı olmaz ve süresi dolabilecek bir token yapıştırman gerekmez.",
-              "Use the claude command already installed on your machine. Requests run against your own Claude subscription — no API key is stored in the app, and there is no token to paste that can later expire.",
+              "Abonelikle giriş yapılmış bir komut satırı aracını sağlayıcı olarak kullan. Anahtar saklanmaz; istekler senin hesabın üzerinden gider.",
+              "Use a subscription-signed-in command-line tool as a provider. No key is stored; requests run through your own account.",
             )}
           </p>
         </div>
       </header>
 
+      <div className="mt-4 flex flex-col gap-5">
+        {CLIS.map((spec) => (
+          <CliRow key={spec.cli} spec={spec} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
+  const pick = useLocalePick();
+  const agentCli = usePrefs((s) => s.agentCli);
+  const setAgentCli = usePrefs((s) => s.setAgentCli);
+
+  const savedPath = agentCli?.[spec.pathKey] ?? "";
+  const [draftPath, setDraftPath] = useState(savedPath);
+  const [state, setState] = useState<ProbeState>({ kind: "idle" });
+
+  const runProbe = useCallback(
+    async (path: string) => {
+      setState({ kind: "checking" });
+      const probe = await probeAgentCli(
+        spec.cli,
+        path.trim().length > 0 ? path.trim() : undefined,
+      );
+      setState(probe ? { kind: "done", probe } : { kind: "idle" });
+    },
+    [spec.cli],
+  );
+
+  // A typed binary path changes what the probe should test, so it re-runs when
+  // the saved value changes; runProbe is stable per cli.
+  useEffect(() => {
+    void runProbe(savedPath);
+  }, [savedPath, runProbe]);
+
+  const probe = state.kind === "done" ? state.probe : null;
+  const ok = probe?.found === true;
+
+  const save = (): void => {
+    const next = draftPath.trim();
+    // Only this row's path is edited; the other CLI's path and `env` stay.
+    const rest: AgentCliPrefs = { ...(agentCli ?? {}) };
+    delete rest[spec.pathKey];
+    setAgentCli(next.length > 0 ? { ...rest, [spec.pathKey]: next } : rest);
+  };
+
+  const inputId = `agent-cli-path-${spec.cli}`;
+
+  return (
+    <div data-testid={`agent-cli-row-${spec.cli}`}>
+      <h3 className="text-sm font-semibold text-ink">{pick(...spec.title)}</h3>
+      <p className="mt-1 text-xs text-ink-soft">{pick(...spec.blurb)}</p>
+
       <div
-        className="mt-4 flex items-start gap-3 rounded-xl border border-line/60 bg-paper px-4 py-3"
+        className="mt-3 flex items-start gap-3 rounded-xl border border-line/60 bg-paper px-4 py-3"
         role="status"
         aria-live="polite"
       >
@@ -136,11 +207,7 @@ export function AgentCliSection(): React.ReactElement | null {
                 {pick("Kullanılamıyor", "Not usable")}
               </p>
               <p className="mt-0.5 text-xs text-ink-soft">
-                {probe?.error ??
-                  pick(
-                    "claude komutu bilinen konumlarda bulunamadı.",
-                    "The claude command was not found in any known location.",
-                  )}
+                {probe?.error ?? pick(...spec.notFound)}
               </p>
             </>
           )}
@@ -156,10 +223,7 @@ export function AgentCliSection(): React.ReactElement | null {
       </div>
 
       <div className="mt-3">
-        <label
-          className="text-xs font-medium text-ink-soft"
-          htmlFor="agent-cli-path"
-        >
+        <label className="text-xs font-medium text-ink-soft" htmlFor={inputId}>
           {pick(
             "CLI yolu (boş bırakırsan otomatik bulunur)",
             "CLI path (leave empty to auto-detect)",
@@ -167,24 +231,19 @@ export function AgentCliSection(): React.ReactElement | null {
         </label>
         <div className="mt-1.5 flex gap-2">
           <Input
-            id="agent-cli-path"
+            id={inputId}
             variant="mono"
             value={draftPath}
             onChange={(e) => setDraftPath(e.target.value)}
-            placeholder="C:/Users/you/.local/bin/claude.exe"
+            placeholder={spec.placeholder}
             spellCheck={false}
           />
           <Button variant="primary" size="sm" onClick={save}>
             {pick("Kaydet", "Save")}
           </Button>
         </div>
-        <p className="mt-1.5 text-xs text-ink-soft">
-          {pick(
-            "npm ile kurduysan .cmd dosyasını değil, paketin .cjs sarmalayıcısını göster — Windows kabuk sarmalayıcılarını doğrudan çalıştırmaya izin vermiyor. Yerel kurulumda claude.exe yolunu kullan.",
-            "If you installed via npm, point at the package's .cjs wrapper rather than the .cmd file — Windows does not allow launching shell wrappers directly. For a native install, use the claude.exe path.",
-          )}
-        </p>
+        <p className="mt-1.5 text-xs text-ink-soft">{pick(...spec.installHint)}</p>
       </div>
-    </section>
+    </div>
   );
 }

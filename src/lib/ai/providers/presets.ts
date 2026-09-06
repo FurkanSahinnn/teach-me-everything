@@ -34,6 +34,39 @@ export const PROVIDER_PRESETS: Partial<Record<CloudProviderId, ProviderPreset>> 
     freeTier: false,
     docsUrl: "https://docs.claude.com/en/docs/claude-code",
   },
+  "codex-cli": {
+    id: "codex-cli",
+    label: "Codex (local CLI)",
+    family: "agent-cli",
+    kind: "chat",
+    baseUrl: "",
+    auth: { kind: "bearer" },
+    capabilities: {
+      cacheControl: false,
+      toolUse: "json",
+      // No token deltas from `codex exec --json`; the flag only says the
+      // transport is async and abortable.
+      streaming: true,
+      vision: false,
+    },
+    defaultModels: { chat: "gpt-6-astra" },
+    // Snapshot of what a ChatGPT-authenticated codex-cli 0.153.4 reported via
+    // `model/list` on 2026-09-06. The picker refreshes this live through the
+    // codex-cli model-fetch adapter; this list is only the offline fallback.
+    availableModels: [
+      { id: "gpt-6-astra", displayName: "GPT-6-Astra", tier: "balanced", hint: "Default" },
+      { id: "gpt-5.6-sol", displayName: "GPT-5.6-Sol", tier: "flagship" },
+      { id: "gpt-5.6-terra", displayName: "GPT-5.6-Terra", tier: "flagship" },
+      { id: "gpt-5.6-luna", displayName: "GPT-5.6-Luna", tier: "flagship" },
+      { id: "gpt-5.5", displayName: "GPT-5.5", tier: "flagship" },
+      { id: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", tier: "fast" },
+    ],
+    // Authenticated by the CLI against the user's ChatGPT plan. Absent from
+    // PRICING on purpose — a subscriber pays no per-token price.
+    externalAuth: true,
+    freeTier: false,
+    docsUrl: "https://developers.openai.com/codex/cli",
+  },
   anthropic: {
     id: "anthropic",
     label: "Anthropic",

@@ -39,8 +39,10 @@ export type ReaderWidth = "narrow" | "full";
  * variable names are user-specific configuration, not secrets.
  */
 export type AgentCliPrefs = {
-  /** Explicit binary path. Absent or empty means auto-detect. */
+  /** Explicit `claude` binary path. Absent or empty means auto-detect. */
   claudePath?: string;
+  /** Explicit `codex` binary path. Absent or empty means auto-detect. */
+  codexPath?: string;
   /** Extra environment variables handed to the spawned process. */
   env?: Record<string, string>;
 };

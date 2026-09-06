@@ -47,8 +47,14 @@ export type AgentCliStartOptions = {
   systemPrompt?: string | undefined;
   env: Record<string, string>;
   cwd?: string | undefined;
-  /** NDJSON written to stdin right after spawn — the opening turn. */
+  /** NDJSON (or a raw prompt) written to stdin right after spawn. */
   stdin?: string | undefined;
+  /**
+   * Close stdin right after that write. Required for a CLI that reads its
+   * prompt to EOF (`codex exec -`); wrong for one that holds the session open
+   * for further turns (`claude --input-format stream-json`).
+   */
+  closeStdin?: boolean | undefined;
 };
 
 type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;

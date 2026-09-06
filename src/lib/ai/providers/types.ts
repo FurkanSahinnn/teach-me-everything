@@ -62,6 +62,8 @@ export type CloudProviderId =
   // Local Claude Code CLI. Not an HTTP endpoint at all: the provider spawns
   // the binary the user already installed and streams its NDJSON stdout.
   | "claude-cli"
+  // Local OpenAI Codex CLI — same transport, ChatGPT subscription auth.
+  | "codex-cli"
   | "openai"
   // Distinct provider for OpenAI's `/v1/responses` endpoint — needed by the
   // chat-LLM-search wrapper because the built-in `web_search` server tool

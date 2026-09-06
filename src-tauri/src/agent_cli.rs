@@ -13,16 +13,25 @@
 //! scope would hand the webview a general "run any binary" primitive. These
 //! commands only ever launch *the configured agent*, and the resolution rules in
 //! `resolve_launch` are the boundary that keeps it that way.
+//!
+//! Why sessions spawn through `std::process` + `shared_child` rather than
+//! `plugin-shell`'s `Command`: the plugin's `CommandChild` owns the stdin pipe
+//! and offers no way to close it short of dropping the handle you also need for
+//! `kill`. `codex exec -` reads its prompt to EOF, so a stdin that never closes
+//! hangs the turn forever. The probe keeps using the plugin — `--version` reads
+//! nothing.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
+use shared_child::SharedChild;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Runtime, State};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
 /// Files that are scripts for a JS runtime rather than native binaries. The
@@ -40,9 +49,17 @@ const REFUSED_EXTENSIONS: [&str; 3] = ["cmd", "bat", "ps1"];
 /// stopped reading, so we always drain it; this only bounds what we keep.
 const STDERR_TAIL_CAP: usize = 8192;
 
+/// One spawned agent process. `stdin` is `None` once closed, either because
+/// the caller asked for it after the opening turn or because it was never
+/// captured.
+struct Session {
+  child: Arc<SharedChild>,
+  stdin: Option<ChildStdin>,
+}
+
 #[derive(Default)]
 pub struct AgentCliState {
-  children: Arc<Mutex<HashMap<String, CommandChild>>>,
+  sessions: Arc<Mutex<HashMap<String, Session>>>,
 }
 
 #[derive(Serialize)]
@@ -62,8 +79,7 @@ pub struct AgentCliProbe {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentCliEvent {
-  /// One line of stdout. `plugin-shell` reads in line mode (`raw_out` defaults
-  /// to false), so each event is exactly one NDJSON frame — no reassembly here.
+  /// One line of stdout, line ending stripped — exactly one NDJSON frame.
   Line { data: String },
   Stderr { data: String },
   Exit { code: Option<i32> },
@@ -85,8 +101,12 @@ pub struct StartOptions {
   pub system_prompt: Option<String>,
   pub env: HashMap<String, String>,
   pub cwd: Option<String>,
-  /// NDJSON written to stdin immediately after spawn — the opening turn.
+  /// NDJSON (or a raw prompt) written to stdin immediately after spawn.
   pub stdin: Option<String>,
+  /// Close stdin right after the opening write. Required for a CLI that reads
+  /// its prompt to EOF (`codex exec -`); wrong for one that holds a session
+  /// open and waits for further turns (`claude --input-format stream-json`).
+  pub close_stdin: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -125,8 +145,8 @@ fn resolve_launch(path: &Path) -> Result<Launch, String> {
     if REFUSED_EXTENSIONS.iter().any(|k| k.eq_ignore_ascii_case(ext)) {
       return Err(format!(
         "{display} is a shell wrapper and cannot be launched directly. \
-         Point at the native executable (claude.exe) or at the package's \
-         wrapper script (cli-wrapper.cjs)."
+         Point at the native executable (claude.exe / codex.exe) or at the \
+         package's wrapper script (cli-wrapper.cjs)."
       ));
     }
   }
@@ -195,14 +215,34 @@ fn candidate_paths(cli: &str) -> Vec<PathBuf> {
       let npm = PathBuf::from(appdata).join("npm");
       out.push(npm.join(&exe));
       // npm on Windows ships `.cmd` / `.ps1` / POSIX shims we refuse, so reach
-      // past them to the package's own entry script.
-      out.push(
-        npm
-          .join("node_modules")
-          .join("@anthropic-ai")
-          .join("claude-code")
-          .join("cli.js"),
-      );
+      // past them to the package's own entry point.
+      let modules = npm.join("node_modules");
+      match cli {
+        "claude" => out.push(
+          modules
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js"),
+        ),
+        "codex" => {
+          // The native binary first: the package's `bin/codex.js` only spawns
+          // it as a grandchild, which a kill on the wrapper would orphan.
+          out.push(
+            modules
+              .join("@openai")
+              .join("codex")
+              .join("node_modules")
+              .join("@openai")
+              .join("codex-win32-x64")
+              .join("vendor")
+              .join("x86_64-pc-windows-msvc")
+              .join("bin")
+              .join("codex.exe"),
+          );
+          out.push(modules.join("@openai").join("codex").join("bin").join("codex.js"));
+        }
+        _ => {}
+      }
     }
   } else {
     out.push(PathBuf::from("/opt/homebrew/bin").join(&exe));
@@ -357,22 +397,42 @@ pub async fn agent_cli_probe<R: Runtime>(
 /// The panel shows the message to the user, but during development the
 /// `tauri:dev` console is where it is actually useful.
 #[tauri::command]
-pub async fn agent_cli_start<R: Runtime>(
-  app: AppHandle<R>,
+pub fn agent_cli_start(
   state: State<'_, AgentCliState>,
   options: StartOptions,
   on_event: Channel<AgentCliEvent>,
 ) -> Result<String, String> {
-  let result = start_session(app, state, options, on_event).await;
+  let result = start_session(&state, options, on_event);
   if let Err(reason) = &result {
     log::warn!("agent_cli_start failed: {reason}");
   }
   result
 }
 
-async fn start_session<R: Runtime>(
-  app: AppHandle<R>,
-  state: State<'_, AgentCliState>,
+/// Reads one pipe to EOF, one line per callback. Bytes rather than `lines()`
+/// so an invalid UTF-8 byte in CLI chatter degrades to U+FFFD instead of
+/// ending the stream early.
+fn pump_lines<Rd: Read>(reader: Rd, mut on_line: impl FnMut(String)) {
+  let mut buf = BufReader::new(reader);
+  let mut bytes = Vec::new();
+  loop {
+    bytes.clear();
+    match buf.read_until(b'\n', &mut bytes) {
+      Ok(0) | Err(_) => break,
+      Ok(_) => {
+        // The CLI emits CRLF on Windows and `JSON.parse` rejects the trailing
+        // carriage return, so strip both endings here.
+        let line = String::from_utf8_lossy(&bytes).trim_end().to_string();
+        if !line.is_empty() {
+          on_line(line);
+        }
+      }
+    }
+  }
+}
+
+fn start_session(
+  state: &AgentCliState,
   options: StartOptions,
   on_event: Channel<AgentCliEvent>,
 ) -> Result<String, String> {
@@ -398,85 +458,143 @@ async fn start_session<R: Runtime>(
     }
     None => None,
   };
-
-  // Env vars are added on top of the inherited environment. No case-folding is
-  // needed for PATH/Path: Rust's `Command` compares Windows env keys
-  // case-insensitively, unlike Node's plain object which yields two keys.
-  let mut cmd = app.shell().command(&launch.program).args(args);
-  if !options.env.is_empty() {
-    cmd = cmd.envs(options.env.clone());
-  }
-  if let Some(dir) = options.cwd.as_deref().filter(|d| !d.trim().is_empty()) {
-    cmd = cmd.current_dir(PathBuf::from(dir));
-  }
-
-  let (mut rx, mut child) = cmd.spawn().map_err(|e| {
-    if let Some(p) = sys_path.as_ref() {
-      let _ = std::fs::remove_file(p);
-    }
-    format!("Could not launch {}: {e}", launch.program)
-  })?;
-
-  if let Some(payload) = options.stdin.as_ref() {
-    if let Err(e) = child.write(payload.as_bytes()) {
-      let _ = child.kill();
+  let cleanup_sys = {
+    let sys_path = sys_path.clone();
+    move || {
       if let Some(p) = sys_path.as_ref() {
         let _ = std::fs::remove_file(p);
       }
+    }
+  };
+
+  let mut cmd = Command::new(&launch.program);
+  cmd
+    .args(&args)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+  // Env vars are added on top of the inherited environment. No case-folding is
+  // needed for PATH/Path: Rust's `Command` compares Windows env keys
+  // case-insensitively, unlike Node's plain object which yields two keys.
+  if !options.env.is_empty() {
+    cmd.envs(options.env.iter());
+  }
+  if let Some(dir) = options.cwd.as_deref().filter(|d| !d.trim().is_empty()) {
+    cmd.current_dir(PathBuf::from(dir));
+  }
+  #[cfg(windows)]
+  {
+    use std::os::windows::process::CommandExt;
+    // Same flag plugin-shell sets: a console window must not flash up behind
+    // the GUI every time a turn starts.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+  }
+
+  let child = match SharedChild::spawn(&mut cmd) {
+    Ok(c) => Arc::new(c),
+    Err(e) => {
+      cleanup_sys();
+      return Err(format!("Could not launch {}: {e}", launch.program));
+    }
+  };
+
+  let mut stdin = child.take_stdin();
+  if let Some(payload) = options.stdin.as_ref() {
+    let write_result = match stdin.as_mut() {
+      Some(w) => w.write_all(payload.as_bytes()).and_then(|_| w.flush()),
+      None => Err(std::io::Error::other("stdin was not captured")),
+    };
+    if let Err(e) = write_result {
+      let _ = child.kill();
+      cleanup_sys();
       return Err(format!("Could not write the opening turn: {e}"));
     }
   }
+  if options.close_stdin.unwrap_or(false) {
+    // Dropping the writer is the EOF the CLI is waiting for.
+    stdin = None;
+  }
 
-  let children = state.children.clone();
-  children
+  let stdout = child.take_stdout();
+  let stderr = child.take_stderr();
+
+  state
+    .sessions
     .lock()
     .map_err(|_| "Agent session registry is poisoned".to_string())?
-    .insert(session.clone(), child);
+    .insert(
+      session.clone(),
+      Session {
+        child: child.clone(),
+        stdin,
+      },
+    );
 
-  let pump_session = session.clone();
-  tauri::async_runtime::spawn(async move {
-    let mut stderr_tail = String::new();
-    while let Some(event) = rx.recv().await {
-      match event {
-        CommandEvent::Stdout(bytes) => {
-          // Trim the line ending before it reaches the JSON parser: the CLI
-          // emits CRLF on Windows and `serde_json` / `JSON.parse` both reject
-          // the trailing carriage return.
-          let line = String::from_utf8_lossy(&bytes).trim_end().to_string();
-          if line.is_empty() {
-            continue;
+  // stdout: one event per line.
+  let stdout_thread = stdout.map(|pipe| {
+    let ch = on_event.clone();
+    std::thread::spawn(move || {
+      pump_lines(pipe, |line| {
+        let _ = ch.send(AgentCliEvent::Line { data: line });
+      });
+    })
+  });
+
+  // stderr: always drained — a full pipe (4–64 KB depending on platform)
+  // blocks the child forever. Retained tail is capped.
+  let stderr_tail: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+  let stderr_thread = stderr.map(|pipe| {
+    let ch = on_event.clone();
+    let tail = stderr_tail.clone();
+    std::thread::spawn(move || {
+      pump_lines(pipe, |line| {
+        if let Ok(mut t) = tail.lock() {
+          if t.len() < STDERR_TAIL_CAP {
+            t.push_str(&line);
+            t.push('\n');
           }
-          let _ = on_event.send(AgentCliEvent::Line { data: line });
         }
-        CommandEvent::Stderr(bytes) => {
-          // Draining is mandatory — a full stderr pipe (4–64 KB depending on
-          // platform) blocks the child forever. Retaining is capped.
-          let chunk = String::from_utf8_lossy(&bytes).to_string();
-          if stderr_tail.len() < STDERR_TAIL_CAP {
-            stderr_tail.push_str(&chunk);
+        let _ = ch.send(AgentCliEvent::Stderr { data: line });
+      });
+    })
+  });
+
+  let sessions = state.sessions.clone();
+  let wait_session = session.clone();
+  std::thread::spawn(move || {
+    let status = child.wait();
+    // Readers end at EOF, which the exit guarantees; joining them orders
+    // every Line before the Exit that follows.
+    if let Some(t) = stdout_thread {
+      let _ = t.join();
+    }
+    if let Some(t) = stderr_thread {
+      let _ = t.join();
+    }
+    if let Ok(mut map) = sessions.lock() {
+      map.remove(&wait_session);
+    }
+    cleanup_sys();
+    match status {
+      Ok(status) => {
+        let code = status.code();
+        if code.unwrap_or(0) != 0 {
+          let tail = stderr_tail
+            .lock()
+            .map(|t| t.trim().to_string())
+            .unwrap_or_default();
+          if !tail.is_empty() {
+            let _ = on_event.send(AgentCliEvent::Error { message: tail });
           }
-          let _ = on_event.send(AgentCliEvent::Stderr { data: chunk });
         }
-        CommandEvent::Error(err) => {
-          let _ = on_event.send(AgentCliEvent::Error { message: err });
-        }
-        CommandEvent::Terminated(status) => {
-          if let Ok(mut map) = children.lock() {
-            map.remove(&pump_session);
-          }
-          if let Some(p) = sys_path.as_ref() {
-            let _ = std::fs::remove_file(p);
-          }
-          let code = status.code;
-          if code.unwrap_or(0) != 0 && !stderr_tail.trim().is_empty() {
-            let _ = on_event.send(AgentCliEvent::Error {
-              message: stderr_tail.trim().to_string(),
-            });
-          }
-          let _ = on_event.send(AgentCliEvent::Exit { code });
-          break;
-        }
-        _ => {}
+        let _ = on_event.send(AgentCliEvent::Exit { code });
+      }
+      Err(e) => {
+        let _ = on_event.send(AgentCliEvent::Error {
+          message: format!("Could not wait for the agent CLI: {e}"),
+        });
+        let _ = on_event.send(AgentCliEvent::Exit { code: None });
       }
     }
   });
@@ -491,30 +609,36 @@ pub fn agent_cli_write(
   line: String,
 ) -> Result<(), String> {
   let mut map = state
-    .children
+    .sessions
     .lock()
     .map_err(|_| "Agent session registry is poisoned".to_string())?;
-  let child = map
+  let entry = map
     .get_mut(&session)
     .ok_or_else(|| format!("No running agent session {session}"))?;
-  child
-    .write(line.as_bytes())
+  let stdin = entry
+    .stdin
+    .as_mut()
+    .ok_or_else(|| format!("Agent session {session} has closed its input"))?;
+  stdin
+    .write_all(line.as_bytes())
+    .and_then(|_| stdin.flush())
     .map_err(|e| format!("Could not write to the agent session: {e}"))
 }
 
 #[tauri::command]
 pub fn agent_cli_stop(state: State<'_, AgentCliState>, session: String) -> Result<(), String> {
-  let child = {
+  let entry = {
     let mut map = state
-      .children
+      .sessions
       .lock()
       .map_err(|_| "Agent session registry is poisoned".to_string())?;
     map.remove(&session)
   };
   // Stopping an already-finished session is how an aborted turn and a
   // naturally-completed one both unwind, so absence is success, not an error.
-  if let Some(child) = child {
-    child
+  if let Some(entry) = entry {
+    entry
+      .child
       .kill()
       .map_err(|e| format!("Could not stop the agent session: {e}"))?;
   }
@@ -610,5 +734,17 @@ mod tests {
     assert!(paths
       .iter()
       .any(|p| p.to_string_lossy().to_lowercase().contains("claude")));
+  }
+
+  #[test]
+  fn candidate_paths_do_not_cross_wire_the_two_clis() {
+    let codex = candidate_paths("codex");
+    assert!(codex
+      .iter()
+      .all(|p| !p.to_string_lossy().to_lowercase().contains("claude-code")));
+    let claude = candidate_paths("claude");
+    assert!(claude
+      .iter()
+      .all(|p| !p.to_string_lossy().to_lowercase().contains("@openai")));
   }
 }

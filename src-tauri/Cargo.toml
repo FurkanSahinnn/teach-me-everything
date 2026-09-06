@@ -36,6 +36,8 @@ tauri-plugin-opener = "2"
 # `capabilities/default.json`. Without this plugin the Rust-side
 # `tts_piper_synthesize` command cannot spawn the bundled binary.
 tauri-plugin-shell = "2"
+# Agent CLI sessions: lets stdin be closed independently of the kill handle.
+shared_child = "1"
 # Phase 11.A — Voice model lazy install. Reqwest is wrapped in tokio so
 # the Rust command can stream a Hugging Face download into the
 # `appDataDir/tts-models/` tree without blocking the Tauri runtime.
