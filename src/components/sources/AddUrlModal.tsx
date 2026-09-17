@@ -44,7 +44,7 @@ export function AddUrlModal({
   const [input, setInput] = useState("");
   const [provider, setProvider] = useState<ResearchProviderId>(defaultProvider);
   const [running, setRunning] = useState(false);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const cancelRef = useRef<AbortController | null>(null);
 

@@ -67,7 +67,7 @@ async function installAudioContextStub(page: Page): Promise<void> {
       constructor() {
         this.data = new Float32Array(this.length);
       }
-      getChannelData(_channel: number): Float32Array {
+      getChannelData(): Float32Array {
         return this.data;
       }
     }

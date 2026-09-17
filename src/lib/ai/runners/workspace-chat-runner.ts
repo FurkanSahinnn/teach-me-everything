@@ -222,8 +222,10 @@ export function useWorkspaceChat(
   const masterKey = useVault((s) => s.masterKey);
 
   const threads = useWorkspaceChatThreads(workspaceId);
-  const sources = useSources(workspaceId) ?? [];
-  const chunks = useChunksByWorkspace(workspaceId) ?? [];
+  const loadedSources = useSources(workspaceId);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
+  const loadedChunks = useChunksByWorkspace(workspaceId);
+  const chunks = useMemo(() => loadedChunks ?? [], [loadedChunks]);
 
   const sourceById = useMemo(() => {
     const m = new Map<string, SourceRecord>();
@@ -244,7 +246,8 @@ export function useWorkspaceChat(
         ? explicitThreadId
         : threads[0]?.id;
 
-  const messages = useMessages(activeThreadId) ?? [];
+  const loadedMessages = useMessages(activeThreadId);
+  const messages = useMemo(() => loadedMessages ?? [], [loadedMessages]);
 
   // Context chips. Initialised from the active thread's persisted scopes (or
   // the default ["sources"]). Local state owns the live value; we mirror it to

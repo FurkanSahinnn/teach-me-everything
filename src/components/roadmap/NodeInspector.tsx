@@ -88,7 +88,8 @@ export function NodeInspector({ roadmap, node, hasChildren, onClose }: Props) {
   }, []);
 
   const router = useRouter();
-  const sources = useSources(roadmap.workspaceId) ?? [];
+  const loadedSources = useSources(roadmap.workspaceId);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
   const sourceTitleById = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of sources) map.set(s.id, pick(s.title, s.titleEn ?? s.title));

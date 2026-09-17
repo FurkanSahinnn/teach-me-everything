@@ -3,12 +3,10 @@ import {
   estimateStudyJournalCost,
   generateStudyJournalMeta,
   STUDY_JOURNAL_PROMPT_VERSION,
-  StudyJournalGenError,
 } from "./study-journal-generation";
 import { encodeChatModelBinding } from "./model-options";
 import type {
   ChatProvider,
-  ChatRequest,
   ChatStreamHandle,
   ProviderCapabilities,
   StreamEvent,
@@ -26,7 +24,7 @@ function fakeProvider(events: StreamEvent[]): ChatProvider {
   return {
     id: "anthropic",
     capabilities,
-    streamChat(_req: ChatRequest): ChatStreamHandle {
+    streamChat(): ChatStreamHandle {
       async function* gen() {
         for (const ev of events) yield ev;
       }
@@ -216,3 +214,4 @@ describe("generateStudyJournalMeta", () => {
     ).rejects.toMatchObject({ code: "aborted" });
   });
 });
+import type { ChatRequest } from "@/lib/ai/providers/types";

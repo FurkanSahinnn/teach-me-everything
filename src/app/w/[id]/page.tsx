@@ -676,7 +676,7 @@ function WorkspaceView({ id }: { id: string }) {
           </div>
 
           {sources.length === 0 ? (
-            <EmptySourcesState pageLabel={t("yukle")} />
+            <EmptySourcesState />
           ) : (
             <>
               <SourcesToolbar
@@ -1240,7 +1240,7 @@ function SectionUploadButton({ label }: { label: string }) {
   );
 }
 
-function EmptySourcesState({ pageLabel: _pageLabel }: { pageLabel: string }) {
+function EmptySourcesState() {
   const t = useTranslations("empty_state");
   const { openPicker } = useSourceUpload();
   return (

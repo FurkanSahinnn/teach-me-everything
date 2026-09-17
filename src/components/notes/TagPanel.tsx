@@ -40,7 +40,8 @@ export function TagPanel({
   className,
 }: TagPanelProps) {
   const t = useTranslations("notes.tags");
-  const tagCounts = useTagsByWorkspace(workspaceId) ?? new Map<string, number>();
+  const loadedTagCounts = useTagsByWorkspace(workspaceId);
+  const tagCounts = useMemo(() => loadedTagCounts ?? new Map<string, number>(), [loadedTagCounts]);
   const tree = useMemo(() => buildTagTree({ tagCounts }), [tagCounts]);
   const totalTags = tagCounts.size;
 
@@ -132,7 +133,7 @@ function TagRow({ node, expanded, activeTag, onToggle, onSelect }: TagRowProps) 
   const indent = 8 + node.depth * 12;
 
   return (
-    <li role="treeitem" aria-expanded={hasChildren ? isExpanded : undefined}>
+    <li role="treeitem" aria-selected={isActive} aria-expanded={hasChildren ? isExpanded : undefined}>
       <div
         className={cn(
           "group flex items-center gap-1 rounded-md py-1 pr-2 transition-colors",

@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 // SearchSourcesModal — "Konu ara → Kaynak ekle".
 //
 // Phase 5.5.E foundation, rewired in 5.5.G to drive the priority chain in
@@ -114,7 +116,7 @@ export function SearchSourcesModal({
     new Map(),
   );
   const [ingesting, setIngesting] = useState(false);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
   /**
    * Map of search-provider-id → "is a key stored for it?". Computed on
    * modal open via parallel `hasApiKey(...)` probes over every enabled
@@ -360,6 +362,7 @@ export function SearchSourcesModal({
       });
     }
   }, [
+    masterKey,
     selected,
     results,
     ingesting,
@@ -706,7 +709,7 @@ export function SearchSourcesModal({
                     )}
                   </span>
                   {r.faviconUrl ? (
-                    <img
+                    <Image unoptimized
                       src={r.faviconUrl}
                       alt=""
                       width={16}

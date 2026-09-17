@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     // Native build output contains generated JS and compressed asset blobs.
     "src-tauri/target/**",
     "src-tauri/gen/**",
+    // Generated Playwright reports and isolated browser profiles.
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

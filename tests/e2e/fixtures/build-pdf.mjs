@@ -70,5 +70,5 @@ partsList.push(Buffer.from(xref, "latin1"));
 
 const out = Buffer.concat(partsList);
 writeFileSync(OUT, out);
-// eslint-disable-next-line no-console
+
 console.log(`Wrote ${OUT} (${out.length} bytes)`);

@@ -52,7 +52,9 @@ export async function POST(req: Request): Promise<Response> {
   }
   const family = preset?.family ?? "anthropic";
 
-  const { provider: _provider, authKind: _authKind, ...forwardBody } = body;
+  const forwardBody = { ...body };
+  delete forwardBody.provider;
+  delete forwardBody.authKind;
 
   let url: string;
   const headers: Record<string, string> = { "content-type": "application/json" };
@@ -99,7 +101,8 @@ export async function POST(req: Request): Promise<Response> {
     } else {
       headers["authorization"] = `Bearer ${key}`;
     }
-    const { model: _m, ...geminiBody } = forwardBody;
+    const geminiBody = { ...forwardBody };
+    delete geminiBody.model;
     upstreamBodyObj = geminiBody as Record<string, unknown>;
   } else {
     return jsonError(501, "unsupported_family", `Sağlayıcı ailesi desteklenmiyor: ${family}`);

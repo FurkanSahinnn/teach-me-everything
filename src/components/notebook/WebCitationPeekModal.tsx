@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { ExternalLink, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -118,7 +120,7 @@ export function WebCitationPeekModal({
       title={
         <div className="flex items-start gap-2.5">
           {favicon ? (
-            <img
+            <Image unoptimized
               src={favicon}
               alt=""
               aria-hidden

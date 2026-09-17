@@ -152,4 +152,4 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
   };
 }
 
-function noopBool(_open: boolean): void {}
+const noopBool: (open: boolean) => void = () => {};

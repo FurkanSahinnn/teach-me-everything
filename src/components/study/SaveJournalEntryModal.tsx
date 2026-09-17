@@ -1,7 +1,7 @@
 "use client";
 
 import { BookmarkPlus, Loader2, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
@@ -112,7 +112,7 @@ export function SaveJournalEntryModal({ open, onClose, draft }: Props) {
   const [summary, setSummary] = useState("");
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
   const [aiAttempted, setAiAttempted] = useState(false);
   const cancelRef = useRef<AbortController | null>(null);
 

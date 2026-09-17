@@ -25,6 +25,7 @@ export function EmbedSection() {
   const { toast } = useToast();
   const workspaces = useWorkspaces(false);
   const list = workspaces ?? [];
+  const workspaceIds = JSON.stringify(list.map((workspace) => workspace.id).sort());
 
   // workspaceId → probe against the default preset (1536-d). The probe only
   // tells the user "you have a mismatch / nothing embedded"; the Reembed modal
@@ -51,12 +52,12 @@ export function EmbedSection() {
   }, []);
 
   useEffect(() => {
-    if (list.length === 0) return;
+    const ids: string[] = JSON.parse(workspaceIds);
     let cancelled = false;
     void (async () => {
       const next: Record<string, Probe> = {};
-      for (const w of list) {
-        next[w.id] = await probeWorkspace(w.id);
+      for (const id of ids) {
+        next[id] = await probeWorkspace(id);
       }
       if (!cancelled) setProbes(next);
     })();
@@ -64,7 +65,7 @@ export function EmbedSection() {
       cancelled = true;
     };
     // Re-probe when workspace set changes (count or ids).
-  }, [list.length, list.map((w) => w.id).join(","), probeWorkspace]);
+  }, [workspaceIds, probeWorkspace]);
 
   async function handleDelete(id: string): Promise<void> {
     setDeleting(true);

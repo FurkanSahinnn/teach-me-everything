@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { findChatOption } from "@/lib/ai/model-options";
-import { computeCostUsd, PRICING } from "@/lib/ai/pricing";
+import { computeCostUsd } from "@/lib/ai/pricing";
 import { useArticleAnalysisRunner } from "@/lib/ai/runners/article-analysis-runner";
 import { listChunksBySource } from "@/lib/db/chunks";
 import { useSources } from "@/lib/db/hooks";

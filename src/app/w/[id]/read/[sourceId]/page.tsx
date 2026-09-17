@@ -355,14 +355,16 @@ export default function NotebookReaderPage() {
 
   const ws = useWorkspace(workspaceId);
   const source = useSource(sourceId);
-  const chunks = useChunksBySource(sourceId) ?? [];
+  const loadedChunks = useChunksBySource(sourceId);
+  const chunks = useMemo(() => loadedChunks ?? [], [loadedChunks]);
   const highlights = useHighlightsBySource(sourceId) ?? [];
   // Phase 6.9.7 — surface note-sources in chat citations. Workspace-scoped
   // list so the emerald NotebookPen chip can fire for ANY citation whose
   // chunk resolves to a note-source (cross-source retrieval is forward-
   // looking, but the lookup is correct today). Memoize the Set + Map so the
   // ChatBubble useMemo dep doesn't churn on every re-render.
-  const allWorkspaceSources = useSources(workspaceId) ?? [];
+  const loadedAllWorkspaceSources = useSources(workspaceId);
+  const allWorkspaceSources = useMemo(() => loadedAllWorkspaceSources ?? [], [loadedAllWorkspaceSources]);
   const noteSourceById = useMemo(() => {
     const m = new Map<string, { noteId: string | undefined }>();
     for (const s of allWorkspaceSources) {
@@ -381,7 +383,8 @@ export default function NotebookReaderPage() {
   const masterKey = useVault((s) => s.masterKey);
   const { toast } = useToast();
 
-  const threadsForSource = useThreadsBySource(sourceId) ?? [];
+  const loadedThreadsForSource = useThreadsBySource(sourceId);
+  const threadsForSource = useMemo(() => loadedThreadsForSource ?? [], [loadedThreadsForSource]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   // Sort pinned-first then newest. Default to first sorted thread when no
   // explicit selection has been made yet.
@@ -397,7 +400,8 @@ export default function NotebookReaderPage() {
     activeThreadId && sortedThreads.some((t) => t.id === activeThreadId)
       ? activeThreadId
       : sortedThreads[0]?.id;
-  const messages = useMessages(threadId) ?? [];
+  const loadedMessages = useMessages(threadId);
+  const messages = useMemo(() => loadedMessages ?? [], [loadedMessages]);
 
   // Draft text lives INSIDE ChatPanel — keeping it here would re-render
   // the entire ReaderPanel (Reading article + PdfViewer if mounted +
@@ -410,7 +414,7 @@ export default function NotebookReaderPage() {
   // via the explicit X button on the chip.
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<ChatStatus>({ kind: "idle" });
-  const [vaultModalOpen, setVaultModalOpen] = useState(false);
+  const [, setVaultModalOpen] = useState(false);
   const [genCardsOpen, setGenCardsOpen] = useState(false);
   // When the user clicks "Karta çevir" on a chat bubble, we capture the
   // exchange into single-mode state and let the modal forward the chat
@@ -554,7 +558,7 @@ export default function NotebookReaderPage() {
       };
       setJournalDraft(draft);
     },
-    [chunks, messages, source, sourceId, workspaceId, ws?.name, ws?.goal],
+    [chunks, messages, source, sourceId, workspaceId, ws],
   );
   // Surfaced to ChatPanel so the dim-mismatch banner can offer a Settings deep
   // link when the most recent retrieval silently skipped chunks (3.3.D guard).
@@ -598,6 +602,40 @@ export default function NotebookReaderPage() {
       setChatStatus({ kind: "idle" });
     }
   }
+
+  const jumpToChunk = useCallback((chunk: ChunkRecord) => {
+    // Phase 6.9.7 — citations resolving to a note-source chunk route to the
+    // notes editor instead of trying to scroll the PDF/article pane. The
+    // chunk lives in chunks table (RAG layer) but its canonical surface is
+    // the markdown vault. Defensive: if noteId is missing (post-cascade
+    // window), fall back to the standard scroll path so the user still sees
+    // *something*.
+    const noteRef = noteSourceById.get(chunk.sourceId);
+    if (noteRef && noteRef.noteId) {
+      router.push(`/w/${workspaceId}/notes?id=${noteRef.noteId}`);
+      return;
+    }
+    // On mobile we may currently be on the chat tab — flip to source first so
+    // the chunk node is mounted before we try to scroll it into view.
+    if (activeTab !== "source") setActiveTab("source");
+    const doScroll = () => {
+      const el = document.getElementById(`chunk-${chunk.id}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.classList.remove("citation-pulse");
+      void el.offsetWidth;
+      el.classList.add("citation-pulse");
+      window.setTimeout(() => {
+        el.classList.remove("citation-pulse");
+      }, 1400);
+    };
+    // If we just switched tabs the source pane mounts on the next frame.
+    if (activeTab !== "source") {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(doScroll));
+    } else {
+      doScroll();
+    }
+  }, [noteSourceById, router, workspaceId, activeTab, setActiveTab]);
 
   const runChat = useCallback(
     async (
@@ -1238,7 +1276,7 @@ export default function NotebookReaderPage() {
 
       setChatStatus({ kind: "idle" });
     },
-    [locale, aiResponseLocale, masterKey, messages, pick, sourceId, toast, workspaceId],
+    [locale, aiResponseLocale, messages, pick, sourceId, toast, workspaceId, jumpToChunk],
   );
 
   const sendMessage = useCallback(
@@ -1406,39 +1444,7 @@ export default function NotebookReaderPage() {
     e.stopPropagation();
   }
 
-  function jumpToChunk(chunk: ChunkRecord) {
-    // Phase 6.9.7 — citations resolving to a note-source chunk route to the
-    // notes editor instead of trying to scroll the PDF/article pane. The
-    // chunk lives in chunks table (RAG layer) but its canonical surface is
-    // the markdown vault. Defensive: if noteId is missing (post-cascade
-    // window), fall back to the standard scroll path so the user still sees
-    // *something*.
-    const noteRef = noteSourceById.get(chunk.sourceId);
-    if (noteRef && noteRef.noteId) {
-      router.push(`/w/${workspaceId}/notes?id=${noteRef.noteId}`);
-      return;
-    }
-    // On mobile we may currently be on the chat tab — flip to source first so
-    // the chunk node is mounted before we try to scroll it into view.
-    if (activeTab !== "source") setActiveTab("source");
-    const doScroll = () => {
-      const el = document.getElementById(`chunk-${chunk.id}`);
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      el.classList.remove("citation-pulse");
-      void el.offsetWidth;
-      el.classList.add("citation-pulse");
-      window.setTimeout(() => {
-        el.classList.remove("citation-pulse");
-      }, 1400);
-    };
-    // If we just switched tabs the source pane mounts on the next frame.
-    if (activeTab !== "source") {
-      window.requestAnimationFrame(() => window.requestAnimationFrame(doScroll));
-    } else {
-      doScroll();
-    }
-  }
+
 
   return (
     <AppShell
@@ -1583,7 +1589,7 @@ export default function NotebookReaderPage() {
           // flips to "done" and the bubble shows the source-was-added
           // confirmation. Surfacing a toast separately so the modal can
           // stay open with the "Eklendi" badge while the user moves on.
-          const currentMasterKey = useVault.getState().masterKey;
+
           const providerId = (usePrefs.getState().modelBindings.researchProvider as
             ResearchProviderId | string);
           const knownProviders: ResearchProviderId[] = [
@@ -2752,7 +2758,7 @@ function SelectionPopover({
   selection,
   onAsk,
   onClose,
-  pick: _pick,
+
 }: {
   selection: { text: string; x: number; y: number };
   onAsk: () => void;

@@ -38,17 +38,7 @@ function note(over: Partial<NoteRecord>): NoteRecord {
   };
 }
 
-function folder(over: Partial<NoteFolderRecord>): NoteFolderRecord {
-  return {
-    id: "f1",
-    workspaceId: "w1",
-    parentId: null,
-    name: "Folder",
-    path: "Folder",
-    createdAt: 0,
-    ...over,
-  };
-}
+
 
 function makeOverrides(
   stub: DispatcherStub,

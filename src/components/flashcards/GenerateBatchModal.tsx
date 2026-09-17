@@ -79,7 +79,8 @@ export function GenerateBatchModal({
 }: GenerateBatchModalProps) {
   const pick = useLocalePick();
   const { toast } = useToast();
-  const sources = useSources(workspaceId) ?? [];
+  const loadedSources = useSources(workspaceId);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
   const masterKey = useVault((s) => s.masterKey);
   const modelId = usePrefs((s) => s.modelBindings.flashcardGen);
   const locale = usePrefs((s) => s.locale);

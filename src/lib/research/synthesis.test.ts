@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   ChatProvider,
-  ChatRequest,
   ChatStreamHandle,
   StreamEvent,
   Usage,
@@ -51,7 +50,7 @@ function mockProvider(events: StreamEvent[]): ChatProvider {
       cacheControl: true,
       vision: false,
     },
-    streamChat: (_req: ChatRequest) => handle,
+    streamChat: () => handle,
   };
   return provider;
 }
@@ -323,3 +322,4 @@ describe("runSynthesis", () => {
     expect(req.authKind).toBe("oauth");
   });
 });
+import type { ChatRequest } from "@/lib/ai/providers/types";

@@ -210,7 +210,7 @@ export function computeCostUsd(model: string, usage: UsageBreakdown): number {
   if (!price) {
     if (!warned.has(model)) {
       warned.add(model);
-      // eslint-disable-next-line no-console
+
       console.warn(`[pricing] no entry for model "${model}" — counted as $0`);
     }
     return 0;

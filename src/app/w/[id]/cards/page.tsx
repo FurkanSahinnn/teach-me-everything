@@ -256,7 +256,7 @@ function CardsEmptyState({ workspaceId }: { workspaceId: string }) {
 }
 
 function DeckCard({
-  workspaceId: _workspaceId,
+
   deck,
   pick,
   onStart,

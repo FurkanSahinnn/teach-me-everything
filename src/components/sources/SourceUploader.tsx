@@ -134,17 +134,6 @@ export function SourceUploadProvider({
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [open, setOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [vaultModalOpen, setVaultModalOpen] = useState(false);
-  // Single shared deferred — every queue item that hits "vault locked but
-  // key stored" awaits it. The modal resolves it once on close (true if
-  // unlock succeeded, false otherwise), so multiple in-flight uploads all
-  // continue together with the now-available master key. Cleared back to
-  // null after resolution so the next vault-locked event creates a fresh
-  // promise.
-  const vaultDeferredRef = useRef<{
-    promise: Promise<boolean>;
-    resolve: (unlocked: boolean) => void;
-  } | null>(null);
   const dragCounterRef = useRef(0);
   // Mirrors the latest queue so the processing effect's cleanup can tell
   // "user dismissed this item" (item gone) from "ingest pushed a progress
@@ -160,17 +149,10 @@ export function SourceUploadProvider({
   const { toast } = useToast();
   const pick = useLocalePick();
 
-  const requestVaultUnlock = useCallback((): Promise<boolean> => {
-    if (!vaultDeferredRef.current) {
-      let resolveFn: (unlocked: boolean) => void = () => {};
-      const promise = new Promise<boolean>((res) => {
-        resolveFn = res;
-      });
-      vaultDeferredRef.current = { promise, resolve: resolveFn };
-    }
-    setVaultModalOpen(true);
-    return vaultDeferredRef.current.promise;
-  }, []);
+  // Legacy callers may still request a gate; credential storage no longer
+  // has a master-password modal or a deferred unlock operation.
+  const requestVaultUnlock = useCallback(async (): Promise<boolean> =>
+    useVault.getState().isUnlocked, []);
 
   const enqueue = useCallback(
     (files: FileList | File[]): void => {
@@ -283,31 +265,6 @@ export function SourceUploadProvider({
     inputRef.current?.click();
   }, []);
 
-  const handleVaultClose = useCallback((): void => {
-    setVaultModalOpen(false);
-    if (vaultDeferredRef.current) {
-      vaultDeferredRef.current.resolve(false);
-      vaultDeferredRef.current = null;
-    }
-  }, []);
-
-  const handleVaultSuccess = useCallback((): void => {
-    if (vaultDeferredRef.current) {
-      vaultDeferredRef.current.resolve(true);
-      vaultDeferredRef.current = null;
-    }
-  }, []);
-
-  // Make sure pending awaiters don't leak if the provider unmounts before
-  // the user closes the modal.
-  useEffect(() => {
-    return () => {
-      if (vaultDeferredRef.current) {
-        vaultDeferredRef.current.resolve(false);
-        vaultDeferredRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     function isFileDrag(e: DragEvent): boolean {
@@ -657,7 +614,7 @@ export function SourceUploadProvider({
       docxHandle?.cancel();
       embedHandle?.cancel();
     };
-  }, [queue, workspaceId, pick, toast]);
+  }, [queue, workspaceId, pick, toast, requestVaultUnlock]);
 
   function retry(id: string): void {
     setQueue((q) =>

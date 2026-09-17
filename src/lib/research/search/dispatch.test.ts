@@ -50,7 +50,6 @@ function makeProvider(opts: {
   };
 }
 
-const fakeMasterKey = {} as CryptoKey;
 
 beforeEach(() => {
   vi.clearAllMocks();
