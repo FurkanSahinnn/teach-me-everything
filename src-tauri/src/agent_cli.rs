@@ -1138,6 +1138,70 @@ rl.on("line", (l) => { if (l === "quit") process.exit(0); process.stdout.write(`
     stop_session(&sessions, &key).expect("second stop is a no-op");
   }
 
+  /// Verifies the installed app-server through Tauri's Channel/stdin transport.
+  /// No inference unless TME_CODEX_SMOKE_INFERENCE=1 explicitly opts into it.
+  #[test]
+  #[ignore = "requires an installed Codex CLI"]
+  fn smoke_codex_app_server_handshake() {
+    struct Cleanup(AgentCliState);
+    impl Drop for Cleanup { fn drop(&mut self) { self.0.shutdown(); } }
+    let state = Cleanup(AgentCliState::default());
+    let found = detect_cli("codex").expect("Codex not installed");
+    let (channel, rx) = capture_channel();
+    let mut options = fixture_options("codex-smoke", &found, Some(
+      "{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"tme\",\"version\":\"1\"}}}\n".into()
+    ), false);
+    options.cli = "codex".into();
+    options.args = vec!["app-server".into()];
+    validate_options(&options).unwrap();
+    let key = start_session(&state.0.sessions, options, channel).expect("start Codex");
+    let response = |id: i64| -> serde_json::Value {
+      let deadline = std::time::Instant::now() + Duration::from_secs(30);
+      loop {
+        let event: serde_json::Value = serde_json::from_str(&rx.recv_timeout(
+          deadline.saturating_duration_since(std::time::Instant::now())
+        ).expect("app-server response timeout")).unwrap();
+        assert!(!matches!(event["type"].as_str(), Some("exit" | "error")), "app-server terminated before response");
+        if event["type"] != "line" { continue; }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(event["data"].as_str().unwrap_or("")) else { continue; };
+        if value["id"].as_i64() != Some(id) { continue; }
+        assert!(value.get("error").is_none(), "app-server rejected request {id}: {}", value["error"]);
+        return value["result"].clone();
+      }
+    };
+    response(1);
+    write_session(&state.0.sessions, &key, "{\"method\":\"initialized\"}\n{\"id\":2,\"method\":\"model/list\",\"params\":{}}\n").unwrap();
+    assert!(response(2)["data"].is_array());
+    write_session(&state.0.sessions, &key, "{\"id\":3,\"method\":\"thread/start\",\"params\":{\"ephemeral\":true,\"approvalPolicy\":\"never\",\"sandbox\":\"read-only\",\"baseInstructions\":\"You are a tutor.\",\"developerInstructions\":\"\"}}\n").unwrap();
+    let thread = response(3)["thread"]["id"].as_str().expect("thread id").to_string();
+    // Explicit opt-in: one tiny real inference, with no prompt/response logging.
+    if std::env::var("TME_CODEX_SMOKE_INFERENCE").as_deref() == Ok("1") {
+      let request = serde_json::json!({"id": 4, "method": "turn/start", "params": {
+        "threadId": thread, "input": [{"type": "text", "text": "Reply with just TME_OK. Do not use tools.", "text_elements": []}]
+      }});
+      write_session(&state.0.sessions, &key, &format!("{request}\n")).unwrap();
+      let deadline = std::time::Instant::now() + Duration::from_secs(60);
+      let mut saw_delta = false;
+      loop {
+        let raw = rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())).expect("inference timeout");
+        let event: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert!(!matches!(event["type"].as_str(), Some("exit" | "error")), "process terminated during inference");
+        if event["type"] != "line" { continue; }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(event["data"].as_str().unwrap_or("")) else { continue; };
+        assert!(value.get("error").is_none(), "turn request rejected");
+        if value["method"] == "item/agentMessage/delta" { saw_delta = true; }
+        if value["method"] == "turn/completed" {
+          assert_eq!(value["params"]["turn"]["status"], "completed", "inference did not complete");
+          assert!(saw_delta, "no text delta before turn completion");
+          break;
+        }
+      }
+    }
+    stop_session(&state.0.sessions, &key).unwrap();
+    drain_until_exit(&rx);
+    assert!(state.0.sessions.lock().unwrap().is_empty());
+  }
+
   #[test]
   fn live_stop_kills_wrapper_descendants_and_releases_inherited_pipes() {
     if !node_available() { return; }

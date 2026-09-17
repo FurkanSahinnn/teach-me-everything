@@ -1,5 +1,9 @@
 # Agent CLI branch review — 2026-09-17
 
+Follow-up: Codex app-server token streaming is now implemented; see
+[the implementation and validation notes](CODEX_APP_SERVER.md). The findings
+below describe the earlier review snapshot.
+
 Scope: `feat/agent-cli`, from `80d0311` through `f13d6b1`, including the
 unfinished review fixes present in the working tree. This report records the
 review outcome; it is not a standing implementation plan.
