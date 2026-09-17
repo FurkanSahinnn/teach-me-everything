@@ -32,7 +32,7 @@ export function FirstRunGate({ children }: { children: ReactNode }) {
     } catch {
       // If localStorage is unavailable (private mode, quota), fall through
       // to landing so the user isn't stuck on a blank screen.
-      if (!cancelled) setReady(true);
+      queueMicrotask(() => { if (!cancelled) setReady(true); });
     }
     return () => {
       cancelled = true;

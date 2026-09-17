@@ -88,11 +88,13 @@ export function Modal({
   // first focusable element (the close X) and blocking input typing.
   // Stabilise via refs so the effect only re-runs when `open` actually changes.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const closeOnEscRef = useRef(closeOnEsc);
-  closeOnEscRef.current = closeOnEsc;
   const initialFocusRefRef = useRef(initialFocusRef);
-  initialFocusRefRef.current = initialFocusRef;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeOnEscRef.current = closeOnEsc;
+    initialFocusRefRef.current = initialFocusRef;
+  }, [onClose, closeOnEsc, initialFocusRef]);
 
   useEffect(() => {
     if (!open) {

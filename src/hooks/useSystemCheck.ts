@@ -117,13 +117,18 @@ export function useSystemCheck(): SystemCheckResult {
   }, [runProbe]);
 
   useEffect(() => {
-    if (cached) {
-      setSystem(cached.system);
-      setGpu(cached.gpu);
-      setState("ready");
-      return;
-    }
-    void runProbe();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (cached) {
+        setSystem(cached.system);
+        setGpu(cached.gpu);
+        setState("ready");
+      } else {
+        void runProbe();
+      }
+    });
+    return () => { cancelled = true; };
   }, [runProbe]);
 
   return { state, system, gpu, error, refresh };

@@ -142,9 +142,11 @@ export default function SettingsPage() {
   // section's mental model). Quick-start tile applies still write straight to
   // the store; the sync effect below catches that and refreshes the draft.
   const [draftBindings, setDraftBindings] = useState<ModelBindings>(modelBindings);
-  useEffect(() => {
+  const [previousBindings, setPreviousBindings] = useState(modelBindings);
+  if (previousBindings !== modelBindings) {
+    setPreviousBindings(modelBindings);
     setDraftBindings(modelBindings);
-  }, [modelBindings]);
+  }
 
   const isModelDraftDirty = useMemo(() => {
     const keys: (keyof ModelBindings)[] = [
@@ -1156,9 +1158,11 @@ function ChatModelRow({
   // Reset customMode when the provider changes (handled inside the handler).
   // Also clear it if the resolved descriptor *becomes* known later (e.g. the
   // catalog gained a new entry on a hot reload).
-  useEffect(() => {
+  const [previousDescriptor, setPreviousDescriptor] = useState(selectedDescriptor);
+  if (previousDescriptor !== selectedDescriptor) {
+    setPreviousDescriptor(selectedDescriptor);
     if (selectedDescriptor) setCustomMode(false);
-  }, [selectedDescriptor]);
+  }
 
   function handleProviderChange(providerId: string): void {
     const next = options.find((o) => o.presetId === providerId);

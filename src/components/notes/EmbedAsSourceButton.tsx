@@ -107,11 +107,13 @@ export function EmbedAsSourceButton({
 
   // Reset transient state when noteId switches; otherwise the user would
   // see a leftover spinner / error from the previous note.
-  useEffect(() => {
+  const [previousNoteId, setPreviousNoteId] = useState(noteId);
+  if (previousNoteId !== noteId) {
+    setPreviousNoteId(noteId);
     setTransient(null);
     setLastErrorMessage(undefined);
     setCurrentHash(undefined);
-  }, [noteId]);
+  }
 
   const state = deriveButtonState({ source, currentHash, transient });
 

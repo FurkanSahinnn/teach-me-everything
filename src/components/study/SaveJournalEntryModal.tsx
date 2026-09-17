@@ -117,13 +117,16 @@ export function SaveJournalEntryModal({ open, onClose, draft }: Props) {
   const cancelRef = useRef<AbortController | null>(null);
 
   // Reset form when a new draft arrives.
-  useEffect(() => {
-    if (!open || !draft) return;
-    setTitle(defaultTitleFrom(draft.question));
-    setTagsText(tagsToString(defaultTagsFrom(draft.source)));
-    setSummary("");
-    setAiAttempted(false);
-  }, [open, draft]);
+  const [previousForm, setPreviousForm] = useState({ open: false, draft });
+  if (previousForm.open !== open || previousForm.draft !== draft) {
+    setPreviousForm({ open, draft });
+    if (open && draft) {
+      setTitle(defaultTitleFrom(draft.question));
+      setTagsText(tagsToString(defaultTagsFrom(draft.source)));
+      setSummary("");
+      setAiAttempted(false);
+    }
+  }
 
   const chatOption = findChatOption(modelId);
   const preset = chatOption ? getPreset(chatOption.presetId) : undefined;

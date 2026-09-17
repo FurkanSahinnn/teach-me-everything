@@ -49,11 +49,14 @@ export function AddUrlModal({
   const cancelRef = useRef<AbortController | null>(null);
 
   // Reset transient state every time the modal re-opens.
-  useEffect(() => {
-    if (!open) return;
-    setInput("");
-    setProvider(defaultProvider);
-  }, [open, defaultProvider]);
+  const [previousForm, setPreviousForm] = useState({ open, defaultProvider });
+  if (previousForm.open !== open || previousForm.defaultProvider !== defaultProvider) {
+    setPreviousForm({ open, defaultProvider });
+    if (open) {
+      setInput("");
+      setProvider(defaultProvider);
+    }
+  }
 
   // Track whether the selected provider already has a stored key. We don't
   // need the actual key here — just whether the vault entry exists — so the
@@ -61,12 +64,8 @@ export function AddUrlModal({
   useEffect(() => {
     let cancelled = false;
     const keyProvider = researchKeyProvider(provider);
-    if (!keyProvider) {
-      setHasKey(null);
-      return;
-    }
     void (async () => {
-      const present = await hasApiKey(keyProvider);
+      const present = await (keyProvider ? hasApiKey(keyProvider) : Promise.resolve(null));
       if (!cancelled) setHasKey(present);
     })();
     return () => {

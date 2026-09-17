@@ -176,7 +176,8 @@ export function NoteTree({
       cache.set(id, out);
       return out;
     }
-    return walk;
+    for (const folder of folders) walk(folder.id);
+    return (id: string): Set<string> => cache.get(id) ?? new Set<string>();
   }, [folders]);
 
   const tree: RootBucket = useMemo(
@@ -837,4 +838,3 @@ function countFolderContents(
   }
   return { noteCount, folderCount: allFolders.size - 1 };
 }
-

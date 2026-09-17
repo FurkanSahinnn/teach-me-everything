@@ -45,8 +45,10 @@ export function DeepLinkMount(): null {
   // Refs keep the latest closures available to the listener without
   // forcing the effect to tear down whenever IntlProvider or
   // ToastProvider re-renders (same pattern as VaultReconcilerProvider).
-  toastRef.current = toast;
-  tRef.current = t;
+  useEffect(() => {
+    toastRef.current = toast;
+    tRef.current = t;
+  }, [toast, t]);
 
   useEffect(() => {
     if (!isTauriEnv()) return;

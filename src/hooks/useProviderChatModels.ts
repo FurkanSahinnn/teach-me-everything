@@ -147,15 +147,18 @@ export function useProviderChatModels(
     if (!adapter) return;
     if (cached === undefined) return;
     if (cached === null) {
-      void doFetch();
-      return;
+      let cancelled = false;
+      queueMicrotask(() => { if (!cancelled) void doFetch(); });
+      return () => { cancelled = true; };
     }
     const stale = isCacheStale(cached, {
       ttlMs: PROVIDER_MODELS_CACHE_TTL_MS,
       ...(baseUrl !== undefined ? { baseUrl } : {}),
     });
     if (stale) {
-      void doFetch();
+      let cancelled = false;
+      queueMicrotask(() => { if (!cancelled) void doFetch(); });
+      return () => { cancelled = true; };
     }
   }, [adapter, cached, baseUrl, doFetch]);
 

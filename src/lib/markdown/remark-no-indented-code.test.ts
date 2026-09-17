@@ -12,8 +12,7 @@ function render(src: string, withFix: boolean): string {
       remarkPlugins: withFix
         ? [remarkGfm, remarkMath, remarkNoIndentedCode]
         : [remarkGfm, remarkMath],
-      children: src,
-    }),
+    }, src),
   );
 }
 

@@ -190,7 +190,7 @@ function CitationChips({
         return (
           <span key={i} title={verdictTitle(verdict, pick)}>
             <CitationChip
-              ref={display}
+              citationRef={display}
               active={active}
               tone={VERDICT_TONE[verdict]}
               onActivate={() => {

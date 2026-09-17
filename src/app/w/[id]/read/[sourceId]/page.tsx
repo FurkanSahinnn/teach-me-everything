@@ -591,15 +591,13 @@ export default function NotebookReaderPage() {
   // the `isUnlocked` boolean so that re-unlocking while already unlocked
   // (e.g. clicking the banner's Unlock link after a stale vault_locked toast)
   // still re-fires this effect and clears the banner.
-  useEffect(() => {
-    if (!masterKey) return;
-    setChatStatus((prev) => {
-      if (prev.kind === "error" && prev.code === "vault_locked") {
-        return { kind: "idle" };
-      }
-      return prev;
-    });
-  }, [masterKey]);
+  const [previousMasterKey, setPreviousMasterKey] = useState(masterKey);
+  if (previousMasterKey !== masterKey) {
+    setPreviousMasterKey(masterKey);
+    if (masterKey && chatStatus.kind === "error" && chatStatus.code === "vault_locked") {
+      setChatStatus({ kind: "idle" });
+    }
+  }
 
   const runChat = useCallback(
     async (

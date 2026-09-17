@@ -111,7 +111,7 @@ function transformCitationsInChildren(
         return (
           <CitationChip
             key={`c-${idx}-${i}`}
-            ref={tok.ref}
+            citationRef={tok.ref}
             active={!!chunk}
             onActivate={() => chunk && onJump(chunk)}
             tone={tone}
@@ -374,14 +374,14 @@ function ChatBubbleImpl({
   // chat surface routes to whatever Settings → Models picks (Anthropic /
   // OpenRouter / Groq / Ollama / …) instead of always Anthropic. Custom model
   // ids that aren't in the registry fall back to the raw model string.
-  const speakerLabel = useMemo(() => {
+  const speakerLabel = (() => {
     if (isUser) return t("sen");
     if (!message.model) return pick("Asistan", "Assistant");
     const opt = findChatOption(message.model);
     if (!opt) return message.model;
     const presetLabel = opt.label.split(" · ")[0] ?? opt.presetId;
     return `${presetLabel} · ${opt.modelId}`;
-  }, [isUser, message.model, pick, t]);
+  })();
 
   // `wide` bubbles cap below full width so an assistant turn (left-aligned)
   // leaves a clear gutter on the right and a user turn (right-aligned) leaves

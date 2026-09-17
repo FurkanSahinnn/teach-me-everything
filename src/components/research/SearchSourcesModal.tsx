@@ -165,8 +165,10 @@ export function SearchSourcesModal({
     liveChainSizeRef.current = liveChain.length;
   }, [liveChain.length]);
 
-  useEffect(() => {
-    if (!open) return;
+  const [previousOpen, setPreviousOpen] = useState(open);
+  if (previousOpen !== open) {
+    setPreviousOpen(open);
+    if (open) {
     setQuery("");
     setSearchError(null);
     setSearchAttempts(null);
@@ -177,7 +179,8 @@ export function SearchSourcesModal({
     setIngestProgress(new Map());
     setIngesting(false);
     setActiveProviderId(null);
-  }, [open]);
+    }
+  }
 
   const filteredResults = useMemo(() => {
     const needle = urlFilter.trim().toLowerCase();

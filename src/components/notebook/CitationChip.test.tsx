@@ -56,7 +56,7 @@ describe("findChunkForRef", () => {
 describe("CitationChip (Phase 6.9.7 — note tone)", () => {
   it("renders the default § marker when tone is unset", () => {
     render(
-      <CitationChip ref="2.3" active={true} onActivate={() => {}} />,
+      <CitationChip citationRef="2.3" active={true} onActivate={() => {}} />,
     );
     const btn = screen.getByRole("button");
     expect(btn).toHaveAttribute("data-citation-ref", "2.3");
@@ -69,7 +69,7 @@ describe("CitationChip (Phase 6.9.7 — note tone)", () => {
   it("renders the NotebookPen icon and emerald tone marker when tone='note'", () => {
     render(
       <CitationChip
-        ref="learning-log"
+        citationRef="learning-log"
         active={true}
         onActivate={() => {}}
         tone="note"
@@ -92,7 +92,7 @@ describe("CitationChip (Phase 6.9.7 — note tone)", () => {
     const user = userEvent.setup();
     render(
       <CitationChip
-        ref="x"
+        citationRef="x"
         active={true}
         onActivate={onActivate}
         tone="note"
@@ -107,7 +107,7 @@ describe("CitationChip (Phase 6.9.7 — note tone)", () => {
     const user = userEvent.setup();
     render(
       <CitationChip
-        ref="x"
+        citationRef="x"
         active={false}
         onActivate={onActivate}
         tone="note"

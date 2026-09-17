@@ -61,6 +61,7 @@ To opt into one small authenticated inference, set
 `TME_CODEX_SMOKE_INFERENCE=1` for that command. The default smoke consumes no
 inference quota. The test owns and shuts down its child process even on failure.
 
-Next verification: exercise chat, cancel, model selection and reload/exit in
-the actual desktop window. Automated native transport coverage does not replace
-that visual end-to-end check.
+Follow-up: chat, cancel, model selection and reload/exit were subsequently
+verified in the actual Windows desktop application. See
+[Desktop QA and lint cleanup](DESKTOP_QA_AND_LINT.md) for results and remaining
+limitations; it also supersedes the repository lint baseline above.

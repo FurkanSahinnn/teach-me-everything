@@ -42,7 +42,7 @@ export function AutoLaunchSection(): React.ReactElement | null {
   const t = useTranslations("auto_launch");
   const { toast } = useToast();
   const toastRef = useRef(toast);
-  toastRef.current = toast;
+  useEffect(() => { toastRef.current = toast; }, [toast]);
 
   // `null` = "loading", `true | false` = "synced with OS state". Render
   // a disabled placeholder during the load so a fast user can't toggle a

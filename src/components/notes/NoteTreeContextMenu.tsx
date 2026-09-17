@@ -73,17 +73,14 @@ export function NoteTreeContextMenu({
   // Stabilise onClose so the global click listener doesn't tear down on
   // every parent render — same pattern the Modal uses.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   // Compute final position after the menu has measured itself, so we can
   // flip when the click happens near the right or bottom edge of the
   // viewport. Without this a right-click on the last row would render the
   // menu off-screen.
   useLayoutEffect(() => {
-    if (!open || !anchor) {
-      setPosition(null);
-      return;
-    }
+    if (!open || !anchor) return;
     const node = menuRef.current;
     const height = node?.offsetHeight ?? 200;
     const vw = typeof window !== "undefined" ? window.innerWidth : 1024;

@@ -51,7 +51,7 @@ export function getSearchProvider(
   // AND forward-compat strings from stored prefs. Anything that doesn't
   // resolve falls through to `null`.
   const candidate = id as SearchProviderId;
-  let p = cache.get(candidate);
+  const p = cache.get(candidate);
   if (p) return p;
   const built = construct(candidate);
   if (built) cache.set(candidate, built);

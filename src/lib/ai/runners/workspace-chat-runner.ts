@@ -261,13 +261,12 @@ export function useWorkspaceChat(
   // True after the user manually toggles a chip in the current session — gates
   // the thread-sync effect so reselecting a thread re-seeds from persistence
   // but in-session edits aren't clobbered by the live-query echo.
-  const lastSyncedThreadRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
+  const [syncedThreadId, setSyncedThreadId] = useState<string | undefined>(undefined);
+  if (syncedThreadId !== activeThreadId) {
     // Re-seed when the active thread changes (including → undefined for a new
     // thread). Reading the persisted scopes here keeps the chips in sync with
     // whatever the thread was last left at.
-    if (lastSyncedThreadRef.current === activeThreadId) return;
-    lastSyncedThreadRef.current = activeThreadId;
+    setSyncedThreadId(activeThreadId);
     const persisted = activeThread?.contextScopes;
     if (persisted && persisted.length > 0) {
       setContextScopesState(persisted as ContextScope[]);
@@ -278,11 +277,7 @@ export function useWorkspaceChat(
     setSelectedSourceIdsState(
       persistedSources && persistedSources.length > 0 ? persistedSources : [],
     );
-  }, [
-    activeThreadId,
-    activeThread?.contextScopes,
-    activeThread?.selectedSourceIds,
-  ]);
+  }
 
   const setContextScopes = useCallback(
     (next: ContextScope[]) => {
@@ -314,14 +309,9 @@ export function useWorkspaceChat(
   // default (same pattern as the reader). After the first manual toggle the
   // per-message state owns the value.
   const webSearchDefault = usePrefs((s) => s.webSearchPrefs.enabled);
-  const [webSearchEnabled, setWebSearchEnabledState] =
-    useState<boolean>(webSearchDefault);
-  const userHasToggledWebRef = useRef(false);
-  useEffect(() => {
-    if (!userHasToggledWebRef.current) setWebSearchEnabledState(webSearchDefault);
-  }, [webSearchDefault]);
+  const [webSearchOverride, setWebSearchEnabledState] = useState<boolean | null>(null);
+  const webSearchEnabled = webSearchOverride ?? webSearchDefault;
   const setWebSearchEnabled = useCallback((next: boolean) => {
-    userHasToggledWebRef.current = true;
     setWebSearchEnabledState(next);
   }, []);
 
@@ -342,14 +332,13 @@ export function useWorkspaceChat(
   // already unlocked still clears the banner. (Post-Phase-9 the masterKey is a
   // non-null sentinel on every build, so this is effectively a no-op guard
   // kept for parity with the reader.)
-  useEffect(() => {
-    if (!masterKey) return;
-    setChatStatus((prev) =>
-      prev.kind === "error" && prev.code === "vault_locked"
-        ? { kind: "idle" }
-        : prev,
-    );
-  }, [masterKey]);
+  const [previousMasterKey, setPreviousMasterKey] = useState(masterKey);
+  if (previousMasterKey !== masterKey) {
+    setPreviousMasterKey(masterKey);
+    if (masterKey && chatStatus.kind === "error" && chatStatus.code === "vault_locked") {
+      setChatStatus({ kind: "idle" });
+    }
+  }
 
   const selectThread = useCallback((id: string) => {
     setForceNewThread(false);
@@ -362,7 +351,7 @@ export function useWorkspaceChat(
     setExplicitThreadId(null);
     setContextScopesState(DEFAULT_CONTEXT_SCOPES);
     setSelectedSourceIdsState([]);
-    lastSyncedThreadRef.current = undefined;
+    setSyncedThreadId(undefined);
   }, []);
 
   const runChat = useCallback(
@@ -505,7 +494,7 @@ export function useWorkspaceChat(
       // force-new sentinel so the message list follows it.
       setForceNewThread(false);
       setExplicitThreadId(thread.id);
-      lastSyncedThreadRef.current = thread.id;
+      setSyncedThreadId(thread.id);
       void setThreadContextScopes(thread.id, activeScopes);
       void setThreadSelectedSources(thread.id, sourceSelection);
 
@@ -1149,7 +1138,7 @@ export function useWorkspaceChat(
           const { newThreadId } = await forkThread(activeThreadId, messageId);
           setForceNewThread(false);
           setExplicitThreadId(newThreadId);
-          lastSyncedThreadRef.current = undefined;
+          setSyncedThreadId(undefined);
           toast({
             variant: "success",
             title: pick("Yeni sohbet açıldı", "Forked into new chat"),

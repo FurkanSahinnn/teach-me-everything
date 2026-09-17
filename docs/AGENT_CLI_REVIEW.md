@@ -69,3 +69,8 @@ streaming using the existing native transport and provider contract.
 
 The root `AGENTS.md` was separately checked and updated against the project. It
 is ignored by the repository and is not included in this review commit.
+
+Subsequent work implemented [Codex app-server streaming](CODEX_APP_SERVER.md)
+and completed [Windows desktop QA and lint cleanup](DESKTOP_QA_AND_LINT.md).
+Those reports supersede the corresponding next steps and lint baseline here;
+live Claude inference remains unverified.

@@ -76,6 +76,11 @@ type Props = {
 export function PdfViewer({ blob, pick, className }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const scrollRootRef = useRef<HTMLDivElement>(null);
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
+  const bindScrollRoot = useCallback((node: HTMLDivElement | null) => {
+    scrollRootRef.current = node;
+    setScrollRoot(node);
+  }, []);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const [pdfjsLib, setPdfjsLib] = useState<PdfjsLib | null>(null);
@@ -285,7 +290,7 @@ export function PdfViewer({ blob, pick, className }: Props) {
       />
 
       <div
-        ref={scrollRootRef}
+        ref={bindScrollRoot}
         data-pdf-scroll
         className="flex-1 overflow-y-auto"
       >
@@ -323,7 +328,7 @@ export function PdfViewer({ blob, pick, className }: Props) {
                 pageNumber={i + 1}
                 scale={scale}
                 rotation={rotation}
-                scrollRoot={scrollRootRef.current}
+                scrollRoot={scrollRoot}
                 pick={pick}
               />
             ))}
@@ -369,25 +374,16 @@ function Toolbar({
   disabled,
   pick,
 }: ToolbarProps) {
-  const [pageInput, setPageInput] = useState<string>(String(currentPage));
-
-  // Keep the input in sync with the scroll-tracked page. We don't replace
-  // user-entered text mid-edit — only when the input is not focused.
-  useEffect(() => {
-    if (document.activeElement?.tagName !== "INPUT") {
-      setPageInput(String(currentPage));
-    }
-  }, [currentPage]);
+  const [pageDraft, setPageDraft] = useState<string | null>(null);
+  const pageInput = pageDraft ?? String(currentPage);
 
   function commitJump(): void {
     const n = parseInt(pageInput, 10);
     if (Number.isFinite(n)) {
       const clamped = clamp(n, 1, pageCount);
       onJump(clamped);
-      setPageInput(String(clamped));
-    } else {
-      setPageInput(String(currentPage));
     }
+    setPageDraft(null);
   }
 
   return (
@@ -405,12 +401,12 @@ function Toolbar({
             type="text"
             inputMode="numeric"
             value={pageInput}
-            onChange={(e) => setPageInput(e.target.value.replace(/[^\d]/g, ""))}
+            onFocus={() => setPageDraft(String(currentPage))}
+            onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ""))}
             onBlur={commitJump}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                commitJump();
                 (e.target as HTMLInputElement).blur();
               }
             }}

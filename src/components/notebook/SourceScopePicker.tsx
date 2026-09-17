@@ -73,9 +73,7 @@ export function SourceScopePicker({
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Collapse the popover if the turn starts while it's open.
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
+  if (disabled && open) setOpen(false);
 
   useEffect(() => {
     if (!open) return;

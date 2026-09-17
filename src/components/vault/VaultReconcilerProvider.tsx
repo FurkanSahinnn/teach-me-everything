@@ -63,11 +63,13 @@ export function VaultReconcilerProvider({
   // setupCompleted should re-mount the watcher. A new `toast` or `t`
   // identity from the IntlProvider re-render must not.
   const toastRef = useRef(toast);
-  toastRef.current = toast;
   const tRef = useRef(t);
-  tRef.current = t;
   const tLockRef = useRef(tLock);
-  tLockRef.current = tLock;
+  useEffect(() => {
+    toastRef.current = toast;
+    tRef.current = t;
+    tLockRef.current = tLock;
+  }, [toast, t, tLock]);
 
   const enabled = useMemo(() => {
     if (!isTauriEnv()) return false;

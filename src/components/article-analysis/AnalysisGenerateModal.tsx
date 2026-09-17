@@ -70,7 +70,11 @@ function estimateCostUsd(
 // "Bölüm özetleri 7/14 → Sentez → Uzman analizleri → Birleştirme".
 const STAGE_ORDER = ["map", "reduce", "specialists", "synthesize"] as const;
 
-export function AnalysisGenerateModal({
+export function AnalysisGenerateModal(props: Props) {
+  return props.open ? <AnalysisGenerateSession key={`${props.workspaceId}:${props.sourceId ?? "upload"}`} {...props} /> : null;
+}
+
+function AnalysisGenerateSession({
   workspaceId,
   sourceId,
   open,
@@ -112,36 +116,27 @@ export function AnalysisGenerateModal({
   const ingestHandleRef = useRef<IngestPdfHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { state, generate, cancel, reset } = useArticleAnalysisRunner();
+  const { state, generate, cancel } = useArticleAnalysisRunner();
   const notifiedRef = useRef(false);
 
-  // Reset form + runner state each time the modal (re)opens (render-phase
-  // adjustment per React's "reset state when a prop changes" pattern).
-  const [prevOpen, setPrevOpen] = useState(open);
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (open) {
-      setSelectedSourceId(sourceId ?? "");
-      setTargetLang(defaultLang);
-      setTokenSum(null);
-      notifiedRef.current = false;
-      ingestHandleRef.current?.cancel();
-      ingestHandleRef.current = null;
-      setIngest({ phase: "idle", pct: 0 });
-      setIngestedTitle("");
-      reset();
-    }
-  }
+  // Closing unmounts this session, so a reopened form cannot receive an old
+  // ingestion's completion or reuse a cancelled analysis runner.
+  useEffect(() => () => {
+    ingestHandleRef.current?.cancel();
+    ingestHandleRef.current = null;
+  }, []);
 
   const locked = Boolean(sourceId);
   const effectiveSourceId = locked ? (sourceId as string) : selectedSourceId;
+  const [previousSource, setPreviousSource] = useState(effectiveSourceId);
+  if (previousSource !== effectiveSourceId) {
+    setPreviousSource(effectiveSourceId);
+    setTokenSum(null);
+  }
 
   // Pull the token sum for the chosen source to drive the cost estimate.
   useEffect(() => {
-    if (!open || !effectiveSourceId) {
-      setTokenSum(null);
-      return;
-    }
+    if (!open || !effectiveSourceId) return;
     let cancelled = false;
     void listChunksBySource(effectiveSourceId).then((chunks) => {
       if (cancelled) return;

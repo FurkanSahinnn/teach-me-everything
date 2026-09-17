@@ -352,18 +352,10 @@ function WorkspaceView({ id }: { id: string }) {
   // Drop selections that no longer point to existing sources (post-delete or
   // post-filter-change). Selection state outliving its rows is the most
   // common cause of "ghost" bulk actions.
-  useEffect(() => {
-    const ids = new Set(sources.map((s) => s.id));
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (ids.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [sources]);
+  const sourceIds = new Set(sources.map((s) => s.id));
+  if ([...selected].some((id) => !sourceIds.has(id))) {
+    setSelected(new Set([...selected].filter((id) => sourceIds.has(id))));
+  }
 
   function toggleSelect(sourceId: string): void {
     setSelected((prev) => {
