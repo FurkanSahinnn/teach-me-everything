@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { moveToPosition } from "@/lib/utils/reorder";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { Input } from "@/components/ui/Input";
@@ -247,7 +248,9 @@ function WorkspaceView({ id }: { id: string }) {
   const t = useTranslations("workspace");
   const pick = useLocalePick();
   const ws = useWorkspace(id);
-  const sources = useSources(id) ?? [];
+  const loadedSources = useSources(id);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
+  const manualIds = useMemo(() => [...sources].sort(compareManualOrder).map((s) => s.id), [sources]);
   const sourceCount = useSourceCount(id) ?? 0;
   const highlightCount = useHighlightCount(id) ?? 0;
   const flashcardCount = useFlashcardCount(id) ?? 0;
@@ -267,19 +270,16 @@ function WorkspaceView({ id }: { id: string }) {
   const handleReorder = useCallback(
     async (draggedId: string, targetId: string) => {
       if (draggedId === targetId) return;
-      // Work on the FULL manual order, not the filtered view: dropping onto a
-      // visible row means "place it right before that row" in the whole
-      // list, so hidden sources keep their relative positions.
-      const ordered = [...sources].sort(compareManualOrder).map((s) => s.id);
-      const from = ordered.indexOf(draggedId);
-      if (from === -1) return;
-      ordered.splice(from, 1);
-      const to = ordered.indexOf(targetId);
-      if (to === -1) return;
-      ordered.splice(to, 0, draggedId);
-      await reorderSources(id, ordered);
+      // Keep hidden sources in the full order; the target's original index
+      // also lets a downward drag reach the last position in one action.
+      try {
+        await reorderSources(id, moveToPosition(manualIds, draggedId, targetId));
+      } catch (error) {
+        toast({ variant: "error", title: pick("Sıralama kaydedilemedi", "Could not save order"),
+          description: error instanceof Error ? error.message : String(error) });
+      }
     },
-    [sources, id],
+    [manualIds, id, toast, pick],
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -765,6 +765,11 @@ function WorkspaceView({ id }: { id: string }) {
                         dragEnabled={sort === "manual"}
                         dragging={draggingId === s.id}
                         dragOver={dragOverId === s.id && draggingId !== s.id}
+                        dropAfter={manualIds.indexOf(draggingId ?? "") < manualIds.indexOf(s.id)}
+                        onMove={(direction) => {
+                          const target = manualIds[manualIds.indexOf(s.id) + direction];
+                          if (target) void handleReorder(s.id, target);
+                        }}
                         onDragStart={(sid) => {
                           draggingRef.current = sid;
                           setDraggingId(sid);
@@ -1314,6 +1319,8 @@ function SourceRow({
   dragEnabled,
   dragging,
   dragOver,
+  dropAfter,
+  onMove,
   onDragStart,
   onDragOver,
   onDrop,
@@ -1330,6 +1337,8 @@ function SourceRow({
   dragEnabled: boolean;
   dragging: boolean;
   dragOver: boolean;
+  dropAfter: boolean;
+  onMove: (direction: -1 | 1) => void;
   onDragStart: (id: string) => void;
   onDragOver: (id: string) => void;
   onDrop: (targetId: string) => void;
@@ -1360,14 +1369,24 @@ function SourceRow({
         bordered && "border-b border-rule-soft",
         selected && "bg-accent-wash hover:bg-accent-wash",
         dragging && "opacity-40",
-        // Insertion line: the dragged row will land right above this one.
+        // Downward moves land below the target; upward moves land above it.
         dragOver &&
-          "before:absolute before:inset-x-3 before:top-0 before:h-0.5 before:rounded-full before:bg-accent",
+          "before:absolute before:inset-x-3 before:h-0.5 before:rounded-full before:bg-accent",
+        dragOver && (dropAfter ? "before:bottom-0" : "before:top-0"),
       )}
     >
       {dragEnabled ? (
         <span
           draggable
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (!["ArrowUp", "ArrowDown", "Enter", " "].includes(e.key)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.key === "ArrowUp") onMove(-1);
+            if (e.key === "ArrowDown") onMove(1);
+          }}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1381,7 +1400,7 @@ function SourceRow({
           onDragEnd={onDragEnd}
           className="flex h-6 w-5 cursor-grab items-center justify-center rounded text-ink-4 hover:bg-paper-3 hover:text-ink-2 active:cursor-grabbing"
           title={pick("Sürükleyerek sırala", "Drag to reorder")}
-          aria-label={pick("Sürükleyerek sırala", "Drag to reorder")}
+          aria-label={pick("Sırala: sürükle veya yukarı/aşağı ok tuşlarını kullan", "Reorder: drag or use the up/down arrow keys")}
           data-testid="source-drag-handle"
         >
           <GripVertical className="h-3.5 w-3.5" aria-hidden />

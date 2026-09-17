@@ -181,12 +181,15 @@ export function parseCliLine(line: string): ParsedCliLine {
     // the API, which is what `isRetryableStreamError` keys off (429 / 529 / 5xx).
     const status =
       typeof rec.api_error_status === "number" ? rec.api_error_status : 0;
-    const message =
+    const errors = Array.isArray(rec.errors)
+      ? rec.errors.filter((error): error is string => typeof error === "string").join("\n")
+      : "";
+    const message = errors || (
       typeof rec.result === "string" && rec.result.length > 0
         ? rec.result
         : typeof rec.subtype === "string"
           ? rec.subtype
-          : "The agent CLI reported an error";
+          : "The agent CLI reported an error");
     return { kind: "result", isError, message, status };
   }
 
@@ -280,6 +283,10 @@ export class ClaudeCliChatProvider implements ChatProvider {
     const session = newId("cli");
 
     async function* run(): AsyncGenerator<StreamEvent> {
+      if (signal.aborted) {
+        yield { kind: "abort" };
+        return;
+      }
       const queue = createPayloadQueue();
       // Boxed so the event callback and the generator body share one cell —
       // a bare `let` closed over here would not narrow after the callback runs.
@@ -368,10 +375,16 @@ export class ClaudeCliChatProvider implements ChatProvider {
       // Killing the child is what actually stops generation — closing the queue
       // alone would leave the process running and still burning quota.
       const onAbort = (): void => {
-        void stopAgentCli(session);
+        if (started) {
+          started = false;
+          void stopAgentCli(session);
+        }
         queue.close();
       };
       signal.addEventListener("abort", onAbort, { once: true });
+      // A cancel that landed while `startAgentCli` was still spawning fired
+      // before the listener existed; the process is running now, so act on it.
+      if (signal.aborted) onAbort();
 
       try {
         let sawAbort = false;
@@ -379,7 +392,9 @@ export class ClaudeCliChatProvider implements ChatProvider {
           fallbackModel: req.model,
         })) {
           if (event.kind === "abort") sawAbort = true;
-          yield event;
+          // Keep the subscription model alias: the upstream model id would
+          // make analysis runners apply API per-token pricing to a CLI turn.
+          yield event.kind === "start" ? { ...event, model: req.model } : event;
         }
         // The mapper only notices an abort when the next payload arrives. A
         // cancel that lands while the CLI is still thinking closes the queue

@@ -165,7 +165,6 @@ export async function startAgentCli(
     // Also to the console: the panel shows one sentence, but diagnosing a start
     // failure usually needs the whole rejection payload. No prompt content is
     // logged — only the rejection.
-    // eslint-disable-next-line no-console
     console.error("[agent-cli] agent_cli_start rejected:", err);
     // Re-throw as a real Error so the provider's `instanceof Error` check keeps
     // the Rust-side reason instead of falling back to a generic sentence.

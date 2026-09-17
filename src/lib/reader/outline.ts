@@ -127,7 +127,7 @@ function extractHeadingsFromText(text: string): HeadingCandidate[] {
     const probe = (step: number): boolean => {
       for (let i = index + step; i >= 0 && i < trimmedLines.length; i += step) {
         const t = trimmedLines[i] ?? "";
-        if (!t) continue;
+        if (!t) return false;
         return /^\d+[.)]\s+/.test(t);
       }
       return false;
@@ -160,8 +160,9 @@ function extractHeadingsFromText(text: string): HeadingCandidate[] {
     if (
       !markdownDoc &&
       isNumberedHeading(normalized) &&
-      !neighbourIsOrderedItem(lineIndex) &&
-      !(/[.!?]$/.test(normalized) && normalized.split(/\s+/).length > 6)
+      (/^\d+(?:\.\d+)*\s/.test(normalized) ||
+        (!neighbourIsOrderedItem(lineIndex) &&
+          !(/[.!?]$/.test(normalized) && normalized.split(/\s+/).length > 6)))
     ) {
       headings.push({
         label: normalized,

@@ -393,6 +393,13 @@ export async function* withJsonToolFallback(
       pendingDelta = event;
       continue;
     }
+    if (event.kind === "error" || event.kind === "abort") {
+      // Consumers stop on terminal failures. Deliver already-reported usage
+      // first, and never execute a partial tool proposal from a failed turn.
+      if (pendingDelta) yield pendingDelta;
+      yield event;
+      return;
+    }
     if (event.kind === "stop") {
       const { toolUses } = parseJsonToolUseFromText(bufferedText);
       for (let i = 0; i < toolUses.length; i += 1) {

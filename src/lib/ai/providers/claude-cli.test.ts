@@ -152,6 +152,12 @@ describe("flattenMessagesToTurn", () => {
 });
 
 describe("parseCliLine", () => {
+  it("surfaces real SDK error result messages", () => {
+    expect(parseCliLine(JSON.stringify({ type: "result", subtype: "error_during_execution",
+      is_error: true, errors: ["Login required", "Run /login"] }))).toMatchObject({
+      kind: "result", isError: true, message: "Login required\nRun /login",
+    });
+  });
   it("unwraps a stream_event into its Anthropic payload", () => {
     const parsed = parseCliLine(LINE_TEXT);
     expect(parsed.kind).toBe("payload");
@@ -222,6 +228,27 @@ describe("ClaudeCliChatProvider.streamChat", () => {
       kind: "text",
       delta: "PONG",
     });
+    expect(events.find((e) => e.kind === "start")).toMatchObject({ model: "sonnet" });
+  });
+
+  it("stops exactly once when cancellation lands during spawn", async () => {
+    const controller = new AbortController();
+    startMock.mockImplementation(async (opts) => {
+      controller.abort();
+      return opts.session;
+    });
+    const handle = new ClaudeCliChatProvider().streamChat({ apiKey: "", model: "sonnet",
+      system: [], messages: [], signal: controller.signal });
+    const events: StreamEvent[] = [];
+    for await (const event of handle.events) events.push(event);
+    expect(typed(events)).toEqual([{ kind: "abort" }]);
+    expect(stopMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spawn a pre-aborted request", async () => {
+    const events = await collect([], { signal: AbortSignal.abort() });
+    expect(events).toEqual([{ kind: "abort" }]);
+    expect(startMock).not.toHaveBeenCalled();
   });
 
   it("stages the system prompt for the file flag rather than argv", async () => {

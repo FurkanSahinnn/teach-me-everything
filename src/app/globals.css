@@ -604,11 +604,8 @@ html.theme-init-complete body {
   font-family: var(--font-mono, ui-monospace, monospace);
 }
 /* Obsidian extensions (lib/markdown/obsidian-plugins). */
-.markdown-preview ul.contains-task-list {
-  list-style: none;
-  padding-left: 0.25rem;
-}
 .markdown-preview li.task-list-item {
+  list-style: none;
   padding-left: 0;
 }
 .markdown-preview .task-list-checkbox {
@@ -643,8 +640,8 @@ html.theme-init-complete body {
 .markdown-preview blockquote.callout-success,
 .markdown-preview blockquote.callout-check,
 .markdown-preview blockquote.callout-done {
-  border-left-color: var(--color-ok, #16a34a);
-  background: color-mix(in srgb, var(--color-ok, #16a34a) 10%, transparent);
+  border-left-color: var(--color-ok);
+  background: color-mix(in srgb, var(--color-ok) 10%, transparent);
 }
 .markdown-preview a.wikilink {
   text-decoration-style: dotted;

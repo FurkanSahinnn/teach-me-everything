@@ -4,6 +4,7 @@
 // integration layer.
 
 mod agent_cli;
+mod agent_process;
 mod keychain;
 mod sysinfo;
 mod tts;
@@ -66,6 +67,11 @@ pub fn run() {
       sysinfo::sysinfo_gpu,
     ])
     .manage(agent_cli::AgentCliState::default())
+    .on_page_load(|webview, payload| {
+      if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+        webview.state::<agent_cli::AgentCliState>().shutdown();
+      }
+    })
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -84,6 +90,9 @@ pub fn run() {
     .expect("error while building tauri application");
 
   app.run(|_app_handle, _event| {
+    if matches!(_event, tauri::RunEvent::Exit) {
+      _app_handle.state::<agent_cli::AgentCliState>().shutdown();
+    }
     // Phase 7.5.C — macOS routes "Open with TME" through this event.
     // Windows / Linux pass the path as a CLI argument; that path is
     // handled at setup time by `emit_args_open_files`. The cfg gate

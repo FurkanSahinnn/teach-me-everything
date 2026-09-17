@@ -9,8 +9,9 @@
 //
 // Embeddings do not survive a re-chunk — the rows they hung on are replaced —
 // so every re-chunked source is left as `embeddingStatus: "missing"` for the
-// existing Reembed flow to pick up. Highlights keep their `chunkId`; the
-// reader already tolerates a dangling one (it falls back to text matching).
+// existing Reembed flow to pick up. Replaced chunk ids invalidate saved chunk
+// links (cards, chats, lessons, analyses and highlights). The settings action
+// explains this before running; never remap by index to unrelated new text.
 
 import { bulkAddChunks, deleteChunksBySource } from "@/lib/db/chunks";
 import { getNote } from "@/lib/db/notes";
@@ -19,6 +20,8 @@ import { getSourceBlob, hasSourceBlob } from "@/lib/db/source-blobs";
 import { listSources, setEmbeddingStatus } from "@/lib/db/sources";
 import type { SourceRecord } from "@/lib/db/types";
 import { fetchResearchContent } from "@/lib/research/ingest";
+import { resolveResearchCredential } from "@/lib/research/credential";
+import { listResearchProviderIds } from "@/lib/research/providers/registry";
 import { classifyUrl } from "@/lib/research/url-classifier";
 import { chunkPages, type ChunkerOutput } from "./chunker";
 import { parseDocx } from "./docx";
@@ -84,8 +87,6 @@ export async function planRechunk(workspaceId: string): Promise<RechunkPlanItem[
 
 export type RechunkRunOptions = {
   signal?: AbortSignal | undefined;
-  /** BYOK key for the web research provider, when the source came through one. */
-  webApiKey?: string | undefined;
   onProgress?: ((done: number, total: number, current: SourceRecord) => void) | undefined;
 };
 
@@ -107,6 +108,8 @@ export async function runRechunk(
     opts.onProgress?.(done, runnable.length, item.source);
     try {
       const chunks = await rebuildChunks(item, opts);
+      if (opts.signal?.aborted) break;
+      if (chunks.length === 0) throw new Error("The source returned no content; existing chunks were kept.");
       await replaceChunks(item.source, chunks);
       report.done.push(item);
     } catch (err) {
@@ -147,12 +150,15 @@ async function rebuildChunks(
     case "refetch": {
       const classified = classifyUrl(source.url ?? "");
       if (classified.kind === "invalid") throw new Error("url_invalid");
-      const providerId = source.meta?.researchProvider;
+      const storedProvider = source.meta?.researchProvider;
+      const providerId = listResearchProviderIds().find((id) => id === storedProvider);
+      if (classified.kind === "web" && storedProvider && !providerId) {
+        throw new Error(`Unknown research provider: ${String(storedProvider)}`);
+      }
+      const apiKey = providerId ? await resolveResearchCredential(providerId) : null;
       const fetched = await fetchResearchContent(classified, {
-        ...(typeof providerId === "string"
-          ? { webProvider: providerId as never }
-          : {}),
-        ...(opts.webApiKey !== undefined ? { apiKey: opts.webApiKey } : {}),
+        ...(providerId ? { webProvider: providerId } : {}),
+        ...(apiKey ? { apiKey } : {}),
         ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
       return chunkPages({
@@ -167,6 +173,11 @@ async function rebuildChunks(
 
 async function replaceChunks(source: SourceRecord, chunks: ChunkerOutput): Promise<void> {
   await db.transaction("rw", db.chunks, db.sources, async () => {
+    const current = await db.sources.get(source.id);
+    if (!current) throw new Error("Source was deleted; rebuild cancelled.");
+    if (current.embeddingStatus === "embedding") {
+      throw new Error("Wait for embedding to finish before rebuilding this source.");
+    }
     await deleteChunksBySource(source.id);
     if (chunks.length > 0) {
       await bulkAddChunks(

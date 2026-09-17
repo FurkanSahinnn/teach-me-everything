@@ -47,6 +47,38 @@ describe("isHeadingByPattern", () => {
 });
 
 describe("chunkPages", () => {
+  it.each(["```js", "````md", "~~~python"])("bounds long or unclosed %s blocks", (opener) => {
+    const marker = opener.match(/^(`+|~+)/)![0];
+    const text = opener + "\n" + Array.from({ length: 3000 }, (_, i) => `code_${i} = 1234567890`).join("\n");
+    const out = chunkPages({ pages: [{ page: 1, text }], format: "markdown" });
+    expect(out.length).toBeGreaterThan(2);
+    for (const c of out) {
+      expect(c.tokenCount).toBeLessThanOrEqual(1650);
+      expect(c.text.startsWith(opener)).toBe(true);
+      expect(c.text.endsWith(marker)).toBe(true);
+    }
+    expect(out.at(-1)?.text).toContain("code_2999");
+  });
+
+  it("bounds a single oversized prose or code line", () => {
+    for (const text of ["x".repeat(100000), "```\n" + "x".repeat(100000) + "\n```"]) {
+      const out = chunkPages({ pages: [{ page: 1, text }], format: "markdown" });
+      expect(out.length).toBeGreaterThan(10);
+      expect(out.every((c) => c.tokenCount <= 1650)).toBe(true);
+    }
+  });
+
+  it("retains section metadata when plain PDF text contains a shell comment", () => {
+    const out = chunkPages({ pages: [{ page: 1, text: "1 Introduction\n# install deps\n" + Array(200).fill("ordinary body text ".repeat(10)).join("\n") }], format: "plain" });
+    expect(out[0]?.section).toBe("1 Introduction");
+    expect(out[0]!.tokenCount).toBeLessThan(1200);
+  });
+
+  it("does not repeat complete paragraphs across clean boundaries", () => {
+    const text = Array.from({ length: 30 }, (_, i) => `paragraph-${i} ` + "word ".repeat(120).trimEnd()).join("\n\n");
+    const out = chunkPages({ pages: [{ page: 1, text }], format: "markdown" });
+    expect(out.map((c) => c.text).join("\n\n")).toBe(text);
+  });
   it("returns an empty array for no pages", () => {
     expect(chunkPages({ pages: [] })).toEqual([]);
   });

@@ -62,7 +62,6 @@ import type {
 import { presetIsKeyless, resolveChatCredentialForPreset } from "@/lib/ai/anthropic-credential";
 import { useVault } from "@/stores/vault";
 import { findCustomEndpoint, usePrefs } from "@/stores/prefs";
-import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
 import { getPreset } from "@/lib/ai/providers/presets";
 import { cn } from "@/lib/utils/cn";
 import { formatRelativeDay } from "@/lib/utils/intl";

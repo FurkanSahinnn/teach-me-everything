@@ -16,6 +16,12 @@ function chunk(id: string, text: string, extra: Partial<ChunkRecord> = {}): Chun
 }
 
 describe("buildReaderOutline", () => {
+  it("retains PDF section headings beside lists and question headings", () => {
+    const entries = buildReaderOutline([chunk("pdf", "4 Contributions\n1. We propose a method.\n2. We show results.\n\n3 Results\nBody\n2.3 How do we measure catastrophic forgetting in practice?")]);
+    expect(entries.map((e) => e.label)).toEqual([
+      "4 Contributions", "3 Results", "2.3 How do we measure catastrophic forgetting in practice?",
+    ]);
+  });
   it("extracts multiple headings from a single chunk", () => {
     const outline = buildReaderOutline([
       chunk(

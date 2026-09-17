@@ -6,10 +6,9 @@
 # renderer gets "agent_cli_start not allowed. Command not found" — the command
 # never runs, so nothing reaches the Rust side to be logged.
 #
-# Split in two rather than grouped like allow-keychain: probing only reads a
-# version string, while the session commands actually run a program and feed it
-# stdin. Keeping them apart means a future capability can grant detection
-# without granting execution.
+# Both grants execute trusted local software. The probe permits only a bounded
+# --version invocation; sessions additionally permit inference and model
+# discovery profiles plus stdin traffic.
 
 "$schema" = "../gen/schemas/default-permissions-schema.json"
 

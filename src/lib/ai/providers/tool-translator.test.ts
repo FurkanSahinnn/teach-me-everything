@@ -7,9 +7,10 @@ import {
   toProviderTools,
   toProviderToolResult,
   toProviderToolUse,
+  withJsonToolFallback,
 } from "./tool-translator";
 import { ProviderError } from "./types";
-import type { ToolUseBlock, ToolResultBlock } from "./types";
+import type { StreamEvent, ToolUseBlock, ToolResultBlock } from "./types";
 import type { AnthropicTool } from "../tools";
 
 const sample: AnthropicTool = {
@@ -365,5 +366,92 @@ describe("renderBlocksAsJsonProtocolText", () => {
     expect(parsed.toolUses[0]?.name).toBe("add_flashcard");
     expect(parsed.toolUses[0]?.input).toEqual({ q: "Q?", a: "A!" });
     expect(parsed.cleanText).toBe("I will add a card.");
+  });
+});
+
+describe("withJsonToolFallback", () => {
+  it("delivers usage before an error without executing partial tool proposals", async () => {
+    const events = await collect(withJsonToolFallback(stream([
+      { kind: "text", delta: '```json\n{"tool":"add_flashcard","args":{}}\n```' },
+      { kind: "delta", stopReason: "end_turn", usage: { output_tokens: 12 } },
+      { kind: "error", status: 500, message: "Failed" },
+    ])));
+    expect(events.map((e) => e.kind)).toEqual(["text", "delta", "error"]);
+  });
+  async function* stream(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
+    for (const e of events) yield e;
+  }
+  async function collect(it: AsyncIterable<StreamEvent>): Promise<StreamEvent[]> {
+    const out: StreamEvent[] = [];
+    for await (const e of it) out.push(e);
+    return out;
+  }
+
+  it("replays fenced json tool blocks as native tool events and rewrites the stop reason", async () => {
+    const events = await collect(
+      withJsonToolFallback(
+        stream([
+          { kind: "start", model: "m", usage: {} },
+          { kind: "text", delta: "Adding a card.\n\n```json\n" },
+          { kind: "text", delta: '{"tool": "add_flashcard", "args": {"q": "hi"}}\n```' },
+          { kind: "delta", stopReason: "end_turn", usage: { output_tokens: 9 } },
+          { kind: "stop" },
+        ]),
+      ),
+    );
+    expect(events.map((e) => e.kind)).toEqual([
+      "start",
+      "text",
+      "text",
+      "tool_start",
+      "tool_input_delta",
+      "tool_stop",
+      "delta",
+      "stop",
+    ]);
+    expect(events.find((e) => e.kind === "tool_start")).toMatchObject({
+      index: 0,
+      name: "add_flashcard",
+    });
+    expect(events.find((e) => e.kind === "tool_input_delta")).toMatchObject({
+      index: 0,
+      partial: '{"q":"hi"}',
+    });
+    // The delta the model reported is re-emitted after the tool events with
+    // stopReason rewritten so the reader's tool loop continues; usage is kept.
+    expect(events.find((e) => e.kind === "delta")).toEqual({
+      kind: "delta",
+      stopReason: "tool_use",
+      usage: { output_tokens: 9 },
+    });
+  });
+
+  it("passes a stream with no tool blocks through with its stop reason intact", async () => {
+    const events = await collect(
+      withJsonToolFallback(
+        stream([
+          { kind: "text", delta: "Just prose." },
+          { kind: "delta", stopReason: "end_turn", usage: {} },
+          { kind: "stop" },
+        ]),
+      ),
+    );
+    expect(events).toEqual([
+      { kind: "text", delta: "Just prose." },
+      { kind: "delta", stopReason: "end_turn", usage: {} },
+      { kind: "stop" },
+    ]);
+  });
+
+  it("still emits the held delta when the stream ends without a stop event", async () => {
+    const events = await collect(
+      withJsonToolFallback(
+        stream([
+          { kind: "text", delta: "cut" },
+          { kind: "delta", stopReason: "max_tokens", usage: {} },
+        ]),
+      ),
+    );
+    expect(events.map((e) => e.kind)).toEqual(["text", "delta"]);
   });
 });

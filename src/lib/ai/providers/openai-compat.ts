@@ -7,9 +7,9 @@ import {
 import { isLocalUrl } from "./local-bypass";
 import {
   buildJsonToolPrompt,
-  parseJsonToolUseFromText,
   renderBlocksAsJsonProtocolText,
   toProviderTools,
+  withJsonToolFallback,
 } from "./tool-translator";
 import {
   ProviderError,
@@ -203,50 +203,11 @@ export class OpenAICompatChatProvider implements ChatProvider {
       }
 
       // JSON degraded mode: the model emits prose with embedded ```json
-      // tool blocks. Buffer the assistant text to scan it once at stop, then
-      // synthesize tool_use events so the reader's tool loop continues just
-      // as it does for native callers. We rewrite the trailing `delta` event
-      // to stopReason="tool_use" when we extract any tool, otherwise leave
-      // it as the model reported.
-      let bufferedText = "";
-      let pendingDelta:
-        | { kind: "delta"; stopReason: string | null; usage: Usage }
-        | null = null;
-
-      for await (const event of baseStream) {
-        if (event.kind === "text") {
-          bufferedText += event.delta;
-          yield event;
-          continue;
-        }
-        if (event.kind === "delta") {
-          pendingDelta = event;
-          continue;
-        }
-        if (event.kind === "stop") {
-          const { toolUses } = parseJsonToolUseFromText(bufferedText);
-          for (let i = 0; i < toolUses.length; i++) {
-            const tu = toolUses[i]!;
-            yield { kind: "tool_start", index: i, id: tu.id, name: tu.name };
-            yield {
-              kind: "tool_input_delta",
-              index: i,
-              partial: JSON.stringify(tu.input),
-            };
-            yield { kind: "tool_stop", index: i };
-          }
-          if (pendingDelta) {
-            yield toolUses.length > 0
-              ? { ...pendingDelta, stopReason: "tool_use" }
-              : pendingDelta;
-            pendingDelta = null;
-          }
-          yield event;
-          return;
-        }
-        yield event;
-      }
-      if (pendingDelta) yield pendingDelta;
+      // tool blocks. The shared wrapper buffers the text, scans it once at
+      // stop and replays any tool calls as native tool events, rewriting the
+      // trailing `delta` to stopReason="tool_use" so the reader's tool loop
+      // continues just as it does for native callers.
+      yield* withJsonToolFallback(baseStream);
     }
 
     return { events: run(), abort: () => controller.abort() };

@@ -16,7 +16,7 @@
 // following the precedent CompatibilityChip sets for a self-contained
 // desktop-only panel.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, RefreshCw, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -58,8 +58,8 @@ const CLIS: readonly CliSpec[] = [
       "The claude command was not found in any known location.",
     ],
     installHint: [
-      "npm ile kurduysan .cmd dosyasını değil, paketin cli.js dosyasını göster — Windows kabuk sarmalayıcılarını doğrudan çalıştırmaya izin vermiyor. Yerel kurulumda claude.exe yolunu kullan.",
-      "If you installed via npm, point at the package's cli.js rather than the .cmd file — Windows does not allow launching shell wrappers directly. For a native install, use the claude.exe path.",
+      "Windows'ta .cmd dosyası yerine claude.exe yolunu kullan. npm kurulumlarında paketin bin/claude.exe dosyasını seç; eski JavaScript kurulumlarında cli.js de desteklenir.",
+      "On Windows, use claude.exe instead of the .cmd shim. For npm installs, select the package's bin/claude.exe; legacy JavaScript installs can also use cli.js.",
     ],
     placeholder: "C:/Users/you/.local/bin/claude.exe",
   },
@@ -90,7 +90,7 @@ export function AgentCliSection(): React.ReactElement | null {
 
   return (
     <section
-      className="rounded-2xl border border-line bg-paper-soft p-5 shadow-sm"
+      className="rounded-2xl border border-rule bg-paper-2 p-5 shadow-sm"
       data-testid="agent-cli-section"
     >
       <header className="flex items-start gap-3">
@@ -104,7 +104,7 @@ export function AgentCliSection(): React.ReactElement | null {
           <h2 className="text-sm font-semibold text-ink">
             {pick("Yerel ajan CLI'ları", "Local agent CLIs")}
           </h2>
-          <p className="mt-1 text-xs text-ink-soft">
+          <p className="mt-1 text-xs text-ink-3">
             {pick(
               "Abonelikle giriş yapılmış bir komut satırı aracını sağlayıcı olarak kullan. Anahtar saklanmaz; istekler senin hesabın üzerinden gider.",
               "Use a subscription-signed-in command-line tool as a provider. No key is stored; requests run through your own account.",
@@ -130,15 +130,17 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
   const savedPath = agentCli?.[spec.pathKey] ?? "";
   const [draftPath, setDraftPath] = useState(savedPath);
   const [state, setState] = useState<ProbeState>({ kind: "idle" });
+  const probeVersion = useRef(0);
 
   const runProbe = useCallback(
     async (path: string) => {
+      const version = ++probeVersion.current;
       setState({ kind: "checking" });
       const probe = await probeAgentCli(
         spec.cli,
         path.trim().length > 0 ? path.trim() : undefined,
       );
-      setState(probe ? { kind: "done", probe } : { kind: "idle" });
+      if (version === probeVersion.current) setState(probe ? { kind: "done", probe } : { kind: "idle" });
     },
     [spec.cli],
   );
@@ -146,7 +148,9 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
   // A typed binary path changes what the probe should test, so it re-runs when
   // the saved value changes; runProbe is stable per cli.
   useEffect(() => {
-    void runProbe(savedPath);
+    let active = true;
+    queueMicrotask(() => { if (active) void runProbe(savedPath); });
+    return () => { active = false; probeVersion.current += 1; };
   }, [savedPath, runProbe]);
 
   const probe = state.kind === "done" ? state.probe : null;
@@ -165,14 +169,14 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
   return (
     <div data-testid={`agent-cli-row-${spec.cli}`}>
       <h3 className="text-sm font-semibold text-ink">{pick(...spec.title)}</h3>
-      <p className="mt-1 text-xs text-ink-soft">{pick(...spec.blurb)}</p>
+      <p className="mt-1 text-xs text-ink-3">{pick(...spec.blurb)}</p>
 
       <div
-        className="mt-3 flex items-start gap-3 rounded-xl border border-line/60 bg-paper px-4 py-3"
+        className="mt-3 flex items-start gap-3 rounded-xl border border-rule-soft bg-paper px-4 py-3"
         role="status"
         aria-live="polite"
       >
-        <span aria-hidden className={ok ? "text-emerald-600" : "text-amber-600"}>
+        <span aria-hidden className={ok ? "text-ok" : "text-warn"}>
           {ok ? (
             <CheckCircle2 size={18} strokeWidth={1.8} />
           ) : (
@@ -181,7 +185,7 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
         </span>
         <div className="min-w-0 flex-1">
           {state.kind === "checking" ? (
-            <p className="text-sm text-ink-soft">
+            <p className="text-sm text-ink-3">
               {pick("Aranıyor…", "Looking for it…")}
             </p>
           ) : ok && probe ? (
@@ -189,11 +193,11 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
               <p className="text-sm font-medium text-ink">
                 {pick("Bulundu", "Found")} · {probe.version}
               </p>
-              <p className="mt-0.5 break-all font-mono text-xs text-ink-soft">
+              <p className="mt-0.5 break-all font-mono text-xs text-ink-3">
                 {probe.path}
               </p>
               {probe.launcher ? (
-                <p className="mt-0.5 text-xs text-ink-soft">
+                <p className="mt-0.5 text-xs text-ink-3">
                   {pick(
                     `Bir betik sarmalayıcısı; ${probe.launcher} ile çalıştırılacak.`,
                     `A script wrapper; it will be run under ${probe.launcher}.`,
@@ -206,7 +210,7 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
               <p className="text-sm font-medium text-ink">
                 {pick("Kullanılamıyor", "Not usable")}
               </p>
-              <p className="mt-0.5 text-xs text-ink-soft">
+              <p className="mt-0.5 text-xs text-ink-3">
                 {probe?.error ?? pick(...spec.notFound)}
               </p>
             </>
@@ -223,7 +227,7 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
       </div>
 
       <div className="mt-3">
-        <label className="text-xs font-medium text-ink-soft" htmlFor={inputId}>
+        <label className="text-xs font-medium text-ink-3" htmlFor={inputId}>
           {pick(
             "CLI yolu (boş bırakırsan otomatik bulunur)",
             "CLI path (leave empty to auto-detect)",
@@ -242,7 +246,7 @@ function CliRow({ spec }: { spec: CliSpec }): React.ReactElement {
             {pick("Kaydet", "Save")}
           </Button>
         </div>
-        <p className="mt-1.5 text-xs text-ink-soft">{pick(...spec.installHint)}</p>
+        <p className="mt-1.5 text-xs text-ink-3">{pick(...spec.installHint)}</p>
       </div>
     </div>
   );

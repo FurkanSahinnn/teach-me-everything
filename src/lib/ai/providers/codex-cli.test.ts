@@ -205,6 +205,21 @@ describe("CodexCliChatProvider.streamChat", () => {
 });
 
 describe("model discovery", () => {
+  it("settles immediately when cancelled during spawn", async () => {
+    const controller = new AbortController();
+    startMock.mockImplementation(async (opts) => {
+      controller.abort();
+      return opts.session;
+    });
+    expect(await listCodexModels({ signal: controller.signal })).toEqual([]);
+    expect(stopMock).toHaveBeenCalled();
+  });
+
+  it("does not spawn for a pre-aborted model lookup", async () => {
+    startMock.mockClear();
+    expect(await listCodexModels({ signal: AbortSignal.abort() })).toEqual([]);
+    expect(startMock).not.toHaveBeenCalled();
+  });
   const LIST_REPLY =
     '{"id":2,"result":{"data":[{"id":"gpt-6-astra","model":"gpt-6-astra","displayName":"GPT-6-Astra","hidden":false,"isDefault":true},{"id":"gpt-5.4-mini","model":"gpt-5.4-mini","displayName":"GPT-5.4-Mini","hidden":false,"isDefault":false},{"id":"secret","model":"secret","displayName":"Secret","hidden":true,"isDefault":false}]}}';
 
@@ -244,5 +259,32 @@ describe("model discovery", () => {
   it("returns an empty list on the web build", async () => {
     startMock.mockImplementation(async () => null);
     expect(await listCodexModels()).toEqual([]);
+  });
+});
+
+describe("Codex CLI terminal races", () => {
+  const request: ChatRequest = { apiKey: "", model: "gpt-6-astra", system: [], messages: [] };
+  beforeEach(() => { startMock.mockReset(); stopMock.mockClear(); });
+
+  it("keeps a completed answer without waiting for process exit", async () => {
+    startMock.mockImplementation(async (opts, onEvent) => {
+      onEvent({ type: "line", data: JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "Answer" } }) });
+      onEvent({ type: "line", data: JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } }) });
+      onEvent({ type: "error", message: "Late teardown failure" });
+      return opts.session;
+    });
+    const events: StreamEvent[] = [];
+    for await (const event of new CodexCliChatProvider().streamChat(request).events) events.push(event);
+    expect(events.map((e) => e.kind)).toEqual(["start", "text", "delta", "stop"]);
+    expect(events[1]).toEqual({ kind: "text", delta: "Answer" });
+  });
+
+  it("cancels a spawn round-trip without waiting for output", async () => {
+    const controller = new AbortController();
+    startMock.mockImplementation(async (opts) => { controller.abort(); return opts.session; });
+    const events: StreamEvent[] = [];
+    for await (const event of new CodexCliChatProvider().streamChat({ ...request, signal: controller.signal }).events) events.push(event);
+    expect(events.at(-1)?.kind).toBe("abort");
+    expect(stopMock).toHaveBeenCalledTimes(1);
   });
 });

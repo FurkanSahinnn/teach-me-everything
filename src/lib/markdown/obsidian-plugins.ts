@@ -20,7 +20,7 @@ const TASK_RE = /^\[( |x|X)\]\s+/;
 const CALLOUT_RE = /^\[!([A-Za-z][\w-]*)\]([+-]?)[ \t]*([^\n]*)(?:\n|$)/;
 const FOOTNOTE_DEF_RE = /^\[\^([^\]\s]+)\]:\s*/;
 const FOOTNOTE_REF_RE = /^\[\^([^\]\s]+)\]/;
-const WIKILINK_RE = /^(!?)\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/;
+const WIKILINK_RE = /^(!?)\[\[([^\[\]|#]+)(?:#([^\[\]|]+))?(?:\|([^\[\]]+))?\]\]/;
 
 export function obsidianPlugin(md: MarkdownIt): void {
   const esc = md.utils.escapeHtml;
@@ -49,7 +49,8 @@ export function obsidianPlugin(md: MarkdownIt): void {
       // Walk back to the enclosing list so it can drop its bullets.
       for (let j = i - 3; j >= 0; j -= 1) {
         const t = tokens[j];
-        if (t?.type === "bullet_list_open" && t.level === item.level - 1) {
+        if (t?.level === item.level - 1 && /^(bullet|ordered)_list_close$/.test(t.type)) break;
+        if (t?.level === item.level - 1 && /^(bullet|ordered)_list_open$/.test(t.type)) {
           if (!(t.attrGet("class") ?? "").includes("contains-task-list")) {
             t.attrJoin("class", "contains-task-list");
           }
@@ -133,9 +134,15 @@ export function obsidianPlugin(md: MarkdownIt): void {
       if (!m) return false;
       if (silent) return true;
 
-      // Lazy continuation: following non-blank lines belong to the note.
+      // Lazy prose may continue, but another definition or block starts a
+      // sibling, not part of this footnote.
       let next = startLine + 1;
-      while (next < endLine && !state.isEmpty(next)) next += 1;
+      const terminators = state.md.block.ruler.getRules("paragraph");
+      while (next < endLine && !state.isEmpty(next)) {
+        if (state.sCount[next]! < state.blkIndent) break;
+        if (terminators.some((rule) => rule(state, next, endLine, true))) break;
+        next += 1;
+      }
       const rest = [first.slice(m[0].length)];
       for (let l = startLine + 1; l < next; l += 1) {
         rest.push(state.src.slice(state.bMarks[l]! + state.tShift[l]!, state.eMarks[l]!));
@@ -156,6 +163,7 @@ export function obsidianPlugin(md: MarkdownIt): void {
       state.line = next;
       return true;
     },
+    { alt: ["paragraph", "reference"] },
   );
   md.renderer.rules.footnote_label = (tokens: Token[], idx: number) =>
     `<sup class="footnote-label">${esc(tokens[idx]?.content ?? "")}</sup> `;

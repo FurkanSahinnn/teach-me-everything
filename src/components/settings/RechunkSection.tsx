@@ -38,6 +38,7 @@ export function RechunkSection() {
   const list = workspaces ?? [];
 
   const [probes, setProbes] = useState<Record<string, Probe>>({});
+  const [failures, setFailures] = useState<string[]>([]);
   const [running, setRunning] = useState<{ id: string; done: number; total: number } | null>(
     null,
   );
@@ -67,6 +68,7 @@ export function RechunkSection() {
   }, [ids, probeWorkspace]);
 
   async function handleRun(id: string): Promise<void> {
+    setFailures([]);
     setRunning({ id, done: 0, total: 0 });
     try {
       const report = await runRechunk(id, {
@@ -75,6 +77,7 @@ export function RechunkSection() {
       const fresh = await probeWorkspace(id);
       setProbes((prev) => ({ ...prev, [id]: fresh }));
       const failed = report.failed.length;
+      setFailures(report.failed.map(({ item, message }) => `${item.source.title}: ${message}`));
       toast({
         variant: failed > 0 ? "error" : "success",
         title: pick("Yeniden parçalandı", "Re-chunked"),
@@ -110,8 +113,8 @@ export function RechunkSection() {
           </div>
           <p className="mt-1 text-[12.5px] text-ink-3">
             {pick(
-              "Eski parçalayıcı boş satırları ve girintileri atıyordu; paragraflar, listeler ve ayraçlar okuyucuda bozuk görünüyordu. Kaynakları güncel parçalayıcıyla yeniden üret. Embedding'ler sıfırlanır.",
-              "The old chunker dropped blank lines and indentation, so paragraphs, lists and rules rendered broken in the reader. Rebuild sources with the current chunker. Embeddings are reset.",
+              "Kaynakları güncel parçalayıcıyla yeniden üret. Embedding'ler sıfırlanır. Kart, sohbet, ders, analiz ve vurgulardaki eski parça bağlantıları geçersiz kalabilir; ilgili içerikleri yeniden üretmen gerekebilir.",
+              "Rebuild sources with the current chunker. Embeddings are reset. Existing chunk links in cards, chats, lessons, analyses and highlights may stop working; you may need to regenerate the related content.",
             )}
           </p>
         </div>
@@ -163,6 +166,12 @@ export function RechunkSection() {
           })
         )}
       </div>
+
+      {failures.length > 0 && (
+        <ul role="alert" className="mt-3 space-y-1 text-xs text-warn">
+          {failures.map((message, index) => <li key={index}>{message}</li>)}
+        </ul>
+      )}
     </Card>
   );
 }

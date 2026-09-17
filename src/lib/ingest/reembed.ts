@@ -221,28 +221,33 @@ export function runReembed(args: RunReembedArgs): ReembedHandle {
 
     const dim = result.dim || targetDim;
     let written = 0;
-    for (const e of result.embeddings) {
-      if (cancelled) break;
-      await setChunkEmbedding(e.id, e.vector, result.model, {
-        dim,
-        provider: result.providerId,
-      });
-      written += 1;
-    }
+    await db.transaction("rw", db.chunks, db.sources, async () => {
+      // Re-chunking or deleting a source while the request was in flight must
+      // not mark replacement rows ready with vectors for the old text.
+      const current = await db.chunks.bulkGet(toReembed.map((c) => c.id));
+      if (current.some((c, i) => !c || c.text !== toReembed[i]?.text)) {
+        for (const sourceId of sourceIds) await setEmbeddingStatus(sourceId, "missing");
+        return;
+      }
+      for (const e of result.embeddings) {
+        if (cancelled) break;
+        await setChunkEmbedding(e.id, e.vector, result.model, {
+          dim,
+          provider: result.providerId,
+        });
+        written += 1;
+      }
 
-    const writtenSourceIds = new Set(
-      result.embeddings.map((e) => {
-        const chunk = toReembed.find((c) => c.id === e.id);
-        return chunk?.sourceId;
-      }),
-    );
-    for (const sourceId of sourceIds) {
-      if (!sourceId) continue;
-      await setEmbeddingStatus(sourceId, writtenSourceIds.has(sourceId) ? "ready" : "missing", {
-        provider: String(result.providerId),
-        model: result.model,
-      });
-    }
+      for (const sourceId of sourceIds) {
+        if (!sourceId) continue;
+        const remaining = await db.chunks.where("sourceId").equals(sourceId).toArray();
+        const complete = remaining.length > 0 && remaining.every((c) => c.embedding && matchesTargetDim(preset, chunkEffectiveDim(c)));
+        await setEmbeddingStatus(sourceId, complete ? "ready" : "missing", {
+          provider: String(result.providerId),
+          model: result.model,
+        });
+      }
+    });
 
     return { done: written, total: toReembed.length };
   })();

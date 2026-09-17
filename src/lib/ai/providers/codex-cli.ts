@@ -237,7 +237,7 @@ export class CodexCliChatProvider implements ChatProvider {
     // TME's tools ride the JSON prompt protocol like every non-native provider.
     toolUse: "json",
     // The CLI does not stream tokens; "streaming" here means the transport is
-    // async and abortable, which is what the flag gates in the UI.
+    // async and abortable; text still arrives as a complete message.
     streaming: true,
     vision: false,
   };
@@ -250,8 +250,13 @@ export class CodexCliChatProvider implements ChatProvider {
     const session = newId("codex");
 
     async function* run(): AsyncGenerator<StreamEvent> {
+      if (signal.aborted) {
+        yield { kind: "abort" };
+        return;
+      }
       const texts: string[] = [];
       let usage: Usage = {};
+      let completed = false;
       // Boxed so the event callback and the generator body share one cell —
       // a bare `let` closed over here would not narrow after the callback runs.
       const terminal: { failure: { status: number; message: string } | null } = {
@@ -267,10 +272,15 @@ export class CodexCliChatProvider implements ChatProvider {
       const stdin = buildCodexPrompt(systemText, req.messages);
 
       const onEvent = (event: AgentCliEvent): void => {
+        if (completed) return;
         if (event.type === "line") {
           const parsed = parseCodexLine(event.data);
           if (parsed.kind === "text") texts.push(parsed.text);
-          else if (parsed.kind === "usage") usage = parsed.usage;
+          else if (parsed.kind === "usage") {
+            usage = parsed.usage;
+            completed = true;
+            done.close();
+          }
           else if (parsed.kind === "error") {
             terminal.failure ??= { status: parsed.status, message: parsed.message };
             done.close();
@@ -329,15 +339,21 @@ export class CodexCliChatProvider implements ChatProvider {
       }
 
       const onAbort = (): void => {
-        void stopAgentCli(session);
+        if (started) {
+          started = false;
+          void stopAgentCli(session);
+        }
         done.close();
       };
       signal.addEventListener("abort", onAbort, { once: true });
+      // A cancel that landed while `startAgentCli` was still spawning fired
+      // before the listener existed; the process is running now, so act on it.
+      if (signal.aborted) onAbort();
 
       try {
         yield { kind: "start", model: req.model, usage: {} };
-        // `exec` exits on its own once the turn is over (stdin is consumed as
-        // the prompt, not held open), so the exit event is the natural close.
+        // turn.completed is authoritative; do not wait for process teardown
+        // or discard a completed answer because cleanup later exits non-zero.
         await done.wait();
         if (signal.aborted) {
           yield { kind: "abort" };
@@ -450,6 +466,7 @@ const MODEL_LIST_TIMEOUT_MS = 20_000;
 export async function listCodexModels(
   opts: { signal?: AbortSignal | undefined } = {},
 ): Promise<ModelDescriptor[]> {
+  if (opts.signal?.aborted) return [];
   const session = newId("codexls");
   const found: { models: ModelDescriptor[] | null } = { models: null };
   const done = createLatch();
@@ -486,13 +503,14 @@ export async function listCodexModels(
     const timer = setTimeout(() => done.close(), MODEL_LIST_TIMEOUT_MS);
     const onAbort = (): void => done.close();
     opts.signal?.addEventListener("abort", onAbort, { once: true });
+    if (opts.signal?.aborted) onAbort();
     try {
       await done.wait();
     } finally {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", onAbort);
     }
-    return found.models ?? [];
+    return opts.signal?.aborted ? [] : found.models ?? [];
   } catch {
     return [];
   } finally {

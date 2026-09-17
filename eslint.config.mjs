@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Native build output contains generated JS and compressed asset blobs.
+    "src-tauri/target/**",
+    "src-tauri/gen/**",
   ]),
 ]);
 

@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { renderMarkdownToHtml } from "./render";
 
 describe("renderMarkdownToHtml — Obsidian extensions", () => {
+  it("terminates footnotes at sibling definitions, headings and lists", () => {
+    const html = renderMarkdownToHtml("Claim[^1].\n[^1]: First.\n[^2]: Second.\n# Heading\n- item");
+    expect(html).toContain('id="fn-1"');
+    expect(html).toContain('id="fn-2"');
+    expect(html).toContain('Second.</p>');
+    expect(html).toContain('<h1>Heading</h1>');
+    expect(html).toContain('<li>item</li>');
+  });
+
+  it("marks the containing ordered task list, not a previous closed list", () => {
+    const html = renderMarkdownToHtml("- plain\n- other\n\n1. [ ] task");
+    expect(html).toContain('<ul>');
+    expect(html).not.toContain('<ul class="contains-task-list">');
+    expect(html).toContain('<ol class="contains-task-list">');
+  });
   it("renders task lists as disabled checkboxes", () => {
     const html = renderMarkdownToHtml("- [ ] todo\n- [x] done");
     expect(html).toContain('class="contains-task-list"');

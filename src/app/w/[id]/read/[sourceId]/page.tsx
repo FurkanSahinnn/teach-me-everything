@@ -53,7 +53,6 @@ import { getAnthropicOAuthChatProvider } from "@/lib/ai/providers/anthropic-oaut
 import { DEFAULT_EMBED_MODEL } from "@/lib/ai/providers/embed-openai";
 import { ProviderError, type ProviderId } from "@/lib/ai/providers/types";
 import { getPreset } from "@/lib/ai/providers/presets";
-import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
 import { findChatOption } from "@/lib/ai/model-options";
 import { getWebSearchAdapter } from "@/lib/ai/web-search/adapter";
 import type { WebCitation, WebSearchUsage } from "@/lib/ai/web-search/types";
