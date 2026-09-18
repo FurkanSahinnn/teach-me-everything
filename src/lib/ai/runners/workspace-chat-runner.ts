@@ -11,6 +11,8 @@ import { findChatOption } from "@/lib/ai/model-options";
 import { getWebSearchAdapter } from "@/lib/ai/web-search/adapter";
 import type { WebCitation, WebSearchUsage } from "@/lib/ai/web-search/types";
 import { presetIsKeyless, resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
+import { CHAT_MAX_OUTPUT_TOKENS } from "@/lib/ai/prompts/chat-guidance";
+import { selectFallbackChunks } from "@/lib/ai/retrieval/fallback";
 import { buildWorkspaceChatSystem } from "@/lib/ai/prompts/workspace-chat";
 import type { WorkspaceSource } from "@/lib/ai/prompts/workspace-chat";
 import { gatherContextBlocks } from "@/lib/ai/context";
@@ -536,7 +538,7 @@ export function useWorkspaceChat(
       // over the union. topKChunks skips chunks whose embedding dim doesn't
       // match the query's → skippedCount drives the embedding-mismatch notice.
       const chunksWithEmbeddings = candidateChunks.filter((c) => c.embedding);
-      let promptChunks = candidateChunks.slice(0, RETRIEVAL_FALLBACK_LIMIT);
+      let promptChunks = selectFallbackChunks(candidateChunks, userMessage, RETRIEVAL_FALLBACK_LIMIT);
       let retrievalEmpty = false;
       let skippedCount = 0;
 
@@ -642,7 +644,7 @@ export function useWorkspaceChat(
         aiResponseLocale,
       });
 
-      // Workspace tools: add_flashcard + simplify_explanation only. The
+      // Workspace tool: add_flashcard. Explanation is handled directly. The
       // generate_flashcards / generate_quiz tools are intentionally NOT exposed
       // (see module note + return handoff): their generators run their own
       // nested LLM call and require the human-in-the-loop proposal modal, so
@@ -712,7 +714,7 @@ export function useWorkspaceChat(
           model: chatModelId,
           system,
           messages: apiMessages,
-          maxTokens: 1024,
+          maxTokens: CHAT_MAX_OUTPUT_TOKENS,
           tools,
           tool_choice: { type: "auto" },
         });

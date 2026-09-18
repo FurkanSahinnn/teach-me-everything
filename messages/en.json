@@ -191,6 +191,8 @@
     "baslat_durdur": "start / stop"
   },
   "reader": {
+    "selected_passage_label": "Selected passage:",
+    "selected_passage_question": "What does this passage mean? Explain its reasoning and important concepts clearly, with an example if helpful.",
     "dashboard": "Dashboard",
     "okuma": "Reader",
     "bunu_aciklar_misin": "Can you explain this?",

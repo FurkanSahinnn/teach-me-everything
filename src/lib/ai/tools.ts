@@ -22,7 +22,7 @@ export type NotebookToolName =
   | "simplify_explanation";
 
 const DESCRIPTIONS: Record<
-  NotebookToolName,
+  Exclude<NotebookToolName, "simplify_explanation">,
   { tr: string; en: string }
 > = {
   add_flashcard: {
@@ -33,14 +33,10 @@ const DESCRIPTIONS: Record<
     tr: "Kaynaktaki belirli bir bölüme veya başlığa kaydırır ve görsel vurgu yapar. Sadece kullanıcı 'şu kısma git' / 'alıntıyı aç' tarzı bir niyet ifade ettiğinde çağır.",
     en: "Scroll the reader to a specific section or heading in the source and visually highlight it. Only call when the user explicitly asks to jump to or open a citation.",
   },
-  simplify_explanation: {
-    tr: "Önceki kullanıcı sorusunu çok daha sade, lise seviyesinde bir dille yeniden cevaplamak için sinyal verir. Cevap üretme; sadece bu aracı çağır.",
-    en: "Signal that the previous user question should be re-answered in much simpler, high-school-level language. Do not produce text yourself; just invoke this tool.",
-  },
 };
 
 export function buildNotebookTools(locale: "tr" | "en"): AnthropicTool[] {
-  const pick = (k: NotebookToolName) => DESCRIPTIONS[k][locale];
+  const pick = (k: Exclude<NotebookToolName, "simplify_explanation">) => DESCRIPTIONS[k][locale];
   return [
     {
       name: "add_flashcard",
@@ -99,26 +95,11 @@ export function buildNotebookTools(locale: "tr" | "en"): AnthropicTool[] {
         additionalProperties: false,
       },
     },
-    {
-      name: "simplify_explanation",
-      description: pick("simplify_explanation"),
-      input_schema: {
-        type: "object",
-        properties: {
-          reason: {
-            type: "string",
-            description:
-              locale === "tr"
-                ? "Neden basitleştiriliyor? (opsiyonel kısa not)"
-                : "Why simplify? (optional short note)",
-          },
-        },
-        additionalProperties: false,
-      },
-    },
   ];
 }
 
+// Keep legacy names recognizable for saved tool records; new requests no
+// longer advertise simplify_explanation (explanations are generated directly).
 export const NOTEBOOK_TOOL_NAMES: ReadonlyArray<NotebookToolName> = [
   "add_flashcard",
   "open_citation",
@@ -131,8 +112,8 @@ export function isNotebookToolName(value: string): value is NotebookToolName {
 
 // === Workspace Chat tools ===
 //
-// The workspace chat is a cross-source tutor. It reuses `add_flashcard` and
-// `simplify_explanation` verbatim (same handlers as the notebook reader chat —
+// The workspace chat is a cross-source tutor. It reuses `add_flashcard`
+// (the same handler as the notebook reader chat —
 // `add_flashcard` simply anchors to whichever source the cited chunk came
 // from) and adds two workspace-level generators behind an explicit opt-in.
 //
@@ -161,8 +142,8 @@ const WORKSPACE_DESCRIPTIONS: Record<
   },
 };
 
-// Workspace chat tool set. By default returns the two always-safe tools
-// (`add_flashcard`, `simplify_explanation`). Pass `{ withGenerators: true }`
+// Workspace chat exposes card creation; explanation/simplification is prose.
+// Pass `{ withGenerators: true }`
 // to also expose `generate_flashcards` / `generate_quiz` — only once their
 // handlers are wired in the runner (no stubs).
 export function buildWorkspaceTools(
@@ -171,12 +152,9 @@ export function buildWorkspaceTools(
 ): AnthropicTool[] {
   const notebook = buildNotebookTools(locale);
   const addFlashcard = notebook.find((t) => t.name === "add_flashcard");
-  const simplify = notebook.find((t) => t.name === "simplify_explanation");
   const tools: AnthropicTool[] = [];
-  // `find` is statically nullable; both names are present in buildNotebookTools
-  // above, so this only guards against future renames.
+  // Guard against a future rename in the shared tool definitions.
   if (addFlashcard) tools.push(addFlashcard);
-  if (simplify) tools.push(simplify);
 
   if (opts?.withGenerators) {
     const topicProp = {

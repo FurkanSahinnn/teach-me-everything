@@ -58,6 +58,8 @@ import { getWebSearchAdapter } from "@/lib/ai/web-search/adapter";
 import type { WebCitation, WebSearchUsage } from "@/lib/ai/web-search/types";
 import { presetIsKeyless, resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
 import { deriveContextFill } from "@/lib/ai/context-window";
+import { buildReaderUserMessage, CHAT_MAX_OUTPUT_TOKENS } from "@/lib/ai/prompts/chat-guidance";
+import { selectFallbackChunks } from "@/lib/ai/retrieval/fallback";
 import { buildNotebookSystem } from "@/lib/ai/prompts/notebook-chat";
 import { buildNotebookTools, type AnthropicTool } from "@/lib/ai/tools";
 import { ingestResearchUrl } from "@/lib/research/ingest";
@@ -776,10 +778,10 @@ export default function NotebookReaderPage() {
 
       // Retrieval. If we have any embedded chunks, embed the query via OpenAI
       // and pick top-K. If no embeddings exist yet (e.g. user never added an
-      // OpenAI key), fall back to the first N chunks so the chat still
+      // OpenAI key), fall back to locally ranked chunks so the chat still
       // functions — degraded but not broken.
       const chunksWithEmbeddings = sourceChunks.filter((c) => c.embedding);
-      let promptChunks = sourceChunks.slice(0, RETRIEVAL_FALLBACK_LIMIT);
+      let promptChunks = selectFallbackChunks(sourceChunks, userMessage, RETRIEVAL_FALLBACK_LIMIT);
       let retrievalEmpty = false;
 
       if (chunksWithEmbeddings.length > 0) {
@@ -914,7 +916,7 @@ export default function NotebookReaderPage() {
           model: chatModelId,
           system,
           messages: apiMessages,
-          maxTokens: 1024,
+          maxTokens: CHAT_MAX_OUTPUT_TOKENS,
           tools,
           tool_choice: { type: "auto" },
         });
@@ -2267,8 +2269,8 @@ function ChatPanel({
   aiResponseLocale: AiResponseLocale;
   onAiResponseLocaleChange: (value: AiResponseLocale) => void;
   skippedCount: number;
-  /** Optional quoted passage to show as a chip above the input. The chip is
-   *  prepended to the final message on send and cleared automatically. */
+  /** Optional quoted passage shown as a chip, appended as a distinct quotation
+   *  after the user's question on send, then cleared automatically. */
   quotedText?: string | null;
   onClearQuote?: () => void;
   mode?: ReaderPanelMode;
@@ -2316,18 +2318,14 @@ function ChatPanel({
   const inputDisabled = !sourceReady || chunkCount === 0 || isBusy;
 
   function sendWithQuote(): void {
-    const trimmedDraft = draft.trim();
-    if (quotedText) {
-      // If the user typed a question, prepend the quote; otherwise default
-      // to "explain this" so a click-Sor-then-Enter still does something.
-      const question = trimmedDraft || pick("Bunu açıklar mısın?", "Can you explain this?");
-      onSend(`"${quotedText}" — ${question}`);
-      onClearQuote?.();
-      setDraft("");
-    } else if (trimmedDraft.length > 0) {
-      onSend(draft);
-      setDraft("");
-    }
+    const message = buildReaderUserMessage(draft, quotedText, {
+      selection: t("selected_passage_label"),
+      defaultQuestion: t("selected_passage_question"),
+    });
+    if (!message) return;
+    onSend(message);
+    if (quotedText) onClearQuote?.();
+    setDraft("");
   }
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
