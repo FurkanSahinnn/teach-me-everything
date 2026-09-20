@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useChatSession } from "@/lib/ai/runners/chat-session";
+import { createStreamWriter } from "@/lib/ai/runners/stream-writer";
+
+import { useCallback, useMemo, useState } from "react";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { getChatProvider, getEmbedProvider } from "@/lib/ai/providers/registry";
 import { getAnthropicOAuthChatProvider } from "@/lib/ai/providers/anthropic-oauth";
@@ -34,6 +37,7 @@ import {
   addToolResult,
   createWorkspaceThread,
   deleteMessage,
+  getThread,
   findOrCreateWorkspaceThread,
   forkThread,
   patchMessageUsage,
@@ -221,8 +225,6 @@ export function useWorkspaceChat(
   const aiResponseLocale = usePrefs((s) => s.aiResponseLocale);
   const { toast } = useToast();
 
-  const masterKey = useVault((s) => s.masterKey);
-
   const threads = useWorkspaceChatThreads(workspaceId);
   const loadedSources = useSources(workspaceId);
   const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
@@ -239,14 +241,20 @@ export function useWorkspaceChat(
   // workspace thread when the user hasn't explicitly picked one. `newThread`
   // sets a sentinel that forces the next sendMessage to create a fresh thread
   // and clears the visible message list in the meantime.
+  const { session, status: chatStatus, threadId: runningThreadId } = useChatSession(
+    JSON.stringify(["workspace", workspaceId]),
+  );
+  const setChatStatus = session.setStatus;
   const [explicitThreadId, setExplicitThreadId] = useState<string | null>(null);
   const [forceNewThread, setForceNewThread] = useState(false);
   const activeThreadId =
-    forceNewThread
-      ? undefined
-      : explicitThreadId && threads.some((t) => t.id === explicitThreadId)
-        ? explicitThreadId
-        : threads[0]?.id;
+    (chatStatus.kind === "preparing" || chatStatus.kind === "streaming") && runningThreadId
+      ? runningThreadId
+      : forceNewThread
+        ? undefined
+        : explicitThreadId && threads.some((t) => t.id === explicitThreadId)
+          ? explicitThreadId
+          : threads.find((t) => t.id === runningThreadId)?.id ?? threads[0]?.id;
 
   const loadedMessages = useMessages(activeThreadId);
   const messages = useMemo(() => loadedMessages ?? [], [loadedMessages]);
@@ -319,45 +327,21 @@ export function useWorkspaceChat(
   const setWebSearchEnabled = useCallback((next: boolean) => {
     setWebSearchEnabledState(next);
   }, []);
-
-  const [chatStatus, setChatStatus] = useState<WorkspaceChatStatus>({
-    kind: "idle",
-  });
-
-  const streamControllerRef = useRef<{ abort: () => void } | null>(null);
-
-  useEffect(() => {
-    return () => {
-      streamControllerRef.current?.abort();
-    };
-  }, []);
-
-  // Clear a sticky vault_locked error once the vault is (re-)unlocked. We watch
-  // the masterKey reference (freshly derived per unlock) so re-unlocking while
-  // already unlocked still clears the banner. (Post-Phase-9 the masterKey is a
-  // non-null sentinel on every build, so this is effectively a no-op guard
-  // kept for parity with the reader.)
-  const [previousMasterKey, setPreviousMasterKey] = useState(masterKey);
-  if (previousMasterKey !== masterKey) {
-    setPreviousMasterKey(masterKey);
-    if (masterKey && chatStatus.kind === "error" && chatStatus.code === "vault_locked") {
-      setChatStatus({ kind: "idle" });
-    }
-  }
-
   const selectThread = useCallback((id: string) => {
+    if (session.isRunning) return;
     setForceNewThread(false);
     setExplicitThreadId(id);
-  }, []);
+  }, [session]);
 
   const newThread = useCallback(() => {
     // Don't tear down a running stream's thread out from under it.
+    if (session.isRunning) return;
     setForceNewThread(true);
     setExplicitThreadId(null);
     setContextScopesState(DEFAULT_CONTEXT_SCOPES);
     setSelectedSourceIdsState([]);
     setSyncedThreadId(undefined);
-  }, []);
+  }, [session]);
 
   const runChat = useCallback(
     async (
@@ -372,13 +356,18 @@ export function useWorkspaceChat(
         // which after an async delete still contains the failed turn —
         // producing a duplicate "..." bubble + a duplicate user turn.
         historyOverride?: ChatMessageRecord[];
+        deleteMessageIds?: string[];
         // `newThread()` path: force a brand-new workspace thread instead of
         // reusing the newest existing one. Without this, findOrCreate would
         // hand back the most recent thread and "New chat" would be a no-op
         // whenever the workspace already had a thread.
         forceNew?: boolean;
       },
-    ) => {
+    ) => session.run(async () => {
+      if (opts?.deleteMessageIds) {
+        await Promise.all(opts.deleteMessageIds.map((id) => deleteMessage(id)));
+      }
+      if (session.cancelled) return;
       const useWebSearch = opts?.webSearchEnabled === true;
 
       // Mark the run in-flight up-front (before the async credential resolution
@@ -492,9 +481,11 @@ export function useWorkspaceChat(
       // so they survive a reopen even before the user toggles a chip.
       const threadTitle =
         userMessage.slice(0, 60) || pick("Yeni sohbet", "New chat");
+      if (session.cancelled) return;
       const thread = opts?.forceNew
         ? await createWorkspaceThread(workspaceId, threadTitle)
-        : await findOrCreateWorkspaceThread(workspaceId, threadTitle);
+        : (activeThreadId ? await getThread(activeThreadId) : undefined)
+          ?? await findOrCreateWorkspaceThread(workspaceId, threadTitle);
       // We just (maybe) created a thread; make it the visible one and clear the
       // force-new sentinel so the message list follows it.
       setForceNewThread(false);
@@ -503,6 +494,8 @@ export function useWorkspaceChat(
       void setThreadContextScopes(thread.id, activeScopes);
       void setThreadSelectedSources(thread.id, sourceSelection);
 
+      session.bindThread(thread.id);
+      if (session.cancelled) return;
       await addMessage({
         threadId: thread.id,
         workspaceId,
@@ -687,6 +680,7 @@ export function useWorkspaceChat(
       const isOAuth = chatPresetId === "anthropic" && authKind === "oauth";
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        if (session.cancelled) { interrupted = true; break; }
         const initialAssistantContent =
           round === 0 && retrievalEmpty
             ? pick(
@@ -718,7 +712,7 @@ export function useWorkspaceChat(
           tools,
           tool_choice: { type: "auto" },
         });
-        streamControllerRef.current = { abort: handle.abort };
+        session.current = { abort: handle.abort };
 
         let buffer = initialAssistantContent;
         let tokensIn = 0;
@@ -731,42 +725,12 @@ export function useWorkspaceChat(
         const webCitationUrls = new Set<string>();
         let webSearchUsage: WebSearchUsage | undefined;
 
-        const flush = async () => {
-          await setMessageContent(assistant.id, buffer);
-        };
-        // Non-blocking throttled flush (verbatim from the reader): at most one
-        // write in flight, the latest buffer always wins, the SSE loop never
-        // awaits a write. A final flush after the loop guarantees the last
-        // bytes land before usage/stopReason is persisted.
-        let flushTimer: ReturnType<typeof setTimeout> | null = null;
-        let flushInFlight = false;
-        let pendingFlush = false;
-        const runFlush = async (): Promise<void> => {
-          if (flushInFlight) {
-            pendingFlush = true;
-            return;
-          }
-          flushInFlight = true;
-          try {
-            await flush();
-          } finally {
-            flushInFlight = false;
-            if (pendingFlush) {
-              pendingFlush = false;
-              void runFlush();
-            }
-          }
-        };
-        const scheduleFlush = (): void => {
-          if (flushTimer) return;
-          flushTimer = setTimeout(() => {
-            flushTimer = null;
-            void runFlush();
-          }, 80);
-        };
+        const writer = createStreamWriter(() => buffer, (text) => setMessageContent(assistant.id, text));
+        const scheduleFlush = writer.schedule;
 
         try {
           for await (const event of handle.events) {
+            if (session.cancelled) { interrupted = true; break; }
             if (event.kind === "start") {
               tokensIn = event.usage.input_tokens ?? tokensIn;
               cacheRead = event.usage.cache_read_input_tokens ?? cacheRead;
@@ -832,11 +796,8 @@ export function useWorkspaceChat(
           };
         }
 
-        if (flushTimer) {
-          clearTimeout(flushTimer);
-          flushTimer = null;
-        }
-        await flush();
+        await writer.finish();
+        interrupted ||= session.cancelled;
         lastAssistantBuffer = buffer;
         await patchMessageUsage(assistant.id, {
           tokensIn: tokensIn || undefined,
@@ -853,7 +814,7 @@ export function useWorkspaceChat(
           });
         }
 
-        streamControllerRef.current = null;
+        session.current = null;
 
         if (streamError || interrupted) break;
 
@@ -893,6 +854,7 @@ export function useWorkspaceChat(
         let simplifyExtraText: string | null = null;
 
         for (const tc of parsedCalls) {
+          if (session.cancelled) { interrupted = true; break; }
           const toolUseRecord = await addMessage({
             threadId: thread.id,
             workspaceId,
@@ -904,6 +866,11 @@ export function useWorkspaceChat(
             toolStatus: "pending",
           });
 
+          if (session.cancelled) {
+            await setToolStatus(toolUseRecord.id, "error");
+            interrupted = true;
+            break;
+          }
           let resultStr = "";
           let status: "ok" | "error" = "ok";
           // Anchor for add_flashcard. The handler prefers the CITED chunk's own
@@ -992,7 +959,11 @@ export function useWorkspaceChat(
         apiMessages.push({ role: "user", content: userBlocks });
       }
 
-      streamControllerRef.current = null;
+      session.current = null;
+      interrupted ||= session.cancelled;
+      if (interrupted && lastAssistantId) {
+        await patchMessageUsage(lastAssistantId, { interrupted: true });
+      }
 
       // Surface the embedding-dim mismatch as a non-fatal notice. topKChunks
       // skips chunks whose embedding dim doesn't match the query's (sources
@@ -1045,9 +1016,11 @@ export function useWorkspaceChat(
         return;
       }
 
-      setChatStatus({ kind: "idle" });
-    },
+    }, pick("Yanıt tamamlanamadı. Lütfen tekrar deneyin.", "Could not complete the response. Please try again.")),
     [
+      session,
+      setChatStatus,
+      activeThreadId,
       locale,
       aiResponseLocale,
       messages,
@@ -1087,8 +1060,8 @@ export function useWorkspaceChat(
   );
 
   const cancelStream = useCallback(() => {
-    streamControllerRef.current?.abort();
-  }, []);
+    session.cancel();
+  }, [session]);
 
   const retry = useCallback(
     (messageId: string) => {
@@ -1117,10 +1090,10 @@ export function useWorkspaceChat(
         // deletes synchronously (stale-closure-on-async-delete fix).
         const historyOverride = messages.slice(0, userIdx);
         const toDelete = messages.slice(userIdx);
-        await Promise.all(toDelete.map((m) => deleteMessage(m.id)));
         void runChat(userMsg.content, chunks, contextScopes, selectedSourceIds, {
           webSearchEnabled,
           historyOverride,
+          deleteMessageIds: toDelete.map((m) => m.id),
         });
       })();
     },
@@ -1138,7 +1111,7 @@ export function useWorkspaceChat(
   const fork = useCallback(
     (messageId: string) => {
       void (async () => {
-        if (!activeThreadId) return;
+        if (!activeThreadId || session.isRunning) return;
         try {
           const { newThreadId } = await forkThread(activeThreadId, messageId);
           setForceNewThread(false);
@@ -1157,7 +1130,7 @@ export function useWorkspaceChat(
         }
       })();
     },
-    [activeThreadId, pick, toast],
+    [activeThreadId, pick, toast, session],
   );
 
   return {

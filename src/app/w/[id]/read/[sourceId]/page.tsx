@@ -1,5 +1,8 @@
 "use client";
 
+import { useChatSession } from "@/lib/ai/runners/chat-session";
+import { createStreamWriter } from "@/lib/ai/runners/stream-writer";
+
 import {
   AlertCircle,
   ArrowLeft,
@@ -81,6 +84,7 @@ import {
   addMessage,
   addToolResult,
   deleteMessage,
+  getThread,
   findOrCreateSourceThread,
   forkThread,
   patchMessageUsage,
@@ -387,6 +391,10 @@ export default function NotebookReaderPage() {
 
   const loadedThreadsForSource = useThreadsBySource(sourceId);
   const threadsForSource = useMemo(() => loadedThreadsForSource ?? [], [loadedThreadsForSource]);
+  const { session, status: chatStatus, threadId: runningThreadId } = useChatSession(
+    JSON.stringify(["reader", workspaceId, sourceId]),
+  );
+  const setChatStatus = session.setStatus;
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   // Sort pinned-first then newest. Default to first sorted thread when no
   // explicit selection has been made yet.
@@ -399,9 +407,11 @@ export default function NotebookReaderPage() {
     [threadsForSource],
   );
   const threadId =
-    activeThreadId && sortedThreads.some((t) => t.id === activeThreadId)
-      ? activeThreadId
-      : sortedThreads[0]?.id;
+    (chatStatus.kind === "preparing" || chatStatus.kind === "streaming") && runningThreadId
+      ? runningThreadId
+      : activeThreadId && sortedThreads.some((t) => t.id === activeThreadId)
+        ? activeThreadId
+        : sortedThreads.find((t) => t.id === runningThreadId)?.id ?? sortedThreads[0]?.id;
   const loadedMessages = useMessages(threadId);
   const messages = useMemo(() => loadedMessages ?? [], [loadedMessages]);
 
@@ -415,7 +425,6 @@ export default function NotebookReaderPage() {
   // Cleared on send (the chip's text is prepended to the final message) or
   // via the explicit X button on the chip.
   const [quotedText, setQuotedText] = useState<string | null>(null);
-  const [chatStatus, setChatStatus] = useState<ChatStatus>({ kind: "idle" });
   const [, setVaultModalOpen] = useState(false);
   const [genCardsOpen, setGenCardsOpen] = useState(false);
   // When the user clicks "Karta çevir" on a chat bubble, we capture the
@@ -566,7 +575,6 @@ export default function NotebookReaderPage() {
   // link when the most recent retrieval silently skipped chunks (3.3.D guard).
   const [lastSkippedCount, setLastSkippedCount] = useState(0);
 
-  const streamControllerRef = useRef<{ abort: () => void } | null>(null);
   const pendingMessageRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -584,26 +592,6 @@ export default function NotebookReaderPage() {
     document.addEventListener("selectionchange", onSelectionChange);
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, []);
-
-  useEffect(() => {
-    return () => {
-      streamControllerRef.current?.abort();
-    };
-  }, []);
-
-  // chatStatus is sticky — once a `vault_locked` error is set the banner
-  // stays visible until something explicitly resets it. We watch `masterKey`
-  // (the CryptoKey reference, which is freshly derived per unlock) instead of
-  // the `isUnlocked` boolean so that re-unlocking while already unlocked
-  // (e.g. clicking the banner's Unlock link after a stale vault_locked toast)
-  // still re-fires this effect and clears the banner.
-  const [previousMasterKey, setPreviousMasterKey] = useState(masterKey);
-  if (previousMasterKey !== masterKey) {
-    setPreviousMasterKey(masterKey);
-    if (masterKey && chatStatus.kind === "error" && chatStatus.code === "vault_locked") {
-      setChatStatus({ kind: "idle" });
-    }
-  }
 
   const jumpToChunk = useCallback((chunk: ChunkRecord) => {
     // Phase 6.9.7 — citations resolving to a note-source chunk route to the
@@ -651,8 +639,13 @@ export default function NotebookReaderPage() {
         // retry still contains the failed assistant turn — producing both a
         // duplicate "..." bubble and a duplicate user turn in the request.
         historyOverride?: ChatMessageRecord[];
+        deleteMessageIds?: string[];
       },
-    ) => {
+    ) => session.run(async () => {
+      if (opts?.deleteMessageIds) {
+        await Promise.all(opts.deleteMessageIds.map((id) => deleteMessage(id)));
+      }
+      if (session.cancelled) return;
       const useWebSearch = opts?.webSearchEnabled === true;
       // Read fresh from the store — when this fires from MasterPasswordModal's
       // onSuccess via queueMicrotask, the captured `masterKey` from useCallback
@@ -763,12 +756,15 @@ export default function NotebookReaderPage() {
 
       setChatStatus({ kind: "preparing" });
 
-      const thread = await findOrCreateSourceThread(
+      if (session.cancelled) return;
+      const thread = (threadId ? await getThread(threadId) : undefined) ?? await findOrCreateSourceThread(
         workspaceId,
         sourceId,
         sourceRec.title,
       );
 
+      session.bindThread(thread.id);
+      if (session.cancelled) return;
       await addMessage({
         threadId: thread.id,
         workspaceId,
@@ -880,6 +876,7 @@ export default function NotebookReaderPage() {
 
       let streamError: { code: string; message: string } | undefined;
       let interrupted = false;
+      let lastAssistantId: string | undefined;
 
       // OAuth chat is handled server-side by claude-agent-sdk: it spawns the
       // Claude Code CLI with the user's OAuth token, runs the tool round-trip
@@ -890,6 +887,7 @@ export default function NotebookReaderPage() {
       const isOAuth = chatPresetId === "anthropic" && authKind === "oauth";
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        if (session.cancelled) { interrupted = true; break; }
         const initialAssistantContent =
           round === 0 && retrievalEmpty
             ? pick(
@@ -905,6 +903,7 @@ export default function NotebookReaderPage() {
           model: chatModelId,
         });
 
+        lastAssistantId = assistant.id;
         setChatStatus({ kind: "streaming", messageId: assistant.id });
 
         const provider = isOAuth
@@ -920,7 +919,7 @@ export default function NotebookReaderPage() {
           tools,
           tool_choice: { type: "auto" },
         });
-        streamControllerRef.current = { abort: handle.abort };
+        session.current = { abort: handle.abort };
 
         let buffer = initialAssistantContent;
         let tokensIn = 0;
@@ -937,47 +936,12 @@ export default function NotebookReaderPage() {
         const webCitationUrls = new Set<string>();
         let webSearchUsage: WebSearchUsage | undefined;
 
-        const flush = async () => {
-          await setMessageContent(assistant.id, buffer);
-        };
-        // Non-blocking throttled flush: previously every text delta did
-        // `await setMessageContent(...)` inside the SSE for-await loop, which
-        // gated each upstream chunk on a Dexie commit + useLiveQuery + full
-        // React re-render (markdown re-parse of the growing string). On Tauri
-        // WebView the cumulative jank froze the whole UI until stream end.
-        // Now: at most one write in flight, the latest buffer always wins,
-        // and the SSE loop never awaits a write — chunks arrive as fast as
-        // the wire allows. Final `await flush()` after the loop still
-        // guarantees the last bytes land before usage/stopReason is written.
-        let flushTimer: ReturnType<typeof setTimeout> | null = null;
-        let flushInFlight = false;
-        let pendingFlush = false;
-        const runFlush = async (): Promise<void> => {
-          if (flushInFlight) {
-            pendingFlush = true;
-            return;
-          }
-          flushInFlight = true;
-          try {
-            await flush();
-          } finally {
-            flushInFlight = false;
-            if (pendingFlush) {
-              pendingFlush = false;
-              void runFlush();
-            }
-          }
-        };
-        const scheduleFlush = (): void => {
-          if (flushTimer) return;
-          flushTimer = setTimeout(() => {
-            flushTimer = null;
-            void runFlush();
-          }, 80);
-        };
+        const writer = createStreamWriter(() => buffer, (text) => setMessageContent(assistant.id, text));
+        const scheduleFlush = writer.schedule;
 
         try {
           for await (const event of handle.events) {
+            if (session.cancelled) { interrupted = true; break; }
             if (event.kind === "start") {
               tokensIn = event.usage.input_tokens ?? tokensIn;
               cacheRead = event.usage.cache_read_input_tokens ?? cacheRead;
@@ -1046,11 +1010,8 @@ export default function NotebookReaderPage() {
           };
         }
 
-        if (flushTimer) {
-          clearTimeout(flushTimer);
-          flushTimer = null;
-        }
-        await flush();
+        await writer.finish();
+        interrupted ||= session.cancelled;
         await patchMessageUsage(assistant.id, {
           tokensIn: tokensIn || undefined,
           tokensOut: tokensOut || undefined,
@@ -1070,7 +1031,7 @@ export default function NotebookReaderPage() {
           });
         }
 
-        streamControllerRef.current = null;
+        session.current = null;
 
         if (streamError || interrupted) break;
 
@@ -1113,6 +1074,7 @@ export default function NotebookReaderPage() {
         let simplifyExtraText: string | null = null;
 
         for (const tc of parsedCalls) {
+          if (session.cancelled) { interrupted = true; break; }
           const toolUseRecord = await addMessage({
             threadId: thread.id,
             workspaceId,
@@ -1124,6 +1086,11 @@ export default function NotebookReaderPage() {
             toolStatus: "pending",
           });
 
+          if (session.cancelled) {
+            await setToolStatus(toolUseRecord.id, "error");
+            interrupted = true;
+            break;
+          }
           let resultStr = "";
           let status: "ok" | "error" = "ok";
           const handlerCtx = {
@@ -1173,7 +1140,7 @@ export default function NotebookReaderPage() {
               });
             }
           } else if (tc.name === "open_citation") {
-            const r = runOpenCitation(tc.parsed, handlerCtx, jumpToChunk);
+            const r = runOpenCitation(tc.parsed, handlerCtx, (chunk) => { if (session.isObserved) jumpToChunk(chunk); });
             resultStr = summarizeToolResult(tc.name, r);
             status = r.ok ? "ok" : "error";
             if (!r.ok) {
@@ -1229,7 +1196,11 @@ export default function NotebookReaderPage() {
         apiMessages.push({ role: "user", content: userBlocks });
       }
 
-      streamControllerRef.current = null;
+      session.current = null;
+      interrupted ||= session.cancelled;
+      if (interrupted && lastAssistantId) {
+        await patchMessageUsage(lastAssistantId, { interrupted: true });
+      }
 
       if (streamError) {
         const parsed = parseEventCode(streamError.message);
@@ -1276,9 +1247,8 @@ export default function NotebookReaderPage() {
         return;
       }
 
-      setChatStatus({ kind: "idle" });
-    },
-    [locale, aiResponseLocale, messages, pick, sourceId, toast, workspaceId, jumpToChunk],
+    }, pick("Yanıt tamamlanamadı. Lütfen tekrar deneyin.", "Could not complete the response. Please try again.")),
+    [session, setChatStatus, threadId, locale, aiResponseLocale, messages, pick, sourceId, toast, workspaceId, jumpToChunk],
   );
 
   const sendMessage = useCallback(
@@ -1303,8 +1273,8 @@ export default function NotebookReaderPage() {
   );
 
   const cancelStream = useCallback(() => {
-    streamControllerRef.current?.abort();
-  }, []);
+    session.cancel();
+  }, [session]);
 
   const handleRetry = useCallback(
     async (messageId: string) => {
@@ -1335,10 +1305,10 @@ export default function NotebookReaderPage() {
       // the closure's `messages` won't reflect the deletes synchronously.
       const historyOverride = messages.slice(0, userIdx);
       const toDelete = messages.slice(userIdx);
-      await Promise.all(toDelete.map((m) => deleteMessage(m.id)));
       void runChat(userMsg.content, source, chunks, {
         webSearchEnabled,
         historyOverride,
+        deleteMessageIds: toDelete.map((m) => m.id),
       });
     },
     [chatStatus.kind, chunks, messages, runChat, source, webSearchEnabled],
@@ -1346,7 +1316,7 @@ export default function NotebookReaderPage() {
 
   const handleFork = useCallback(
     async (messageId: string) => {
-      if (!threadId) return;
+      if (!threadId || session.isRunning) return;
       try {
         const { newThreadId } = await forkThread(threadId, messageId);
         setActiveThreadId(newThreadId);
@@ -1362,7 +1332,7 @@ export default function NotebookReaderPage() {
         });
       }
     },
-    [pick, threadId, toast],
+    [pick, threadId, toast, session],
   );
 
   // Deep link `?chunk=<id>` — Article Analysis citation chips land here so a
@@ -1565,7 +1535,7 @@ export default function NotebookReaderPage() {
               sourceId={sourceId}
               sourceTitle={pick(source.title, source.titleEn ?? source.title)}
               activeThreadId={threadId ?? null}
-              onSelect={setActiveThreadId}
+              onSelect={(id) => { if (!session.isRunning) setActiveThreadId(id); }}
               variant="popover"
             />
           }
@@ -2550,7 +2520,7 @@ function ChatPanel({
                 e.preventDefault();
                 sendWithQuote();
               }
-              if (e.key === "Escape" && isStreaming) {
+              if (e.key === "Escape" && isBusy) {
                 e.preventDefault();
                 onCancel();
               }
@@ -2567,7 +2537,7 @@ function ChatPanel({
             disabled={inputDisabled && !isStreaming}
             className="flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] outline-none placeholder:text-ink-4 disabled:cursor-not-allowed disabled:text-ink-4"
           />
-          {isStreaming ? (
+          {isBusy ? (
             <Button
               type="button"
               size="sm"
@@ -2599,7 +2569,7 @@ function ChatPanel({
             <Kbd>⌘</Kbd>
             <Kbd>↵</Kbd>
             <span>{t("gonder_2")}</span>
-            {isStreaming ? (
+            {isBusy ? (
               <>
                 <span className="px-1">·</span>
                 <Kbd>Esc</Kbd>

@@ -347,7 +347,7 @@ function Composer({
               e.preventDefault();
               submit();
             }
-            if (e.key === "Escape" && isStreaming) {
+            if (e.key === "Escape" && isBusy) {
               e.preventDefault();
               onCancel();
             }
@@ -357,7 +357,7 @@ function Composer({
           disabled={isBusy}
           className="flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] outline-none placeholder:text-ink-4 disabled:cursor-not-allowed disabled:text-ink-4"
         />
-        {isStreaming ? (
+        {isBusy ? (
           <Button
             type="button"
             size="sm"
@@ -389,7 +389,7 @@ function Composer({
           <Kbd>⌘</Kbd>
           <Kbd>↵</Kbd>
           <span>{t("send")}</span>
-          {isStreaming ? (
+          {isBusy ? (
             <>
               <span className="px-1">·</span>
               <Kbd>Esc</Kbd>

@@ -35,6 +35,124 @@ import {
 // the runner, prompt builder, ChatBubble, CitationChip — runs for real.
 
 const WS_ID = "ws_e2e_wschat";
+
+type ControlledChat = {
+  hits: number;
+  aborts: number;
+  text: (text: string) => void;
+  finish: () => void;
+};
+
+async function installControlledStream(page: Page) {
+  await page.evaluate(() => {
+    const nativeFetch = window.fetch.bind(window);
+    const state: ControlledChat = { hits: 0, aborts: 0, text: () => {}, finish: () => {} };
+    (window as unknown as { controlledChat: ControlledChat }).controlledChat = state;
+    window.fetch = async (input, init) => {
+      if (!String(input).includes("/api/ai/chat")) return nativeFetch(input, init);
+      state.hits++;
+      const encoder = new TextEncoder();
+      let closed = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const emit = (type: string, data: object) => {
+            if (!closed) controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`));
+          };
+          const abort = () => {
+            if (closed) return;
+            state.aborts++;
+            closed = true;
+            controller.error(new DOMException("Stopped", "AbortError"));
+          };
+          init?.signal?.addEventListener("abort", abort, { once: true });
+          if (init?.signal?.aborted) { abort(); return; }
+          emit("message_start", { message: { id: "controlled", role: "assistant", model: "claude-sonnet-4-6", content: [], usage: { input_tokens: 1, output_tokens: 0 } } });
+          emit("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
+          state.text = (text) => emit("content_block_delta", { index: 0, delta: { type: "text_delta", text } });
+          state.finish = () => {
+            emit("content_block_stop", { index: 0 });
+            emit("message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 12 } });
+            emit("message_stop", {});
+            if (!closed) { closed = true; controller.close(); }
+          };
+        },
+      });
+      return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+    };
+  });
+}
+
+for (const surface of ["reader", "workspace"] as const) {
+  test(`${surface}: navigation preserves streaming and remounted Stop cancels only the current turn`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await seedWorkspaceChat(page);
+    await page.goto(surface === "reader" ? `/w/${WS_ID}/read/${SOURCE_ID}` : `/w/${WS_ID}/chat`);
+    const composer = page.locator("textarea:visible").first();
+    const send = page.getByRole("button", { name: /^(gönder|send)$/i }).first();
+    const stop = page.getByRole("button", { name: /durdur|stop/i }).first();
+    await expect(composer).toBeEnabled({ timeout: 30_000 });
+    await installControlledStream(page);
+    const sendText = async (text: string) => {
+      await page.evaluate((value) => (window as unknown as { controlledChat: ControlledChat }).controlledChat.text(value), text);
+    };
+    const hits = () => page.evaluate(() => (window as unknown as { controlledChat: ControlledChat }).controlledChat.hits);
+    const aborts = () => page.evaluate(() => (window as unknown as { controlledChat: ControlledChat }).controlledChat.aborts);
+    await composer.fill("Explain this source.");
+    await send.click();
+    await expect.poll(hits).toBe(1);
+    await sendText("Navigation response begins. ");
+    await expect(page.getByText("Navigation response begins.", { exact: false }).first()).toBeVisible();
+    await page.locator(`a[href="/w/${WS_ID}/notes"]`).first().click();
+    await expect(page).toHaveURL(/\/notes$/);
+    await sendText("It continues while away. ");
+    expect(await aborts()).toBe(0);
+    await page.goBack();
+    await expect(stop).toBeVisible();
+    await expect(page.getByText("It continues while away.", { exact: false }).first()).toBeVisible();
+    await stop.click();
+    await expect.poll(aborts).toBe(1);
+    await expect(stop).toHaveCount(0);
+    await expect(composer).toBeEnabled();
+    await sendText("LATE TEXT MUST NOT APPEAR");
+    await expect(page.getByText("LATE TEXT MUST NOT APPEAR", { exact: false })).toHaveCount(0);
+
+    // A fresh turn must not inherit the previous turn's cancellation flag.
+    await composer.fill("Explain again.");
+    await send.click();
+    await expect.poll(hits).toBe(2);
+    await sendText("Second response. ");
+    await page.locator(`a[href="/w/${WS_ID}/notes"]`).first().click();
+    await expect(page).toHaveURL(/\/notes$/);
+    await sendText("Completed in the background.");
+    await page.evaluate(() => (window as unknown as { controlledChat: ControlledChat }).controlledChat.finish());
+    await page.goBack();
+    await expect(stop).toHaveCount(0);
+    await expect(composer).toBeEnabled();
+    await expect(page.getByText("Completed in the background.", { exact: false }).first()).toBeVisible();
+    expect(await aborts()).toBe(1);
+    expect(await hits()).toBe(2);
+    // Verify the persisted result, not only the rendered streaming buffer.
+    const persisted = await page.evaluate(async () => {
+      const database = (await indexedDB.databases()).find((item) => item.name);
+      const request = indexedDB.open(database!.name!);
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const request = db.transaction("chatMessages").objectStore("chatMessages").getAll();
+        const messages = await new Promise<{ role: string; content: string; interrupted?: boolean }[]>((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        return messages.filter((message) => message.role === "assistant");
+      } finally { db.close(); }
+    });
+    expect(persisted).toHaveLength(2);
+    expect(persisted.find((message) => message.content.startsWith("Navigation"))?.interrupted).toBe(true);
+    expect(persisted.find((message) => message.content.startsWith("Second"))?.interrupted).not.toBe(true);
+  });
+}
 const SOURCE_ID = "src_e2e_wschat";
 const SOURCE_TITLE = "Quantum Mechanics — E2E Source";
 const SECTION = "Section 1";
