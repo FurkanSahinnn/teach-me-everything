@@ -26,14 +26,12 @@ export interface GeminiGoogleSearchTool {
   google_search: Record<string, never>;
 }
 
-export function buildGeminiGoogleSearchTool(
-  _opts: WebSearchOptions,
-): GeminiGoogleSearchTool {
+export const buildGeminiGoogleSearchTool: (options: WebSearchOptions) => GeminiGoogleSearchTool = () => {
   // google_search is a config-less server tool. WebSearchOptions knobs
   // (maxUses, domains) are not exposed by Gemini's grounding API in 2.5;
   // we surface this via `paramsSupported: []` on the capability.
   return { google_search: {} };
-}
+};
 
 interface GeminiGroundingChunk {
   web?: { uri?: string; title?: string };

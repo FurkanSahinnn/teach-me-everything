@@ -33,6 +33,20 @@ export type ReaderWidth = "narrow" | "full";
 // etc). They live in prefs because they are user-specific configuration, not
 // secrets — the API key (if any) goes through the encrypted vault under a
 // `custom:${id}` provider literal.
+/**
+ * Local agent-CLI configuration. Lives in prefs rather than the keychain for
+ * the same reason CustomEndpoint does: a binary path and a set of environment
+ * variable names are user-specific configuration, not secrets.
+ */
+export type AgentCliPrefs = {
+  /** Explicit `claude` binary path. Absent or empty means auto-detect. */
+  claudePath?: string;
+  /** Explicit `codex` binary path. Absent or empty means auto-detect. */
+  codexPath?: string;
+  /** Extra environment variables handed to the spawned process. */
+  env?: Record<string, string>;
+};
+
 export type CustomEndpointFamily = "openai-compat" | "gemini";
 
 export type CustomEndpoint = {
@@ -289,7 +303,7 @@ function isValidVaultPrefs(value: unknown): value is VaultPrefs {
   return true;
 }
 
-const PREFS_VERSION = 24;
+const PREFS_VERSION = 25;
 
 // Phase 11.A — Local-first TTS. `piper` is the default because it ships
 // as a Tauri sidecar with a ~63MB Turkish voice (lazy-installed on first
@@ -666,6 +680,16 @@ export function migratePrefs(
       }
     }
   }
+  if (version < 25) {
+    // Additive only. The local agent CLI stores a binary path and env vars; a
+    // fresh install auto-detects, so an empty object is the correct default.
+    // Deliberately does NOT touch modelBindings: adding a required key there
+    // fails isValidModelBindings and resets every binding, which this file has
+    // been bitten by three times (see the v21 / v24 branches).
+    if (!next.agentCli || typeof next.agentCli !== "object") {
+      next.agentCli = {};
+    }
+  }
   return next as PrefsState;
 }
 
@@ -693,6 +717,7 @@ type PrefsState = {
   strictAnthropicAuth: boolean;
   aiResponseLocale: AiResponseLocale;
   customEndpoints: CustomEndpoint[];
+  agentCli: AgentCliPrefs;
   modelBindings: ModelBindings;
   srs: SrsPrefs;
   readerWidth: ReaderWidth;
@@ -746,6 +771,7 @@ type PrefsState = {
   setStrictAnthropicAuth: (strict: boolean) => void;
   setAiResponseLocale: (value: AiResponseLocale) => void;
   addCustomEndpoint: (endpoint: CustomEndpoint) => void;
+  setAgentCli: (value: AgentCliPrefs) => void;
   removeCustomEndpoint: (id: string) => void;
   setCustomEndpointHasKey: (id: string, hasKey: boolean) => void;
   setModelBinding: (task: keyof ModelBindings, value: string) => void;
@@ -825,6 +851,7 @@ export const usePrefs = create<PrefsState>()(
       strictAnthropicAuth: false,
       aiResponseLocale: "follow_source",
       customEndpoints: [],
+      agentCli: {},
       modelBindings: { ...DEFAULT_MODEL_BINDINGS },
       srs: { ...DEFAULT_SRS_PREFS },
       readerWidth: "narrow",
@@ -865,6 +892,9 @@ export const usePrefs = create<PrefsState>()(
       },
       setAiResponseLocale: (value) => {
         set({ aiResponseLocale: value });
+      },
+      setAgentCli: (value) => {
+        set({ agentCli: value });
       },
       addCustomEndpoint: (endpoint) => {
         set((s) => ({ customEndpoints: [...s.customEndpoints, endpoint] }));

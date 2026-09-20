@@ -119,7 +119,13 @@ export async function parsePlainText(file: File): Promise<ParsedSource> {
   const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
   const contentHash = bufferToHex(hashBuffer);
   const text = await file.text();
-  const chunks = chunkPages({ pages: [{ page: 1, text }] });
+  // A .md file is markdown by declaration; .txt is auto-detected from `#`
+  // headings so a markdown-in-disguise text file keeps its structure too.
+  const isMarkdown = /\.(md|markdown)$/i.test(file.name);
+  const chunks = chunkPages({
+    pages: [{ page: 1, text }],
+    ...(isMarkdown ? { format: "markdown" as const } : {}),
+  });
   return {
     meta: { pageCount: 1, byteSize: file.size, contentHash },
     chunks,

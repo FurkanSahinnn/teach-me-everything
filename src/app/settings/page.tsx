@@ -43,6 +43,8 @@ import { SearchProvidersSection } from "@/components/settings/SearchProvidersSec
 import { DailyNotesSection } from "@/components/settings/DailyNotesSection";
 import { VaultSection } from "@/components/settings/VaultSection";
 import { AutoLaunchSection } from "@/components/settings/AutoLaunchSection";
+import { AgentCliSection } from "@/components/settings/AgentCliSection";
+import { RechunkSection } from "@/components/settings/RechunkSection";
 import { UpdatesSection } from "@/components/settings/UpdatesSection";
 import { TtsProviderSection } from "@/components/settings/TtsProviderSection";
 import { PodcastFeatureSection } from "@/components/settings/PodcastFeatureSection";
@@ -63,6 +65,7 @@ import {
   type ChatOption,
 } from "@/lib/ai/model-options";
 import type { ModelTier, ProviderId } from "@/lib/ai/providers/types";
+import { getPreset } from "@/lib/ai/providers/presets";
 import { useProviderChatModels } from "@/hooks/useProviderChatModels";
 import { supportsModelFetch } from "@/lib/ai/providers/model-fetch/adapter";
 
@@ -139,9 +142,11 @@ export default function SettingsPage() {
   // section's mental model). Quick-start tile applies still write straight to
   // the store; the sync effect below catches that and refreshes the draft.
   const [draftBindings, setDraftBindings] = useState<ModelBindings>(modelBindings);
-  useEffect(() => {
+  const [previousBindings, setPreviousBindings] = useState(modelBindings);
+  if (previousBindings !== modelBindings) {
+    setPreviousBindings(modelBindings);
     setDraftBindings(modelBindings);
-  }, [modelBindings]);
+  }
 
   const isModelDraftDirty = useMemo(() => {
     const keys: (keyof ModelBindings)[] = [
@@ -618,6 +623,7 @@ export default function SettingsPage() {
               )}
             >
               <EmbedSection />
+              <RechunkSection />
             </Section>
           ) : null}
 
@@ -641,6 +647,7 @@ export default function SettingsPage() {
               <DailyNotesSection />
               <VaultSection />
               <AutoLaunchSection />
+              <AgentCliSection />
               <PodcastFeatureSection />
             </>
           ) : null}
@@ -1128,10 +1135,13 @@ function ChatModelRow({
   // separate sentinel that lives outside this picker — only check stored
   // status when the provider actually maps to a Provider literal we manage.
   const presetIdStr = selectedProvider?.presetId ?? "";
+  // A preset that authenticates outside TME (the local agent CLI) has no key
+  // to store either, so it is read off the preset rather than re-listed here.
   const isLocalProvider =
     presetIdStr === "ollama" ||
     presetIdStr === "lm-studio" ||
-    presetIdStr === "llama-cpp";
+    presetIdStr === "llama-cpp" ||
+    getPreset(presetIdStr as ProviderId)?.externalAuth === true;
   const keyStored = selectedProvider
     ? keys.isStored(selectedProvider.presetId as Provider)
     : false;
@@ -1148,9 +1158,11 @@ function ChatModelRow({
   // Reset customMode when the provider changes (handled inside the handler).
   // Also clear it if the resolved descriptor *becomes* known later (e.g. the
   // catalog gained a new entry on a hot reload).
-  useEffect(() => {
+  const [previousDescriptor, setPreviousDescriptor] = useState(selectedDescriptor);
+  if (previousDescriptor !== selectedDescriptor) {
+    setPreviousDescriptor(selectedDescriptor);
     if (selectedDescriptor) setCustomMode(false);
-  }, [selectedDescriptor]);
+  }
 
   function handleProviderChange(providerId: string): void {
     const next = options.find((o) => o.presetId === providerId);

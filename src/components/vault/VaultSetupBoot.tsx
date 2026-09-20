@@ -9,6 +9,7 @@
 // effect short-circuits.
 
 import { useEffect, useState } from "react";
+import { useHydrated } from "@/hooks/useHydrated";
 import { isTauriEnv } from "@/lib/tauri/env";
 import { usePrefs } from "@/stores/prefs";
 import { VaultSetupModal } from "./VaultSetupModal";
@@ -16,11 +17,7 @@ import { VaultSetupModal } from "./VaultSetupModal";
 export function VaultSetupBoot() {
   const setupCompleted = usePrefs((s) => s.vault.setupCompleted);
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useHydrated();
 
   useEffect(() => {
     if (!mounted) return;

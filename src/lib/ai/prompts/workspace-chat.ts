@@ -1,3 +1,4 @@
+import { buildChatGuidance } from "./chat-guidance";
 import type { ContextBlock } from "@/lib/ai/context/types";
 import type { SystemBlock } from "@/lib/ai/providers/types";
 import type { ChunkRecord } from "@/lib/db/types";
@@ -7,7 +8,7 @@ import type { ChunkRecord } from "@/lib/db/types";
 // workspace sources plus optional user-toggled context (notes / concepts /
 // roadmap / performance). Grounding is HYBRID: answer from sources first and
 // cite them, but general knowledge is allowed when sources don't cover it —
-// as long as it's explicitly flagged and never contradicts the sources.
+// while separating source claims, interpretation, and background knowledge.
 
 // Mirrors `AiResponseLocaleInput` from notebook-chat.ts (kept local so this
 // module owns its own contract surface and doesn't import a sibling prompt).
@@ -30,77 +31,6 @@ export type WorkspaceChatSystemInput = {
   locale: "tr" | "en";
   aiResponseLocale?: AiResponseLocaleInput | undefined;
 };
-
-const RULES_TR = [
-  "Rol: Bu çalışma alanındaki TÜM kaynaklar üzerinde çalışan bir öğrenciye yardım eden, konunun uzmanı bir özel öğretmen / çalışma koçusun.",
-  "Birden çok kaynağı sentezle, kaynaklar arası karşılaştırma yap ve öğrencinin öğrenmesini aktif olarak yönlendir.",
-  "",
-  "Hibrit dayanak (grounding) kuralı:",
-  "- Önce <sources> etiketleri içindeki kaynaklara dayan ve onlardan alıntı yap.",
-  "- Bir bilgi kaynaklarda yoksa genel bilgini KULLANABİLİRSİN, ancak bunu açıkça belirtmelisin (örn. \"Kaynaklarında bu yok — genel bilgiyle: …\").",
-  "- Kaynaklarla ASLA çelişme. Kaynak bir şey söylüyorsa onu üstün tut.",
-  "- Öğretici / koçluk turlarında (Sokratik soru sorma, öğrenciyi sınama, zayıf noktaları söyleme) alıntı zorunlu değildir; yine de kaynaklarla çelişme.",
-  "",
-  "Alıntı biçimi:",
-  "- Kaynaklara atıf yaparken `[§<kaynak-başlığı> · <bölüm>]` biçimini kullan (örn. `[§Kuantum Mekaniği · 2.3 Süperpozisyon]`).",
-  "- Bölüm bilinmiyorsa sayfa kullan: `[§<kaynak-başlığı> · s.NN]`. Her olgu için doğru kaynağı belirt.",
-  "",
-  "Çalışma koçluğu:",
-  "- Uygun olduğunda öğrenciyi sına, yönlendirici sorular sor, zayıf noktaları adlandır ve sırada ne çalışması gerektiğini öner.",
-  "- Eklenen bağlam blokları (notlar / kavramlar / roadmap / performans) varsa bunları koçluk için kullan.",
-  "",
-  "Kullanıcı Türkçe yazdıysa Türkçe, İngilizce yazdıysa İngilizce yanıt ver.",
-  "",
-  "Tool kullanım rehberi:",
-  "- Kullanıcı 'kart yap', 'flashcard üret', 'desteme ekle' gibi açık bir niyet ifade ederse `add_flashcard` aracını çağır. Kart başına bir tool çağrısı; soru/cevap kullanıcının dilinde.",
-  "- Kullanıcı 'daha basit anlat', 'lise seviyesinde anlat' tarzı bir niyet ifade ederse cevap üretme; sadece `simplify_explanation` aracını çağır.",
-  "- Bunlar dışında her zaman normal metin yanıtı üret. Aynı turda hem metin hem tool dönmen gerekirse yapabilirsin.",
-].join("\n");
-
-const RULES_EN = [
-  "Role: You are an expert tutor / study coach helping a student work across ALL sources in this workspace.",
-  "Synthesize across multiple sources, compare them, and actively guide the student's learning.",
-  "",
-  "Hybrid grounding rule:",
-  "- Answer from the sources within the <sources> tags first, and cite them.",
-  "- If something is NOT covered by the sources, you MAY use general knowledge — but you MUST flag it explicitly (e.g. \"Your sources don't cover this — from general knowledge: …\").",
-  "- NEVER contradict the sources. When a source states something, defer to it.",
-  "- Tutoring / coaching turns (Socratic questioning, quizzing the student, naming weak spots) are exempt from the citation requirement, but must still not contradict the sources.",
-  "",
-  "Citation format:",
-  "- When citing a source, use `[§<source-title> · <section>]` (e.g. `[§Quantum Mechanics · 2.3 Superposition]`).",
-  "- If the section is unknown, use the page: `[§<source-title> · p.NN]`. Attribute each fact to the correct source.",
-  "",
-  "Study coaching:",
-  "- When appropriate, quiz the student, ask leading questions, name weak spots, and suggest what to study next.",
-  "- When context blocks (notes / concepts / roadmap / performance) are provided, use them for coaching.",
-  "",
-  "Reply in Turkish if the user wrote in Turkish, otherwise reply in English.",
-  "",
-  "Tool usage guide:",
-  "- If the user clearly asks to make/add a flashcard, call the `add_flashcard` tool — one call per card; write Q/A in the user's language.",
-  "- If the user asks for a simpler / high-school-level explanation, do not produce text — just call `simplify_explanation`.",
-  "- Otherwise, always reply with normal text. You may emit both text and tool calls in the same turn when needed.",
-].join("\n");
-
-// Identical behaviour to notebook-chat's directive, generalised away from the
-// single-"source" wording ("regardless of the sources' language").
-function appendResponseLocaleDirective(
-  rules: string,
-  locale: "tr" | "en",
-  aiResponseLocale: AiResponseLocaleInput,
-): string {
-  if (aiResponseLocale === "follow_source") return rules;
-  const directive =
-    aiResponseLocale === "tr"
-      ? locale === "en"
-        ? "Always respond in Turkish, regardless of the sources' language."
-        : "Yanıtını mutlaka Türkçe ver, kaynaklar hangi dilde olursa olsun."
-      : locale === "en"
-        ? "Always respond in English, regardless of the sources' language."
-        : "Yanıtını mutlaka İngilizce ver, kaynaklar hangi dilde olursa olsun.";
-  return `${rules}\n\n${directive}`;
-}
 
 // Human-readable label for a context block kind, in the active UI locale. Used
 // only as the header of each appended context block so the model knows what it
@@ -164,12 +94,7 @@ function buildSourceWrapper(
 export function buildWorkspaceChatSystem(
   input: WorkspaceChatSystemInput,
 ): SystemBlock[] {
-  const baseRules = input.locale === "en" ? RULES_EN : RULES_TR;
-  const rules = appendResponseLocaleDirective(
-    baseRules,
-    input.locale,
-    input.aiResponseLocale ?? "follow_source",
-  );
+  const rules = buildChatGuidance("workspace", input.locale, input.aiResponseLocale);
 
   const sourceWrappers = input.sources.map((s) =>
     buildSourceWrapper(s, input.locale),

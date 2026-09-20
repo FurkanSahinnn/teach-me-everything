@@ -5017,10 +5017,12 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "keyring",
+ "libc",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "shared_child",
  "sysinfo",
  "tauri",
  "tauri-build",
@@ -5034,7 +5036,9 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "tempfile",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

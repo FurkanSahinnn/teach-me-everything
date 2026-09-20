@@ -17,7 +17,8 @@ describe("buildChatUpstream", () => {
   });
 
   it("rejects when model is missing", () => {
-    const { model: _m, ...rest } = baseBody;
+    const rest: Record<string, unknown> = { ...baseBody };
+    delete rest.model;
     const r = buildChatUpstream(rest, "sk-xxx");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe("invalid_shape");

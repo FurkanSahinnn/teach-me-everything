@@ -16,7 +16,6 @@
 import {
   registerAdapter,
   TtsAdapterError,
-  type SynthesizeArgs,
   type SynthesizeResult,
   type TtsAdapter,
   type TtsReadinessState,
@@ -65,7 +64,7 @@ const adapter: TtsAdapter = {
   getDefaultVoiceForSpeaker(speaker: PodcastSpeaker): string {
     return speaker === "alev" ? "female-tr" : "male-tr";
   },
-  async synthesize(_args: SynthesizeArgs): Promise<SynthesizeResult> {
+  async synthesize(): Promise<SynthesizeResult> {
     throw new TtsAdapterError(
       "not_ready",
       "Web Speech adapter cannot produce saved audio in browser. Open the desktop app.",

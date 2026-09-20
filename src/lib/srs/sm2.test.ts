@@ -86,7 +86,7 @@ describe("computeSm2", () => {
 });
 
 describe("formatNextDue", () => {
-  const pickTr = (tr: string, _en: string) => tr;
+  const pickTr = (tr: string) => tr;
   const pickEn = (_tr: string, en: string) => en;
 
   it("again returns the relearning label per locale", () => {

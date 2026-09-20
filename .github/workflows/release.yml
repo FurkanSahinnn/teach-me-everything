@@ -1,7 +1,8 @@
-# Tag-triggered cross-platform Tauri release.
+# Tag-triggered Windows Tauri release.
 #
 # Push a `v*` tag (e.g. `git tag v1.0.0 && git push --tags`) to build the
-# desktop binaries on all platforms and publish a draft GitHub Release.
+# desktop binaries and create a draft GitHub Release. A draft is NOT visible
+# to the public updater endpoint; publish it after package verification.
 #
 # Required GitHub Secrets:
 #   - TAURI_SIGNING_PRIVATE_KEY          (from `npx tauri signer generate`)
@@ -15,6 +16,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing stable release tag (vX.Y.Z)"
+        required: true
+        type: string
 
 jobs:
   publish-tauri:
@@ -28,8 +34,12 @@ jobs:
             args: ""
 
     runs-on: ${{ matrix.platform }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -48,17 +58,29 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Validate release version and updater configuration
+        run: node scripts/check-release.mjs "$env:RELEASE_TAG"
+
       - name: Build & publish Tauri release
+        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Teach Me Everything ${{ github.ref_name }}"
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "Teach Me Everything ${{ env.RELEASE_TAG }}"
           releaseBody: "Download the installer for your platform from the assets below. Updates are delivered in-app once installed."
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      - name: Validate draft updater assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.tauri.outputs.releaseId }}
+        run: |
+          if (-not $env:RELEASE_ID) { throw "Tauri action did not return a release ID" }
+          node scripts/check-release.mjs "$env:RELEASE_TAG" "$env:RELEASE_ID"

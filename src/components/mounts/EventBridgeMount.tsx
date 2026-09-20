@@ -96,10 +96,12 @@ export function EventBridgeMount(): null {
   const tRef = useRef(t);
   const routerRef = useRef(router);
   const pathnameRef = useRef(pathname);
-  toastRef.current = toast;
-  tRef.current = t;
-  routerRef.current = router;
-  pathnameRef.current = pathname;
+  useEffect(() => {
+    toastRef.current = toast;
+    tRef.current = t;
+    routerRef.current = router;
+    pathnameRef.current = pathname;
+  }, [toast, t, router, pathname]);
 
   useEffect(() => {
     async function handleNewNote(): Promise<void> {

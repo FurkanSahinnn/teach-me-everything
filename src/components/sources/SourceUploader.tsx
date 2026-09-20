@@ -134,17 +134,6 @@ export function SourceUploadProvider({
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [open, setOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [vaultModalOpen, setVaultModalOpen] = useState(false);
-  // Single shared deferred — every queue item that hits "vault locked but
-  // key stored" awaits it. The modal resolves it once on close (true if
-  // unlock succeeded, false otherwise), so multiple in-flight uploads all
-  // continue together with the now-available master key. Cleared back to
-  // null after resolution so the next vault-locked event creates a fresh
-  // promise.
-  const vaultDeferredRef = useRef<{
-    promise: Promise<boolean>;
-    resolve: (unlocked: boolean) => void;
-  } | null>(null);
   const dragCounterRef = useRef(0);
   // Mirrors the latest queue so the processing effect's cleanup can tell
   // "user dismissed this item" (item gone) from "ingest pushed a progress
@@ -160,17 +149,10 @@ export function SourceUploadProvider({
   const { toast } = useToast();
   const pick = useLocalePick();
 
-  const requestVaultUnlock = useCallback((): Promise<boolean> => {
-    if (!vaultDeferredRef.current) {
-      let resolveFn: (unlocked: boolean) => void = () => {};
-      const promise = new Promise<boolean>((res) => {
-        resolveFn = res;
-      });
-      vaultDeferredRef.current = { promise, resolve: resolveFn };
-    }
-    setVaultModalOpen(true);
-    return vaultDeferredRef.current.promise;
-  }, []);
+  // Legacy callers may still request a gate; credential storage no longer
+  // has a master-password modal or a deferred unlock operation.
+  const requestVaultUnlock = useCallback(async (): Promise<boolean> =>
+    useVault.getState().isUnlocked, []);
 
   const enqueue = useCallback(
     (files: FileList | File[]): void => {
@@ -283,31 +265,6 @@ export function SourceUploadProvider({
     inputRef.current?.click();
   }, []);
 
-  const handleVaultClose = useCallback((): void => {
-    setVaultModalOpen(false);
-    if (vaultDeferredRef.current) {
-      vaultDeferredRef.current.resolve(false);
-      vaultDeferredRef.current = null;
-    }
-  }, []);
-
-  const handleVaultSuccess = useCallback((): void => {
-    if (vaultDeferredRef.current) {
-      vaultDeferredRef.current.resolve(true);
-      vaultDeferredRef.current = null;
-    }
-  }, []);
-
-  // Make sure pending awaiters don't leak if the provider unmounts before
-  // the user closes the modal.
-  useEffect(() => {
-    return () => {
-      if (vaultDeferredRef.current) {
-        vaultDeferredRef.current.resolve(false);
-        vaultDeferredRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     function isFileDrag(e: DragEvent): boolean {
@@ -483,18 +440,17 @@ export function SourceUploadProvider({
           byteSize: parsed.meta.byteSize,
         });
 
-        // Persist the original binary so the reader can render the source
-        // visually (e.g. PDF canvas + textLayer) instead of only the chunked
-        // plain text. Stored only for formats whose viewer benefits from
-        // visual fidelity — txt/md ship as plain text already.
-        if (type === "pdf" || type === "docx") {
-          try {
-            await saveSourceBlob(sid, targetFile);
-          } catch {
-            // Storing the blob is best-effort; the chunked reader still works
-            // without it. A failed save (quota / private mode) just means the
-            // "Original PDF" toggle will surface the missing-blob banner.
-          }
+        // Persist the original file. For PDF/DOCX the reader renders it
+        // visually (canvas + textLayer); for every type it is what a later
+        // re-chunk (Settings → Source structure) rebuilds the chunks from —
+        // chunk text alone cannot be re-split once structure is lost.
+        try {
+          await saveSourceBlob(sid, targetFile);
+        } catch {
+          // Storing the blob is best-effort; the chunked reader still works
+          // without it. A failed save (quota / private mode) just means the
+          // "Original PDF" toggle will surface the missing-blob banner and
+          // re-chunking will ask for a re-upload.
         }
 
         await setIngestStatus(sid, "ready");
@@ -658,7 +614,7 @@ export function SourceUploadProvider({
       docxHandle?.cancel();
       embedHandle?.cancel();
     };
-  }, [queue, workspaceId, pick, toast]);
+  }, [queue, workspaceId, pick, toast, requestVaultUnlock]);
 
   function retry(id: string): void {
     setQueue((q) =>

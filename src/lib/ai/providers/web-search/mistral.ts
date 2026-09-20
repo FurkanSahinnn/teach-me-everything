@@ -24,11 +24,9 @@ export interface MistralWebSearchConnector {
   type: "web_search";
 }
 
-export function buildMistralWebSearchConnector(
-  _opts: WebSearchOptions,
-): MistralWebSearchConnector {
+export const buildMistralWebSearchConnector: (options: WebSearchOptions) => MistralWebSearchConnector = () => {
   return { type: "web_search" };
-}
+};
 
 interface MistralReference {
   url?: string;

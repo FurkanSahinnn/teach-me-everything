@@ -154,7 +154,7 @@ export default function ResearchPage() {
     Map<string, IngestStatusEntry>
   >(new Map());
   const [ingesting, setIngesting] = useState(false);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
   const [keyPresence, setKeyPresence] = useState<Map<string, boolean>>(
     new Map(),
   );
@@ -331,6 +331,7 @@ export default function ResearchPage() {
       });
     }
   }, [
+    masterKey,
     selected,
     ingesting,
     ingestProgress,

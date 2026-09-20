@@ -10,7 +10,6 @@ import {
 import { encodeChatModelBinding } from "./model-options";
 import type {
   ChatProvider,
-  ChatRequest,
   ChatStreamHandle,
   ProviderCapabilities,
   StreamEvent,
@@ -40,7 +39,7 @@ function fakeProvider(events: StreamEvent[]): ChatProvider {
   return {
     id: "anthropic",
     capabilities,
-    streamChat(_req: ChatRequest): ChatStreamHandle {
+    streamChat(): ChatStreamHandle {
       async function* gen() {
         for (const ev of events) yield ev;
       }

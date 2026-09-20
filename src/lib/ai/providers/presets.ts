@@ -3,6 +3,70 @@ import type { CloudProviderId, ProviderId, ProviderPreset } from "./types";
 // Partial because embed-only literals (voyage / cohere / jina / huggingface)
 // have no chat preset — they live in EMBED_PRESETS only.
 export const PROVIDER_PRESETS: Partial<Record<CloudProviderId, ProviderPreset>> = {
+  "claude-cli": {
+    id: "claude-cli",
+    label: "Claude Code (local CLI)",
+    family: "agent-cli",
+    kind: "chat",
+    // Never dialled. The provider spawns a process instead of making a request,
+    // so the URL helpers that read baseUrl skip this preset on an empty string.
+    baseUrl: "",
+    auth: { kind: "bearer" },
+    capabilities: {
+      cacheControl: false,
+      toolUse: "json",
+      streaming: true,
+      vision: false,
+    },
+    defaultModels: { chat: "sonnet" },
+    // The CLI's own aliases rather than pinned ids, so a user tracking the
+    // latest model gets it without TME shipping a new build.
+    availableModels: [
+      { id: "opus", displayName: "Opus", tier: "flagship", hint: "Most capable" },
+      { id: "sonnet", displayName: "Sonnet", tier: "balanced", hint: "Default" },
+      { id: "haiku", displayName: "Haiku", tier: "fast", hint: "Fastest" },
+    ],
+    // Authenticated by the CLI against the user's own plan — there is no key to
+    // store, and no per-token price to quote. Leaving these ids out of PRICING
+    // is deliberate: it hides the price chip instead of printing a dollar
+    // figure a subscriber never pays, or "Free" for something they do.
+    externalAuth: true,
+    freeTier: false,
+    docsUrl: "https://docs.claude.com/en/docs/claude-code",
+  },
+  "codex-cli": {
+    id: "codex-cli",
+    label: "Codex (local CLI)",
+    family: "agent-cli",
+    kind: "chat",
+    baseUrl: "",
+    auth: { kind: "bearer" },
+    capabilities: {
+      cacheControl: false,
+      toolUse: "json",
+      // No token deltas from `codex exec --json`; the flag only says the
+      // transport is async and abortable.
+      streaming: true,
+      vision: false,
+    },
+    defaultModels: { chat: "gpt-6-astra" },
+    // Snapshot of what a ChatGPT-authenticated codex-cli 0.153.4 reported via
+    // `model/list` on 2026-09-06. The picker refreshes this live through the
+    // codex-cli model-fetch adapter; this list is only the offline fallback.
+    availableModels: [
+      { id: "gpt-6-astra", displayName: "GPT-6-Astra", tier: "balanced", hint: "Default" },
+      { id: "gpt-5.6-sol", displayName: "GPT-5.6-Sol", tier: "flagship" },
+      { id: "gpt-5.6-terra", displayName: "GPT-5.6-Terra", tier: "flagship" },
+      { id: "gpt-5.6-luna", displayName: "GPT-5.6-Luna", tier: "flagship" },
+      { id: "gpt-5.5", displayName: "GPT-5.5", tier: "flagship" },
+      { id: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", tier: "fast" },
+    ],
+    // Authenticated by the CLI against the user's ChatGPT plan. Absent from
+    // PRICING on purpose — a subscriber pays no per-token price.
+    externalAuth: true,
+    freeTier: false,
+    docsUrl: "https://developers.openai.com/codex/cli",
+  },
   anthropic: {
     id: "anthropic",
     label: "Anthropic",

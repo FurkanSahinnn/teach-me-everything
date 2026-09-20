@@ -105,7 +105,11 @@ async function runParse(msg: Incoming): Promise<void> {
     }
 
     post({ kind: "progress", id, phase: "chunking", pct: 80 });
-    const chunks = chunkPages({ pages });
+    // Extracted text has no `#` headings to auto-detect from, and a stray
+    // `# comment` inside a code listing must not flip the whole document into
+    // markdown mode — that would switch off the heading heuristics `section`
+    // (and every `[§section]` citation) depends on.
+    const chunks = chunkPages({ pages, format: "plain" });
     post({ kind: "progress", id, phase: "chunking", pct: 96 });
 
     post({

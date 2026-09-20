@@ -1,0 +1,27 @@
+# Local agent-CLI command permissions.
+#
+# Tauri 2.x denies every command by default, so the four commands defined in
+# src-tauri/src/agent_cli.rs need an explicit grant here before the main webview
+# (declared in capabilities/default.json) can invoke them. Without it the
+# renderer gets "agent_cli_start not allowed. Command not found" — the command
+# never runs, so nothing reaches the Rust side to be logged.
+#
+# Both grants execute trusted local software. The probe permits only a bounded
+# --version invocation; sessions additionally permit inference and model
+# discovery profiles plus stdin traffic.
+
+"$schema" = "../gen/schemas/default-permissions-schema.json"
+
+[[permission]]
+identifier = "allow-agent-cli-probe"
+description = "Allow the webview to locate the configured agent CLI and read its version string."
+commands.allow = ["agent_cli_probe"]
+
+[[permission]]
+identifier = "allow-agent-cli-session"
+description = "Allow the webview to start the configured agent CLI, write turns to its stdin, and stop it."
+commands.allow = [
+  "agent_cli_start",
+  "agent_cli_write",
+  "agent_cli_stop",
+]

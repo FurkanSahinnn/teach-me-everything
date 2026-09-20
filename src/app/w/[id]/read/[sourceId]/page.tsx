@@ -1,5 +1,8 @@
 "use client";
 
+import { useChatSession } from "@/lib/ai/runners/chat-session";
+import { createStreamWriter } from "@/lib/ai/runners/stream-writer";
+
 import {
   AlertCircle,
   ArrowLeft,
@@ -9,6 +12,7 @@ import {
   CircleStop,
   CornerUpLeft,
   FileImage,
+  Gauge,
   Globe,
   Highlighter,
   KeyRound,
@@ -52,11 +56,13 @@ import { getAnthropicOAuthChatProvider } from "@/lib/ai/providers/anthropic-oaut
 import { DEFAULT_EMBED_MODEL } from "@/lib/ai/providers/embed-openai";
 import { ProviderError, type ProviderId } from "@/lib/ai/providers/types";
 import { getPreset } from "@/lib/ai/providers/presets";
-import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
 import { findChatOption } from "@/lib/ai/model-options";
 import { getWebSearchAdapter } from "@/lib/ai/web-search/adapter";
 import type { WebCitation, WebSearchUsage } from "@/lib/ai/web-search/types";
-import { resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
+import { presetIsKeyless, resolveAnthropicCredential } from "@/lib/ai/anthropic-credential";
+import { deriveContextFill } from "@/lib/ai/context-window";
+import { buildReaderUserMessage, CHAT_MAX_OUTPUT_TOKENS } from "@/lib/ai/prompts/chat-guidance";
+import { selectFallbackChunks } from "@/lib/ai/retrieval/fallback";
 import { buildNotebookSystem } from "@/lib/ai/prompts/notebook-chat";
 import { buildNotebookTools, type AnthropicTool } from "@/lib/ai/tools";
 import { ingestResearchUrl } from "@/lib/research/ingest";
@@ -78,6 +84,7 @@ import {
   addMessage,
   addToolResult,
   deleteMessage,
+  getThread,
   findOrCreateSourceThread,
   forkThread,
   patchMessageUsage,
@@ -354,14 +361,16 @@ export default function NotebookReaderPage() {
 
   const ws = useWorkspace(workspaceId);
   const source = useSource(sourceId);
-  const chunks = useChunksBySource(sourceId) ?? [];
+  const loadedChunks = useChunksBySource(sourceId);
+  const chunks = useMemo(() => loadedChunks ?? [], [loadedChunks]);
   const highlights = useHighlightsBySource(sourceId) ?? [];
   // Phase 6.9.7 — surface note-sources in chat citations. Workspace-scoped
   // list so the emerald NotebookPen chip can fire for ANY citation whose
   // chunk resolves to a note-source (cross-source retrieval is forward-
   // looking, but the lookup is correct today). Memoize the Set + Map so the
   // ChatBubble useMemo dep doesn't churn on every re-render.
-  const allWorkspaceSources = useSources(workspaceId) ?? [];
+  const loadedAllWorkspaceSources = useSources(workspaceId);
+  const allWorkspaceSources = useMemo(() => loadedAllWorkspaceSources ?? [], [loadedAllWorkspaceSources]);
   const noteSourceById = useMemo(() => {
     const m = new Map<string, { noteId: string | undefined }>();
     for (const s of allWorkspaceSources) {
@@ -380,7 +389,12 @@ export default function NotebookReaderPage() {
   const masterKey = useVault((s) => s.masterKey);
   const { toast } = useToast();
 
-  const threadsForSource = useThreadsBySource(sourceId) ?? [];
+  const loadedThreadsForSource = useThreadsBySource(sourceId);
+  const threadsForSource = useMemo(() => loadedThreadsForSource ?? [], [loadedThreadsForSource]);
+  const { session, status: chatStatus, threadId: runningThreadId } = useChatSession(
+    JSON.stringify(["reader", workspaceId, sourceId]),
+  );
+  const setChatStatus = session.setStatus;
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   // Sort pinned-first then newest. Default to first sorted thread when no
   // explicit selection has been made yet.
@@ -393,10 +407,13 @@ export default function NotebookReaderPage() {
     [threadsForSource],
   );
   const threadId =
-    activeThreadId && sortedThreads.some((t) => t.id === activeThreadId)
-      ? activeThreadId
-      : sortedThreads[0]?.id;
-  const messages = useMessages(threadId) ?? [];
+    (chatStatus.kind === "preparing" || chatStatus.kind === "streaming") && runningThreadId
+      ? runningThreadId
+      : activeThreadId && sortedThreads.some((t) => t.id === activeThreadId)
+        ? activeThreadId
+        : sortedThreads.find((t) => t.id === runningThreadId)?.id ?? sortedThreads[0]?.id;
+  const loadedMessages = useMessages(threadId);
+  const messages = useMemo(() => loadedMessages ?? [], [loadedMessages]);
 
   // Draft text lives INSIDE ChatPanel — keeping it here would re-render
   // the entire ReaderPanel (Reading article + PdfViewer if mounted +
@@ -408,8 +425,7 @@ export default function NotebookReaderPage() {
   // Cleared on send (the chip's text is prepended to the final message) or
   // via the explicit X button on the chip.
   const [quotedText, setQuotedText] = useState<string | null>(null);
-  const [chatStatus, setChatStatus] = useState<ChatStatus>({ kind: "idle" });
-  const [vaultModalOpen, setVaultModalOpen] = useState(false);
+  const [, setVaultModalOpen] = useState(false);
   const [genCardsOpen, setGenCardsOpen] = useState(false);
   // When the user clicks "Karta çevir" on a chat bubble, we capture the
   // exchange into single-mode state and let the modal forward the chat
@@ -553,13 +569,12 @@ export default function NotebookReaderPage() {
       };
       setJournalDraft(draft);
     },
-    [chunks, messages, source, sourceId, workspaceId, ws?.name, ws?.goal],
+    [chunks, messages, source, sourceId, workspaceId, ws],
   );
   // Surfaced to ChatPanel so the dim-mismatch banner can offer a Settings deep
   // link when the most recent retrieval silently skipped chunks (3.3.D guard).
   const [lastSkippedCount, setLastSkippedCount] = useState(0);
 
-  const streamControllerRef = useRef<{ abort: () => void } | null>(null);
   const pendingMessageRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -578,27 +593,39 @@ export default function NotebookReaderPage() {
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      streamControllerRef.current?.abort();
+  const jumpToChunk = useCallback((chunk: ChunkRecord) => {
+    // Phase 6.9.7 — citations resolving to a note-source chunk route to the
+    // notes editor instead of trying to scroll the PDF/article pane. The
+    // chunk lives in chunks table (RAG layer) but its canonical surface is
+    // the markdown vault. Defensive: if noteId is missing (post-cascade
+    // window), fall back to the standard scroll path so the user still sees
+    // *something*.
+    const noteRef = noteSourceById.get(chunk.sourceId);
+    if (noteRef && noteRef.noteId) {
+      router.push(`/w/${workspaceId}/notes?id=${noteRef.noteId}`);
+      return;
+    }
+    // On mobile we may currently be on the chat tab — flip to source first so
+    // the chunk node is mounted before we try to scroll it into view.
+    if (activeTab !== "source") setActiveTab("source");
+    const doScroll = () => {
+      const el = document.getElementById(`chunk-${chunk.id}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.classList.remove("citation-pulse");
+      void el.offsetWidth;
+      el.classList.add("citation-pulse");
+      window.setTimeout(() => {
+        el.classList.remove("citation-pulse");
+      }, 1400);
     };
-  }, []);
-
-  // chatStatus is sticky — once a `vault_locked` error is set the banner
-  // stays visible until something explicitly resets it. We watch `masterKey`
-  // (the CryptoKey reference, which is freshly derived per unlock) instead of
-  // the `isUnlocked` boolean so that re-unlocking while already unlocked
-  // (e.g. clicking the banner's Unlock link after a stale vault_locked toast)
-  // still re-fires this effect and clears the banner.
-  useEffect(() => {
-    if (!masterKey) return;
-    setChatStatus((prev) => {
-      if (prev.kind === "error" && prev.code === "vault_locked") {
-        return { kind: "idle" };
-      }
-      return prev;
-    });
-  }, [masterKey]);
+    // If we just switched tabs the source pane mounts on the next frame.
+    if (activeTab !== "source") {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(doScroll));
+    } else {
+      doScroll();
+    }
+  }, [noteSourceById, router, workspaceId, activeTab, setActiveTab]);
 
   const runChat = useCallback(
     async (
@@ -612,8 +639,13 @@ export default function NotebookReaderPage() {
         // retry still contains the failed assistant turn — producing both a
         // duplicate "..." bubble and a duplicate user turn in the request.
         historyOverride?: ChatMessageRecord[];
+        deleteMessageIds?: string[];
       },
-    ) => {
+    ) => session.run(async () => {
+      if (opts?.deleteMessageIds) {
+        await Promise.all(opts.deleteMessageIds.map((id) => deleteMessage(id)));
+      }
+      if (session.cancelled) return;
       const useWebSearch = opts?.webSearchEnabled === true;
       // Read fresh from the store — when this fires from MasterPasswordModal's
       // onSuccess via queueMicrotask, the captured `masterKey` from useCallback
@@ -652,7 +684,7 @@ export default function NotebookReaderPage() {
       const chatModelId = chosen.modelId;
       const chatPreset = getPreset(chatPresetId);
       const chatPresetLabel = chatPreset?.label ?? String(chatPresetId);
-      const chatIsLocal = chatPreset ? isLocalUrl(chatPreset.baseUrl) : false;
+      const chatIsKeyless = presetIsKeyless(chatPresetId, chatPreset?.baseUrl ?? "");
 
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
@@ -689,7 +721,7 @@ export default function NotebookReaderPage() {
         }
         apiKey = credential.key;
         authKind = credential.kind;
-      } else if (chatIsLocal) {
+      } else if (chatIsKeyless) {
         // Local self-hosted endpoints (Ollama / LM Studio / llama.cpp) skip
         // the proxy entirely and accept an empty bearer.
         apiKey = "";
@@ -724,12 +756,15 @@ export default function NotebookReaderPage() {
 
       setChatStatus({ kind: "preparing" });
 
-      const thread = await findOrCreateSourceThread(
+      if (session.cancelled) return;
+      const thread = (threadId ? await getThread(threadId) : undefined) ?? await findOrCreateSourceThread(
         workspaceId,
         sourceId,
         sourceRec.title,
       );
 
+      session.bindThread(thread.id);
+      if (session.cancelled) return;
       await addMessage({
         threadId: thread.id,
         workspaceId,
@@ -739,10 +774,10 @@ export default function NotebookReaderPage() {
 
       // Retrieval. If we have any embedded chunks, embed the query via OpenAI
       // and pick top-K. If no embeddings exist yet (e.g. user never added an
-      // OpenAI key), fall back to the first N chunks so the chat still
+      // OpenAI key), fall back to locally ranked chunks so the chat still
       // functions — degraded but not broken.
       const chunksWithEmbeddings = sourceChunks.filter((c) => c.embedding);
-      let promptChunks = sourceChunks.slice(0, RETRIEVAL_FALLBACK_LIMIT);
+      let promptChunks = selectFallbackChunks(sourceChunks, userMessage, RETRIEVAL_FALLBACK_LIMIT);
       let retrievalEmpty = false;
 
       if (chunksWithEmbeddings.length > 0) {
@@ -841,6 +876,7 @@ export default function NotebookReaderPage() {
 
       let streamError: { code: string; message: string } | undefined;
       let interrupted = false;
+      let lastAssistantId: string | undefined;
 
       // OAuth chat is handled server-side by claude-agent-sdk: it spawns the
       // Claude Code CLI with the user's OAuth token, runs the tool round-trip
@@ -851,6 +887,7 @@ export default function NotebookReaderPage() {
       const isOAuth = chatPresetId === "anthropic" && authKind === "oauth";
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        if (session.cancelled) { interrupted = true; break; }
         const initialAssistantContent =
           round === 0 && retrievalEmpty
             ? pick(
@@ -866,6 +903,7 @@ export default function NotebookReaderPage() {
           model: chatModelId,
         });
 
+        lastAssistantId = assistant.id;
         setChatStatus({ kind: "streaming", messageId: assistant.id });
 
         const provider = isOAuth
@@ -877,11 +915,11 @@ export default function NotebookReaderPage() {
           model: chatModelId,
           system,
           messages: apiMessages,
-          maxTokens: 1024,
+          maxTokens: CHAT_MAX_OUTPUT_TOKENS,
           tools,
           tool_choice: { type: "auto" },
         });
-        streamControllerRef.current = { abort: handle.abort };
+        session.current = { abort: handle.abort };
 
         let buffer = initialAssistantContent;
         let tokensIn = 0;
@@ -898,47 +936,12 @@ export default function NotebookReaderPage() {
         const webCitationUrls = new Set<string>();
         let webSearchUsage: WebSearchUsage | undefined;
 
-        const flush = async () => {
-          await setMessageContent(assistant.id, buffer);
-        };
-        // Non-blocking throttled flush: previously every text delta did
-        // `await setMessageContent(...)` inside the SSE for-await loop, which
-        // gated each upstream chunk on a Dexie commit + useLiveQuery + full
-        // React re-render (markdown re-parse of the growing string). On Tauri
-        // WebView the cumulative jank froze the whole UI until stream end.
-        // Now: at most one write in flight, the latest buffer always wins,
-        // and the SSE loop never awaits a write — chunks arrive as fast as
-        // the wire allows. Final `await flush()` after the loop still
-        // guarantees the last bytes land before usage/stopReason is written.
-        let flushTimer: ReturnType<typeof setTimeout> | null = null;
-        let flushInFlight = false;
-        let pendingFlush = false;
-        const runFlush = async (): Promise<void> => {
-          if (flushInFlight) {
-            pendingFlush = true;
-            return;
-          }
-          flushInFlight = true;
-          try {
-            await flush();
-          } finally {
-            flushInFlight = false;
-            if (pendingFlush) {
-              pendingFlush = false;
-              void runFlush();
-            }
-          }
-        };
-        const scheduleFlush = (): void => {
-          if (flushTimer) return;
-          flushTimer = setTimeout(() => {
-            flushTimer = null;
-            void runFlush();
-          }, 80);
-        };
+        const writer = createStreamWriter(() => buffer, (text) => setMessageContent(assistant.id, text));
+        const scheduleFlush = writer.schedule;
 
         try {
           for await (const event of handle.events) {
+            if (session.cancelled) { interrupted = true; break; }
             if (event.kind === "start") {
               tokensIn = event.usage.input_tokens ?? tokensIn;
               cacheRead = event.usage.cache_read_input_tokens ?? cacheRead;
@@ -1007,11 +1010,8 @@ export default function NotebookReaderPage() {
           };
         }
 
-        if (flushTimer) {
-          clearTimeout(flushTimer);
-          flushTimer = null;
-        }
-        await flush();
+        await writer.finish();
+        interrupted ||= session.cancelled;
         await patchMessageUsage(assistant.id, {
           tokensIn: tokensIn || undefined,
           tokensOut: tokensOut || undefined,
@@ -1031,7 +1031,7 @@ export default function NotebookReaderPage() {
           });
         }
 
-        streamControllerRef.current = null;
+        session.current = null;
 
         if (streamError || interrupted) break;
 
@@ -1074,6 +1074,7 @@ export default function NotebookReaderPage() {
         let simplifyExtraText: string | null = null;
 
         for (const tc of parsedCalls) {
+          if (session.cancelled) { interrupted = true; break; }
           const toolUseRecord = await addMessage({
             threadId: thread.id,
             workspaceId,
@@ -1085,6 +1086,11 @@ export default function NotebookReaderPage() {
             toolStatus: "pending",
           });
 
+          if (session.cancelled) {
+            await setToolStatus(toolUseRecord.id, "error");
+            interrupted = true;
+            break;
+          }
           let resultStr = "";
           let status: "ok" | "error" = "ok";
           const handlerCtx = {
@@ -1134,7 +1140,7 @@ export default function NotebookReaderPage() {
               });
             }
           } else if (tc.name === "open_citation") {
-            const r = runOpenCitation(tc.parsed, handlerCtx, jumpToChunk);
+            const r = runOpenCitation(tc.parsed, handlerCtx, (chunk) => { if (session.isObserved) jumpToChunk(chunk); });
             resultStr = summarizeToolResult(tc.name, r);
             status = r.ok ? "ok" : "error";
             if (!r.ok) {
@@ -1190,7 +1196,11 @@ export default function NotebookReaderPage() {
         apiMessages.push({ role: "user", content: userBlocks });
       }
 
-      streamControllerRef.current = null;
+      session.current = null;
+      interrupted ||= session.cancelled;
+      if (interrupted && lastAssistantId) {
+        await patchMessageUsage(lastAssistantId, { interrupted: true });
+      }
 
       if (streamError) {
         const parsed = parseEventCode(streamError.message);
@@ -1237,9 +1247,8 @@ export default function NotebookReaderPage() {
         return;
       }
 
-      setChatStatus({ kind: "idle" });
-    },
-    [locale, aiResponseLocale, masterKey, messages, pick, sourceId, toast, workspaceId],
+    }, pick("Yanıt tamamlanamadı. Lütfen tekrar deneyin.", "Could not complete the response. Please try again.")),
+    [session, setChatStatus, threadId, locale, aiResponseLocale, messages, pick, sourceId, toast, workspaceId, jumpToChunk],
   );
 
   const sendMessage = useCallback(
@@ -1264,8 +1273,8 @@ export default function NotebookReaderPage() {
   );
 
   const cancelStream = useCallback(() => {
-    streamControllerRef.current?.abort();
-  }, []);
+    session.cancel();
+  }, [session]);
 
   const handleRetry = useCallback(
     async (messageId: string) => {
@@ -1296,10 +1305,10 @@ export default function NotebookReaderPage() {
       // the closure's `messages` won't reflect the deletes synchronously.
       const historyOverride = messages.slice(0, userIdx);
       const toDelete = messages.slice(userIdx);
-      await Promise.all(toDelete.map((m) => deleteMessage(m.id)));
       void runChat(userMsg.content, source, chunks, {
         webSearchEnabled,
         historyOverride,
+        deleteMessageIds: toDelete.map((m) => m.id),
       });
     },
     [chatStatus.kind, chunks, messages, runChat, source, webSearchEnabled],
@@ -1307,7 +1316,7 @@ export default function NotebookReaderPage() {
 
   const handleFork = useCallback(
     async (messageId: string) => {
-      if (!threadId) return;
+      if (!threadId || session.isRunning) return;
       try {
         const { newThreadId } = await forkThread(threadId, messageId);
         setActiveThreadId(newThreadId);
@@ -1323,7 +1332,7 @@ export default function NotebookReaderPage() {
         });
       }
     },
-    [pick, threadId, toast],
+    [pick, threadId, toast, session],
   );
 
   // Deep link `?chunk=<id>` — Article Analysis citation chips land here so a
@@ -1407,39 +1416,7 @@ export default function NotebookReaderPage() {
     e.stopPropagation();
   }
 
-  function jumpToChunk(chunk: ChunkRecord) {
-    // Phase 6.9.7 — citations resolving to a note-source chunk route to the
-    // notes editor instead of trying to scroll the PDF/article pane. The
-    // chunk lives in chunks table (RAG layer) but its canonical surface is
-    // the markdown vault. Defensive: if noteId is missing (post-cascade
-    // window), fall back to the standard scroll path so the user still sees
-    // *something*.
-    const noteRef = noteSourceById.get(chunk.sourceId);
-    if (noteRef && noteRef.noteId) {
-      router.push(`/w/${workspaceId}/notes?id=${noteRef.noteId}`);
-      return;
-    }
-    // On mobile we may currently be on the chat tab — flip to source first so
-    // the chunk node is mounted before we try to scroll it into view.
-    if (activeTab !== "source") setActiveTab("source");
-    const doScroll = () => {
-      const el = document.getElementById(`chunk-${chunk.id}`);
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      el.classList.remove("citation-pulse");
-      void el.offsetWidth;
-      el.classList.add("citation-pulse");
-      window.setTimeout(() => {
-        el.classList.remove("citation-pulse");
-      }, 1400);
-    };
-    // If we just switched tabs the source pane mounts on the next frame.
-    if (activeTab !== "source") {
-      window.requestAnimationFrame(() => window.requestAnimationFrame(doScroll));
-    } else {
-      doScroll();
-    }
-  }
+
 
   return (
     <AppShell
@@ -1558,7 +1535,7 @@ export default function NotebookReaderPage() {
               sourceId={sourceId}
               sourceTitle={pick(source.title, source.titleEn ?? source.title)}
               activeThreadId={threadId ?? null}
-              onSelect={setActiveThreadId}
+              onSelect={(id) => { if (!session.isRunning) setActiveThreadId(id); }}
               variant="popover"
             />
           }
@@ -1584,7 +1561,7 @@ export default function NotebookReaderPage() {
           // flips to "done" and the bubble shows the source-was-added
           // confirmation. Surfacing a toast separately so the modal can
           // stay open with the "Eklendi" badge while the user moves on.
-          const currentMasterKey = useVault.getState().masterKey;
+
           const providerId = (usePrefs.getState().modelBindings.researchProvider as
             ResearchProviderId | string);
           const knownProviders: ResearchProviderId[] = [
@@ -2262,8 +2239,8 @@ function ChatPanel({
   aiResponseLocale: AiResponseLocale;
   onAiResponseLocaleChange: (value: AiResponseLocale) => void;
   skippedCount: number;
-  /** Optional quoted passage to show as a chip above the input. The chip is
-   *  prepended to the final message on send and cleared automatically. */
+  /** Optional quoted passage shown as a chip, appended as a distinct quotation
+   *  after the user's question on send, then cleared automatically. */
   quotedText?: string | null;
   onClearQuote?: () => void;
   mode?: ReaderPanelMode;
@@ -2296,6 +2273,12 @@ function ChatPanel({
   // still render a disabled greyed-out chip when unsupported so the user
   // can see the feature exists; tooltip points at Settings → Models.
   const webSearchAvailable = Boolean(onWebSearchToggle);
+
+  // Context fill is derived from the last assistant turn rather than tracked in
+  // separate state: the message record already carries the model and all three
+  // token buckets. Cached tokens count toward it — billing treats them
+  // differently, the context limit does not.
+  const contextFill = useMemo(() => deriveContextFill(messages), [messages]);
   const webSearchSupported = chatOptionMeta?.supportsWebSearch ?? false;
   const isStreaming = chatStatus.kind === "streaming";
   const isPreparing = chatStatus.kind === "preparing";
@@ -2305,18 +2288,14 @@ function ChatPanel({
   const inputDisabled = !sourceReady || chunkCount === 0 || isBusy;
 
   function sendWithQuote(): void {
-    const trimmedDraft = draft.trim();
-    if (quotedText) {
-      // If the user typed a question, prepend the quote; otherwise default
-      // to "explain this" so a click-Sor-then-Enter still does something.
-      const question = trimmedDraft || pick("Bunu açıklar mısın?", "Can you explain this?");
-      onSend(`"${quotedText}" — ${question}`);
-      onClearQuote?.();
-      setDraft("");
-    } else if (trimmedDraft.length > 0) {
-      onSend(draft);
-      setDraft("");
-    }
+    const message = buildReaderUserMessage(draft, quotedText, {
+      selection: t("selected_passage_label"),
+      defaultQuestion: t("selected_passage_question"),
+    });
+    if (!message) return;
+    onSend(message);
+    if (quotedText) onClearQuote?.();
+    setDraft("");
   }
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -2541,7 +2520,7 @@ function ChatPanel({
                 e.preventDefault();
                 sendWithQuote();
               }
-              if (e.key === "Escape" && isStreaming) {
+              if (e.key === "Escape" && isBusy) {
                 e.preventDefault();
                 onCancel();
               }
@@ -2558,7 +2537,7 @@ function ChatPanel({
             disabled={inputDisabled && !isStreaming}
             className="flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] outline-none placeholder:text-ink-4 disabled:cursor-not-allowed disabled:text-ink-4"
           />
-          {isStreaming ? (
+          {isBusy ? (
             <Button
               type="button"
               size="sm"
@@ -2590,7 +2569,7 @@ function ChatPanel({
             <Kbd>⌘</Kbd>
             <Kbd>↵</Kbd>
             <span>{t("gonder_2")}</span>
-            {isStreaming ? (
+            {isBusy ? (
               <>
                 <span className="px-1">·</span>
                 <Kbd>Esc</Kbd>
@@ -2636,6 +2615,22 @@ function ChatPanel({
                 <Globe className="h-3 w-3" aria-hidden />
                 <span>{tWebSearch("toggle_label")}</span>
               </button>
+            ) : null}
+            {contextFill ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 font-mono text-[10.5px]",
+                  contextFill.pct >= 80 ? "text-amber-600" : "text-ink-4",
+                )}
+                title={pick(
+                  `Bağlam ${contextFill.prompt.toLocaleString()} / ${contextFill.size.toLocaleString()} token · ${contextFill.model}`,
+                  `Context ${contextFill.prompt.toLocaleString()} / ${contextFill.size.toLocaleString()} tokens · ${contextFill.model}`,
+                )}
+                data-testid="context-fill"
+              >
+                <Gauge className="h-3 w-3" aria-hidden />
+                {contextFill.pct}%
+              </span>
             ) : null}
             <span>
               {messages.length} {t("mesaj")}
@@ -2731,7 +2726,7 @@ function SelectionPopover({
   selection,
   onAsk,
   onClose,
-  pick: _pick,
+
 }: {
   selection: { text: string; x: number; y: number };
   onAsk: () => void;

@@ -64,14 +64,21 @@ export function VaultSetupModal({
   const [pickedPath, setPickedPath] = useState<string | null>(null);
   const [cloudHint, setCloudHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previousOpen, setPreviousOpen] = useState(open);
+  if (previousOpen !== open) {
+    setPreviousOpen(open);
+    if (open) {
+      setStep("choose");
+      setDefaultPath(null);
+      setDefaultError(false);
+    }
+  }
 
   // Resolve the default vault path once when the modal opens. The Tauri
   // path module isn't available pre-mount, so we defer to the effect.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setStep("choose");
-    setDefaultError(false);
     resolveDefaultVaultPath(VAULT_DEFAULT_FOLDER_NAME)
       .then((p) => {
         if (cancelled) return;

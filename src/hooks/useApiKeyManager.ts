@@ -34,7 +34,7 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
   const [stored, setStored] = useState<Provider[]>([]);
   const [storedLoaded, setStoredLoaded] = useState(false);
   const providersRef = useRef(providers);
-  providersRef.current = providers;
+  useEffect(() => { providersRef.current = providers; }, [providers]);
 
   const refreshStored = useCallback(async () => {
     setStoredLoaded(false);
@@ -152,4 +152,4 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
   };
 }
 
-function noopBool(_open: boolean): void {}
+const noopBool: (open: boolean) => void = () => {};

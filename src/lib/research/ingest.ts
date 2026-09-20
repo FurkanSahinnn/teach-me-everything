@@ -24,7 +24,7 @@ import { fetchArxiv } from "./arxiv-fetch";
 import { fetchDoi } from "./doi-fetch";
 import { getResearchProvider } from "./providers/registry";
 import { ResearchError, type ResearchProviderId, type ResearchResult } from "./providers/types";
-import { classifyUrl } from "./url-classifier";
+import { classifyUrl, type ClassifiedUrl } from "./url-classifier";
 import { fetchYoutubeTranscript } from "./youtube-fetch";
 
 export type ResearchIngestInput = {
@@ -43,6 +43,59 @@ export type ResearchIngestOutput = {
   chunkCount: number;
   byteSize: number;
 };
+
+export type ResearchFetchOptions = {
+  webProvider?: ResearchProviderId;
+  apiKey?: string;
+  signal?: AbortSignal;
+};
+
+export type ResearchFetchOutput = {
+  result: ResearchResult;
+  sourceType: SourceType;
+  displayUrl: string;
+};
+
+/**
+ * Fetch step on its own, so re-chunking an existing URL source can re-pull the
+ * same markdown without re-running the create-source half of the pipeline.
+ */
+export async function fetchResearchContent(
+  classified: Exclude<ClassifiedUrl, { kind: "invalid" }>,
+  opts: ResearchFetchOptions = {},
+): Promise<ResearchFetchOutput> {
+  // Built once so each branch picks it up without re-handling the optional.
+  const fetchOpts: { signal?: AbortSignal } = {};
+  if (opts.signal !== undefined) fetchOpts.signal = opts.signal;
+
+  switch (classified.kind) {
+    case "doi": {
+      const result = await fetchDoi(classified.doi, fetchOpts);
+      return { result, sourceType: "doi", displayUrl: result.url };
+    }
+    case "youtube": {
+      const result = await fetchYoutubeTranscript(classified.videoId, fetchOpts);
+      return { result, sourceType: "youtube", displayUrl: result.url };
+    }
+    case "arxiv": {
+      const result = await fetchArxiv(classified.arxivId, fetchOpts);
+      return { result, sourceType: "arxiv", displayUrl: result.url };
+    }
+    case "web": {
+      const providerId = opts.webProvider ?? "readability";
+      const provider = getResearchProvider(providerId);
+      const req: {
+        url: string;
+        apiKey?: string;
+        signal?: AbortSignal;
+      } = { url: classified.url };
+      if (opts.apiKey !== undefined) req.apiKey = opts.apiKey;
+      if (opts.signal !== undefined) req.signal = opts.signal;
+      const result = await provider.fetchContent(req);
+      return { result, sourceType: "url", displayUrl: result.url };
+    }
+  }
+}
 
 export async function ingestResearchUrl(
   input: ResearchIngestInput,
@@ -76,49 +129,14 @@ export async function ingestResearchUrl(
   }
 
   // Step 1: fetch content from the right channel.
-  let result: ResearchResult;
-  let sourceType: SourceType;
-  let displayUrl: string;
-
-  // Built once so each branch picks it up without re-handling the optional.
-  const fetchOpts: { signal?: AbortSignal } = {};
-  if (input.signal !== undefined) fetchOpts.signal = input.signal;
-
-  switch (classified.kind) {
-    case "doi": {
-      result = await fetchDoi(classified.doi, fetchOpts);
-      sourceType = "doi";
-      displayUrl = result.url;
-      break;
-    }
-    case "youtube": {
-      result = await fetchYoutubeTranscript(classified.videoId, fetchOpts);
-      sourceType = "youtube";
-      displayUrl = result.url;
-      break;
-    }
-    case "arxiv": {
-      result = await fetchArxiv(classified.arxivId, fetchOpts);
-      sourceType = "arxiv";
-      displayUrl = result.url;
-      break;
-    }
-    case "web": {
-      const providerId = input.webProvider ?? "readability";
-      const provider = getResearchProvider(providerId);
-      const req: {
-        url: string;
-        apiKey?: string;
-        signal?: AbortSignal;
-      } = { url: classified.url };
-      if (input.apiKey !== undefined) req.apiKey = input.apiKey;
-      if (input.signal !== undefined) req.signal = input.signal;
-      result = await provider.fetchContent(req);
-      sourceType = "url";
-      displayUrl = result.url;
-      break;
-    }
-  }
+  const fetchOptions: ResearchFetchOptions = {};
+  if (input.webProvider !== undefined) fetchOptions.webProvider = input.webProvider;
+  if (input.apiKey !== undefined) fetchOptions.apiKey = input.apiKey;
+  if (input.signal !== undefined) fetchOptions.signal = input.signal;
+  const { result, sourceType, displayUrl } = await fetchResearchContent(
+    classified,
+    fetchOptions,
+  );
 
   // Idempotency, second pass: the early check matched the RAW user input, but
   // the row we are about to create stores `url: displayUrl` (the resolved
@@ -156,6 +174,7 @@ export async function ingestResearchUrl(
   try {
     const chunked = chunkPages({
       pages: [{ page: 1, text: result.markdown }],
+      format: "markdown",
     });
     if (chunked.length === 0) {
       // Chunker returning nothing means the body collapsed to whitespace —

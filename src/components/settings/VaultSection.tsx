@@ -6,7 +6,8 @@
 // entirely. Web users see a "desktop app only" notice instead of the
 // controls (the underlying fs adapter throws on web).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useHydrated } from "@/hooks/useHydrated";
 import { useTranslations } from "next-intl";
 // next-intl namespace for the shared cancel/etc strings.
 import { HardDrive, FolderOpen, RefreshCw, Power } from "lucide-react";
@@ -37,9 +38,7 @@ export function VaultSection() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [confirmDisableOpen, setConfirmDisableOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useHydrated();
 
   // Server-render safe: hide controls until we know whether we're in Tauri.
   // Avoids a flash of "desktop app only" notice during hydration in dev mode

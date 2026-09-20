@@ -145,14 +145,16 @@ function OpenRouterModelPicker({ currentId }: { currentId: string }) {
 
   // Keep local state in sync when the stored value changes from elsewhere
   // (e.g. switching to another row and back, or import/restore).
-  useEffect(() => {
+  const [previousEffective, setPreviousEffective] = useState(effective);
+  if (previousEffective !== effective) {
+    setPreviousEffective(effective);
     setDraft(effective);
     setMode(
       OPENROUTER_MODEL_PRESETS.some((p) => p.id === effective)
         ? "preset"
         : "custom",
     );
-  }, [effective]);
+  }
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 pl-10 text-[11.5px] text-ink-3">

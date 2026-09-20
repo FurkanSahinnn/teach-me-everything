@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronDown,
   FileText,
+  GripVertical,
   Headphones,
   Highlighter,
   Layers,
@@ -20,7 +21,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { moveToPosition } from "@/lib/utils/reorder";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 import { Input } from "@/components/ui/Input";
@@ -61,7 +63,7 @@ import { usePrefs } from "@/stores/prefs";
 import { useVault } from "@/stores/vault";
 import { useToast } from "@/components/ui/Toast";
 import { getApiKey, hasApiKey } from "@/lib/db/api-keys-repo";
-import { deleteSource } from "@/lib/db/sources";
+import { compareManualOrder, deleteSource, reorderSources } from "@/lib/db/sources";
 import { runReembed, presetToProviderId } from "@/lib/ingest/reembed";
 import { EMBED_PRESETS, type EmbedPresetId } from "@/lib/ai/providers/embed-presets";
 import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
@@ -69,6 +71,7 @@ import { buildSourceClickHref } from "@/lib/notes/source-routing";
 import type { Provider } from "@/lib/db/schema";
 
 type SortKey =
+  | "manual"
   | "updated_desc"
   | "updated_asc"
   | "created_desc"
@@ -78,6 +81,7 @@ type SortKey =
   | "size_desc";
 
 const SORT_LABEL: Record<SortKey, { tr: string; en: string }> = {
+  manual: { tr: "Özel sıra (sürükle)", en: "Custom order (drag)" },
   updated_desc: { tr: "Güncellenme (yeni → eski)", en: "Updated (newest)" },
   updated_asc: { tr: "Güncellenme (eski → yeni)", en: "Updated (oldest)" },
   created_desc: { tr: "Eklenme (yeni → eski)", en: "Added (newest)" },
@@ -88,6 +92,7 @@ const SORT_LABEL: Record<SortKey, { tr: string; en: string }> = {
 };
 
 const SORT_ORDER: SortKey[] = [
+  "manual",
   "updated_desc",
   "updated_asc",
   "created_desc",
@@ -99,6 +104,8 @@ const SORT_ORDER: SortKey[] = [
 
 function compareSources(a: SourceRecord, b: SourceRecord, key: SortKey): number {
   switch (key) {
+    case "manual":
+      return compareManualOrder(a, b);
     case "updated_desc":
       return b.updatedAt - a.updatedAt;
     case "updated_asc":
@@ -241,7 +248,9 @@ function WorkspaceView({ id }: { id: string }) {
   const t = useTranslations("workspace");
   const pick = useLocalePick();
   const ws = useWorkspace(id);
-  const sources = useSources(id) ?? [];
+  const loadedSources = useSources(id);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
+  const manualIds = useMemo(() => [...sources].sort(compareManualOrder).map((s) => s.id), [sources]);
   const sourceCount = useSourceCount(id) ?? 0;
   const highlightCount = useHighlightCount(id) ?? 0;
   const flashcardCount = useFlashcardCount(id) ?? 0;
@@ -249,7 +258,29 @@ function WorkspaceView({ id }: { id: string }) {
 
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | SourceType>("all");
-  const [sort, setSort] = useState<SortKey>("updated_desc");
+  const [sort, setSort] = useState<SortKey>("manual");
+  // Drag-and-drop reorder (desktop table only). The id being dragged and the
+  // row currently hovered, for the insertion indicator.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  // Mirror of draggingId that the drop handler reads: drop can land before
+  // the dragstart state update has re-rendered the row's closure.
+  const draggingRef = useRef<string | null>(null);
+
+  const handleReorder = useCallback(
+    async (draggedId: string, targetId: string) => {
+      if (draggedId === targetId) return;
+      // Keep hidden sources in the full order; the target's original index
+      // also lets a downward drag reach the last position in one action.
+      try {
+        await reorderSources(id, moveToPosition(manualIds, draggedId, targetId));
+      } catch (error) {
+        toast({ variant: "error", title: pick("Sıralama kaydedilemedi", "Could not save order"),
+          description: error instanceof Error ? error.message : String(error) });
+      }
+    },
+    [manualIds, id, toast, pick],
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -321,18 +352,10 @@ function WorkspaceView({ id }: { id: string }) {
   // Drop selections that no longer point to existing sources (post-delete or
   // post-filter-change). Selection state outliving its rows is the most
   // common cause of "ghost" bulk actions.
-  useEffect(() => {
-    const ids = new Set(sources.map((s) => s.id));
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (ids.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [sources]);
+  const sourceIds = new Set(sources.map((s) => s.id));
+  if ([...selected].some((id) => !sourceIds.has(id))) {
+    setSelected(new Set([...selected].filter((id) => sourceIds.has(id))));
+  }
 
   function toggleSelect(sourceId: string): void {
     setSelected((prev) => {
@@ -653,7 +676,7 @@ function WorkspaceView({ id }: { id: string }) {
           </div>
 
           {sources.length === 0 ? (
-            <EmptySourcesState pageLabel={t("yukle")} />
+            <EmptySourcesState />
           ) : (
             <>
               <SourcesToolbar
@@ -688,14 +711,14 @@ function WorkspaceView({ id }: { id: string }) {
                     )}
                     {...(query ||
                     typeFilter !== "all" ||
-                    sort !== "updated_desc"
+                    sort !== "manual"
                       ? {
                           action: {
                             label: pick("Filtreleri sıfırla", "Reset filters"),
                             onClick: () => {
                               setQuery("");
                               setTypeFilter("all");
-                              setSort("updated_desc");
+                              setSort("manual");
                             },
                           },
                         }
@@ -705,7 +728,8 @@ function WorkspaceView({ id }: { id: string }) {
               ) : (
                 <>
                   <Card className="hidden overflow-hidden md:block">
-                    <div className="grid grid-cols-[28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 border-b border-rule-soft bg-paper-2 px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.04em] text-ink-3">
+                    <div className="grid grid-cols-[20px_28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 border-b border-rule-soft bg-paper-2 px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.04em] text-ink-3">
+                      <span aria-hidden />
                       <SelectAllCheckbox
                         allSelected={allVisibleSelected}
                         someSelected={someVisibleSelected}
@@ -730,6 +754,31 @@ function WorkspaceView({ id }: { id: string }) {
                         selected={selected.has(s.id)}
                         onToggleSelect={toggleSelect}
                         onRequestDelete={setDeleteTargetId}
+                        dragEnabled={sort === "manual"}
+                        dragging={draggingId === s.id}
+                        dragOver={dragOverId === s.id && draggingId !== s.id}
+                        dropAfter={manualIds.indexOf(draggingId ?? "") < manualIds.indexOf(s.id)}
+                        onMove={(direction) => {
+                          const target = manualIds[manualIds.indexOf(s.id) + direction];
+                          if (target) void handleReorder(s.id, target);
+                        }}
+                        onDragStart={(sid) => {
+                          draggingRef.current = sid;
+                          setDraggingId(sid);
+                        }}
+                        onDragOver={setDragOverId}
+                        onDrop={(targetId) => {
+                          const from = draggingRef.current;
+                          draggingRef.current = null;
+                          setDraggingId(null);
+                          setDragOverId(null);
+                          if (from) void handleReorder(from, targetId);
+                        }}
+                        onDragEnd={() => {
+                          draggingRef.current = null;
+                          setDraggingId(null);
+                          setDragOverId(null);
+                        }}
                       />
                     ))}
                   </Card>
@@ -1191,7 +1240,7 @@ function SectionUploadButton({ label }: { label: string }) {
   );
 }
 
-function EmptySourcesState({ pageLabel: _pageLabel }: { pageLabel: string }) {
+function EmptySourcesState() {
   const t = useTranslations("empty_state");
   const { openPicker } = useSourceUpload();
   return (
@@ -1259,6 +1308,15 @@ function SourceRow({
   selected,
   onToggleSelect,
   onRequestDelete,
+  dragEnabled,
+  dragging,
+  dragOver,
+  dropAfter,
+  onMove,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   source: SourceRecord;
   href: string;
@@ -1268,17 +1326,80 @@ function SourceRow({
   selected: boolean;
   onToggleSelect: (id: string) => void;
   onRequestDelete: (id: string) => void;
+  dragEnabled: boolean;
+  dragging: boolean;
+  dragOver: boolean;
+  dropAfter: boolean;
+  onMove: (direction: -1 | 1) => void;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string) => void;
+  onDrop: (targetId: string) => void;
+  onDragEnd: () => void;
 }) {
   const locale = usePrefs((s) => s.locale);
   return (
     <Link
       href={href}
+      // The row is the drop target; the grip is the only drag origin, so a
+      // plain click still navigates and text selection still works.
+      onDragOver={(e) => {
+        if (!dragEnabled) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOver(source.id);
+      }}
+      onDragLeave={() => {
+        if (dragOver) onDragOver("");
+      }}
+      onDrop={(e) => {
+        if (!dragEnabled) return;
+        e.preventDefault();
+        onDrop(source.id);
+      }}
       className={cn(
-        "grid grid-cols-[28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 px-4 py-3 transition-colors hover:bg-paper-2",
+        "relative grid grid-cols-[20px_28px_1fr_110px_130px_150px_120px_36px] items-center gap-4 px-4 py-3 transition-colors hover:bg-paper-2",
         bordered && "border-b border-rule-soft",
         selected && "bg-accent-wash hover:bg-accent-wash",
+        dragging && "opacity-40",
+        // Downward moves land below the target; upward moves land above it.
+        dragOver &&
+          "before:absolute before:inset-x-3 before:h-0.5 before:rounded-full before:bg-accent",
+        dragOver && (dropAfter ? "before:bottom-0" : "before:top-0"),
       )}
     >
+      {dragEnabled ? (
+        <span
+          draggable
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (!["ArrowUp", "ArrowDown", "Enter", " "].includes(e.key)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.key === "ArrowUp") onMove(-1);
+            if (e.key === "ArrowDown") onMove(1);
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", source.id);
+            onDragStart(source.id);
+          }}
+          onDragEnd={onDragEnd}
+          className="flex h-6 w-5 cursor-grab items-center justify-center rounded text-ink-4 hover:bg-paper-3 hover:text-ink-2 active:cursor-grabbing"
+          title={pick("Sürükleyerek sırala", "Drag to reorder")}
+          aria-label={pick("Sırala: sürükle veya yukarı/aşağı ok tuşlarını kullan", "Reorder: drag or use the up/down arrow keys")}
+          data-testid="source-drag-handle"
+        >
+          <GripVertical className="h-3.5 w-3.5" aria-hidden />
+        </span>
+      ) : (
+        <span aria-hidden />
+      )}
       <RowSelectCheckbox
         checked={selected}
         onToggle={() => onToggleSelect(source.id)}

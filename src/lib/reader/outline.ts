@@ -118,6 +118,22 @@ function extractHeadingsFromText(text: string): HeadingCandidate[] {
   const headings: HeadingCandidate[] = [];
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   let inCodeFence = false;
+  // A document that uses `#` headings has told us where its sections are; the
+  // heuristics below exist for extracted PDF text and would otherwise split
+  // an ordered list into one segment per item ("1. …", "2. …").
+  const markdownDoc = /^ {0,3}#{1,6}\s/m.test(text);
+  const trimmedLines = lines.map((l) => l.trim());
+  const neighbourIsOrderedItem = (index: number): boolean => {
+    const probe = (step: number): boolean => {
+      for (let i = index + step; i >= 0 && i < trimmedLines.length; i += step) {
+        const t = trimmedLines[i] ?? "";
+        if (!t) return false;
+        return /^\d+[.)]\s+/.test(t);
+      }
+      return false;
+    };
+    return probe(-1) || probe(1);
+  };
 
   lines.forEach((rawLine, lineIndex) => {
     const trimmed = rawLine.trim();
@@ -137,7 +153,17 @@ function extractHeadingsFromText(text: string): HeadingCandidate[] {
       return;
     }
 
-    if (isNumberedHeading(normalized)) {
+    // A numbered line flanked by other numbered lines is a list, and one that
+    // reads as a sentence is prose — neither is a section title. In a `#`
+    // document numbered lines are never headings: the author had `#` and
+    // chose not to use it. Bold / colon labels stay — LLM lessons lean on them.
+    if (
+      !markdownDoc &&
+      isNumberedHeading(normalized) &&
+      (/^\d+(?:\.\d+)*\s/.test(normalized) ||
+        (!neighbourIsOrderedItem(lineIndex) &&
+          !(/[.!?]$/.test(normalized) && normalized.split(/\s+/).length > 6)))
+    ) {
       headings.push({
         label: normalized,
         level: numberedHeadingLevel(normalized),

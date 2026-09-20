@@ -24,7 +24,8 @@ export default function MindMapPage() {
   const params = useRouteParams<{ id: string }>();
   const workspaceId = params.id;
   const ws = useWorkspace(workspaceId);
-  const concepts = useConceptsByWorkspace(workspaceId) ?? [];
+  const loadedConcepts = useConceptsByWorkspace(workspaceId);
+  const concepts = useMemo(() => loadedConcepts ?? [], [loadedConcepts]);
   const edges = useConceptEdgesByWorkspace(workspaceId) ?? [];
   const t = useTranslations("map");
   const pick = useLocalePick();

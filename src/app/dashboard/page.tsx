@@ -99,7 +99,7 @@ export default function DashboardPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("new") === "workspace") {
-      setCreateOpen(true);
+      queueMicrotask(() => setCreateOpen(true));
       window.history.replaceState(null, "", "/dashboard");
     }
   }, []);

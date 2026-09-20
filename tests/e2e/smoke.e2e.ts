@@ -36,7 +36,7 @@ test.describe("smoke — public routes load without uncaught exceptions", () => 
       // for the report but do not fail (catches dev-only noise + framework
       // warnings + boundary-caught Dexie startup churn).
       if (consoleErrors.length > 0) {
-        // eslint-disable-next-line no-console
+
         console.warn(
           `[${route}] ${consoleErrors.length} console.error events:`,
           consoleErrors,

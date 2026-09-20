@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { Globe } from "lucide-react";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils/cn";
@@ -81,8 +83,8 @@ export function WebCitationChip({
     >
       {favicon ? (
         // Favicons are decorative — assistive tech reads the title attribute
-        // on the chip itself, so the <img> is `alt=""` and `aria-hidden`.
-        <img
+        // on the chip itself, so the image is `alt=""` and `aria-hidden`.
+        <Image unoptimized
           src={favicon}
           alt=""
           aria-hidden

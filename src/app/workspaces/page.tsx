@@ -28,7 +28,8 @@ export default function WorkspacesPage() {
   const t = useTranslations("dashboard");
   const pick = useLocalePick();
   const { toast } = useToast();
-  const workspaces = useWorkspaces() ?? [];
+  const loadedWorkspaces = useWorkspaces();
+  const workspaces = useMemo(() => loadedWorkspaces ?? [], [loadedWorkspaces]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<WorkspaceRecord | null>(null);

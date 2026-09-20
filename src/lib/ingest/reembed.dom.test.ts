@@ -1,7 +1,34 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db/schema";
 import type { ChunkRecord } from "@/lib/db/types";
-import { deriveEmbedStatus, planReembed } from "./reembed";
+import { deriveEmbedStatus, planReembed, runReembed } from "./reembed";
+import { embedSourceChunks } from "./embed";
+
+vi.mock("./embed", () => ({ embedSourceChunks: vi.fn() }));
+
+describe("runReembed concurrent changes", () => {
+  it("does not attach old vectors or mark replacement chunks ready", async () => {
+    await db.chunks.clear();
+    await db.sources.clear();
+    await db.sources.put({ id: "src_1", workspaceId: "ws_1", type: "txt", title: "Source",
+      createdAt: 1, updatedAt: 1, ingestStatus: "ready", embeddingStatus: "missing" });
+    await addChunk({ id: "old", text: "before" });
+    vi.mocked(embedSourceChunks).mockImplementation(() => ({
+      cancel: () => {},
+      promise: (async () => {
+        await db.chunks.delete("old");
+        await addChunk({ id: "new", text: "after" });
+        return { model: "text-embedding-3-small", providerId: "openai" as const, dim: 1536,
+          embeddings: [{ id: "old", vector: new Float32Array(1536) }] };
+      })(),
+    }));
+    const result = await runReembed({ scope: { kind: "source", sourceId: "src_1" },
+      apiKey: "fixture", presetId: "openai-3-small" }).promise;
+    expect(result.done).toBe(0);
+    expect((await db.sources.get("src_1"))?.embeddingStatus).toBe("missing");
+    expect((await db.chunks.get("new"))?.embedding).toBeUndefined();
+  });
+});
 
 // Insert a ChunkRecord without leaking explicit `undefined` fields, which
 // would trip exactOptionalPropertyTypes. Optional embedding fields are only

@@ -41,7 +41,8 @@ export function BacklinksPanel({
   className,
 }: BacklinksPanelProps) {
   const t = useTranslations("notes.backlinks");
-  const rows = useBacklinks(workspaceId, currentNoteTitle) ?? [];
+  const loadedRows = useBacklinks(workspaceId, currentNoteTitle);
+  const rows = useMemo(() => loadedRows ?? [], [loadedRows]);
 
   // Skip self-references — a note that wikilinks to itself shouldn't show
   // up as its own backlink. Also memoise the excerpt extraction so we

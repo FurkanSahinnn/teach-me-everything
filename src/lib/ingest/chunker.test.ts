@@ -47,6 +47,38 @@ describe("isHeadingByPattern", () => {
 });
 
 describe("chunkPages", () => {
+  it.each(["```js", "````md", "~~~python"])("bounds long or unclosed %s blocks", (opener) => {
+    const marker = opener.match(/^(`+|~+)/)![0];
+    const text = opener + "\n" + Array.from({ length: 3000 }, (_, i) => `code_${i} = 1234567890`).join("\n");
+    const out = chunkPages({ pages: [{ page: 1, text }], format: "markdown" });
+    expect(out.length).toBeGreaterThan(2);
+    for (const c of out) {
+      expect(c.tokenCount).toBeLessThanOrEqual(1650);
+      expect(c.text.startsWith(opener)).toBe(true);
+      expect(c.text.endsWith(marker)).toBe(true);
+    }
+    expect(out.at(-1)?.text).toContain("code_2999");
+  });
+
+  it("bounds a single oversized prose or code line", () => {
+    for (const text of ["x".repeat(100000), "```\n" + "x".repeat(100000) + "\n```"]) {
+      const out = chunkPages({ pages: [{ page: 1, text }], format: "markdown" });
+      expect(out.length).toBeGreaterThan(10);
+      expect(out.every((c) => c.tokenCount <= 1650)).toBe(true);
+    }
+  });
+
+  it("retains section metadata when plain PDF text contains a shell comment", () => {
+    const out = chunkPages({ pages: [{ page: 1, text: "1 Introduction\n# install deps\n" + Array(200).fill("ordinary body text ".repeat(10)).join("\n") }], format: "plain" });
+    expect(out[0]?.section).toBe("1 Introduction");
+    expect(out[0]!.tokenCount).toBeLessThan(1200);
+  });
+
+  it("does not repeat complete paragraphs across clean boundaries", () => {
+    const text = Array.from({ length: 30 }, (_, i) => `paragraph-${i} ` + "word ".repeat(120).trimEnd()).join("\n\n");
+    const out = chunkPages({ pages: [{ page: 1, text }], format: "markdown" });
+    expect(out.map((c) => c.text).join("\n\n")).toBe(text);
+  });
   it("returns an empty array for no pages", () => {
     expect(chunkPages({ pages: [] })).toEqual([]);
   });
@@ -133,6 +165,50 @@ describe("chunkPages", () => {
     expect(body).toContain("    nn.Linear(1280, len(class_names))");
     // Blank line between for-loop and assignment must survive too.
     expect(body).toMatch(/param\.requires_grad = False\n\nmodel\.classifier/);
+  });
+
+  it("keeps blank lines so a rule after a paragraph stays a rule, not a setext heading", () => {
+    const text = "# T\n\nFirst paragraph.\n\nSecond paragraph.\n\n---\n\n## Next";
+    const body = chunkPages({ pages: [{ page: 1, text }] })[0]?.text ?? "";
+    expect(body).toContain("First paragraph.\n\nSecond paragraph.\n\n---\n\n## Next");
+  });
+
+  it("collapses runs of blank lines to one", () => {
+    const text = "# T\n\n\n\nA\n\n\n\nB";
+    const body = chunkPages({ pages: [{ page: 1, text }] })[0]?.text ?? "";
+    expect(body).toBe("# T\n\nA\n\nB");
+  });
+
+  it("keeps nested-list indentation in markdown", () => {
+    const text = "# T\n\n- top\n  - nested one\n  - nested two\n- top two";
+    const body = chunkPages({ pages: [{ page: 1, text }] })[0]?.text ?? "";
+    expect(body).toContain("- top\n  - nested one\n  - nested two\n- top two");
+  });
+
+  it("does not mistake ordered-list items for headings in markdown", () => {
+    const text = "# T\n\n1. First Item\n2. Second Item\n3. Third Item";
+    const out = chunkPages({ pages: [{ page: 1, text }] });
+    expect(out[0]?.headings).toEqual(["# T"]);
+    expect(out[0]?.section).toBe("# T");
+  });
+
+  it("still trims and applies heuristics for plain extracted text", () => {
+    const text = "   1.1 Section Name\n   body line";
+    const out = chunkPages({ pages: [{ page: 1, text }], format: "plain" });
+    expect(out[0]?.text).toBe("1.1 Section Name\nbody line");
+    expect(out[0]?.section).toBe("1.1 Section Name");
+  });
+
+  it("labels a chunk with the section in force at its first line", () => {
+    const text = ["## A", paragraph(3200), "", "## B", paragraph(3200), "", "## C", "tail"].join("\n");
+    const out = chunkPages({ pages: [{ page: 1, text }] });
+    expect(out.length).toBeGreaterThanOrEqual(2);
+    // No chunk may claim a section that starts after its own first line.
+    for (const c of out) {
+      const firstLine = c.text.split("\n")[0] ?? "";
+      if (firstLine.startsWith("## ")) expect(c.section).toBe(firstLine);
+    }
+    expect(out[0]?.section).toBe("## A");
   });
 
   it("does not treat indented Python lines as headings inside fences", () => {

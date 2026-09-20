@@ -133,7 +133,8 @@ export function buildChatUpstream(
     } else {
       headers["authorization"] = `Bearer ${apiKey}`;
     }
-    const { model: _m, ...geminiBody } = forwardBody;
+    const geminiBody = { ...forwardBody };
+    delete geminiBody.model;
     return {
       ok: true,
       request: {

@@ -74,12 +74,12 @@ export function findChunkForRef(
 }
 
 export function CitationChip({
-  ref,
+  citationRef: ref,
   active,
   onActivate,
   tone = "default",
 }: {
-  ref: string;
+  citationRef: string;
   active: boolean;
   onActivate: () => void;
   tone?: CitationTone;

@@ -80,6 +80,10 @@ export type SourceRecord = {
   // Wall-clock ms timestamp of the last successful embed. Surfaces in the
   // "Last synced X ago" tooltip and lets E2E tests assert progress.
   lastEmbeddedAt?: number | undefined;
+  // User-arranged position in the workspace's source list (drag-and-drop).
+  // Absent on sources never reordered; those sort after positioned ones by
+  // createdAt. Not indexed — lists are small and sorted in memory.
+  sortOrder?: number | undefined;
   createdAt: number;
   updatedAt: number;
 };

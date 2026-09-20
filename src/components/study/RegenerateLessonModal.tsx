@@ -53,7 +53,7 @@ export function RegenerateLessonModal({
   const customEndpoint = findCustomEndpoint(modelId.split("::")[0] ?? "");
 
   const [running, setRunning] = useState(false);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
   const [estimateTokens, setEstimateTokens] = useState(0);
   const [resolvedSources, setResolvedSources] = useState<
     LessonNoteGenSource[] | null

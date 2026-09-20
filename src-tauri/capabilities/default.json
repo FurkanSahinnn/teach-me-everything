@@ -29,6 +29,8 @@
     "allow-tts-delete-voice",
     "allow-sysinfo-probe",
     "allow-sysinfo-gpu",
+    "allow-agent-cli-probe",
+    "allow-agent-cli-session",
     {
       "identifier": "opener:allow-open-path",
       "allow": [

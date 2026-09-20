@@ -16,6 +16,12 @@ function chunk(id: string, text: string, extra: Partial<ChunkRecord> = {}): Chun
 }
 
 describe("buildReaderOutline", () => {
+  it("retains PDF section headings beside lists and question headings", () => {
+    const entries = buildReaderOutline([chunk("pdf", "4 Contributions\n1. We propose a method.\n2. We show results.\n\n3 Results\nBody\n2.3 How do we measure catastrophic forgetting in practice?")]);
+    expect(entries.map((e) => e.label)).toEqual([
+      "4 Contributions", "3 Results", "2.3 How do we measure catastrophic forgetting in practice?",
+    ]);
+  });
   it("extracts multiple headings from a single chunk", () => {
     const outline = buildReaderOutline([
       chunk(
@@ -61,6 +67,23 @@ describe("buildReaderOutline", () => {
     ]);
 
     expect(outline.map((item) => item.label)).toEqual(["2.1 Real Heading"]);
+  });
+
+  it("keeps an ordered list in one segment when the document uses # headings", () => {
+    const segments = splitChunkIntoMarkdownSegments(
+      chunk("ck_1", "## Steps\n\n1. First\n2. Second\n3. Third"),
+    );
+    expect(segments).toHaveLength(1);
+  });
+
+  it("does not read ordered-list items or numbered sentences as headings in plain text", () => {
+    const outline = buildReaderOutline([
+      chunk(
+        "ck_1",
+        "1. First item here\n2. Second item here\n3. Third item here\n\n2.1. Dead neurons are a problem that appears when the input is negative.\n\n2.2 Real Heading",
+      ),
+    ]);
+    expect(outline.map((item) => item.label)).toEqual(["2.2 Real Heading"]);
   });
 
   it("splits chunk markdown at heading anchors", () => {

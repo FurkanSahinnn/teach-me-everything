@@ -37,7 +37,8 @@ type Props = {
 export function ExtractConceptsModal({ open, onClose, workspaceId }: Props) {
   const pick = useLocalePick();
   const { toast } = useToast();
-  const sources = useSources(workspaceId) ?? [];
+  const loadedSources = useSources(workspaceId);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
   const masterKey = useVault((s) => s.masterKey);
   const modelId = usePrefs((s) => s.modelBindings.summary);
   const locale = usePrefs((s) => s.locale);

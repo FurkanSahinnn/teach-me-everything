@@ -3,6 +3,8 @@
 // business logic lives in TS / React; this file is intentionally a thin
 // integration layer.
 
+mod agent_cli;
+mod agent_process;
 mod keychain;
 mod sysinfo;
 mod tts;
@@ -48,6 +50,10 @@ pub fn run() {
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_shell::init())
     .invoke_handler(tauri::generate_handler![
+      agent_cli::agent_cli_probe,
+      agent_cli::agent_cli_start,
+      agent_cli::agent_cli_write,
+      agent_cli::agent_cli_stop,
       keychain::keychain_get,
       keychain::keychain_set,
       keychain::keychain_delete,
@@ -60,6 +66,12 @@ pub fn run() {
       sysinfo::sysinfo_probe,
       sysinfo::sysinfo_gpu,
     ])
+    .manage(agent_cli::AgentCliState::default())
+    .on_page_load(|webview, payload| {
+      if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+        webview.state::<agent_cli::AgentCliState>().shutdown();
+      }
+    })
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -78,6 +90,9 @@ pub fn run() {
     .expect("error while building tauri application");
 
   app.run(|_app_handle, _event| {
+    if matches!(_event, tauri::RunEvent::Exit) {
+      _app_handle.state::<agent_cli::AgentCliState>().shutdown();
+    }
     // Phase 7.5.C — macOS routes "Open with TME" through this event.
     // Windows / Linux pass the path as a CLI argument; that path is
     // handled at setup time by `emit_args_open_files`. The cfg gate

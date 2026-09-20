@@ -191,6 +191,8 @@
     "baslat_durdur": "başlat / durdur"
   },
   "reader": {
+    "selected_passage_label": "Seçili metin:",
+    "selected_passage_question": "Bu bölüm ne anlatıyor? Mantığını ve önemli kavramlarını anlaşılır biçimde açıklar mısın? Yararlıysa bir örnek ver.",
     "dashboard": "Kontrol paneli",
     "okuma": "Okuma",
     "bunu_aciklar_misin": "Bunu açıklar mısın?",

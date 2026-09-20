@@ -24,8 +24,7 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { runRoadmapSubtask, RoadmapGenError } from "@/lib/ai/roadmap-gen";
 import { FlashcardGenError, runFlashcardGen } from "@/lib/ai/flashcard-gen";
 import { findChatOption } from "@/lib/ai/model-options";
-import { resolveChatCredentialForPreset } from "@/lib/ai/anthropic-credential";
-import { isLocalUrl } from "@/lib/ai/providers/local-bypass";
+import { presetIsKeyless, resolveChatCredentialForPreset } from "@/lib/ai/anthropic-credential";
 import { getPreset } from "@/lib/ai/providers/presets";
 import { getApiKey } from "@/lib/db/api-keys-repo";
 import { createDeck, createFlashcard } from "@/lib/db/flashcards";
@@ -89,7 +88,8 @@ export function NodeInspector({ roadmap, node, hasChildren, onClose }: Props) {
   }, []);
 
   const router = useRouter();
-  const sources = useSources(roadmap.workspaceId) ?? [];
+  const loadedSources = useSources(roadmap.workspaceId);
+  const sources = useMemo(() => loadedSources ?? [], [loadedSources]);
   const sourceTitleById = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of sources) map.set(s.id, pick(s.title, s.titleEn ?? s.title));
@@ -188,7 +188,7 @@ export function NodeInspector({ roadmap, node, hasChildren, onClose }: Props) {
       const preset = getPreset(option.presetId);
       const custom = findCustomEndpoint(option.presetId);
       const baseUrl = preset?.baseUrl ?? custom?.baseUrl ?? "";
-      const isLocal = isLocalUrl(baseUrl);
+      const isLocal = presetIsKeyless(option.presetId, baseUrl);
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
       if (!isLocal) {
@@ -299,7 +299,7 @@ export function NodeInspector({ roadmap, node, hasChildren, onClose }: Props) {
       const preset = getPreset(option.presetId);
       const custom = findCustomEndpoint(option.presetId);
       const baseUrl = preset?.baseUrl ?? custom?.baseUrl ?? "";
-      const isLocal = isLocalUrl(baseUrl);
+      const isLocal = presetIsKeyless(option.presetId, baseUrl);
       let apiKey = "";
       let authKind: "oauth" | "api-key" | undefined;
       if (!isLocal) {

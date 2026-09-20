@@ -124,8 +124,10 @@ export function NoteTree({
   const t = useTranslations("notes.tree");
   const tActions = useTranslations("notes.tree.actions");
   const tTags = useTranslations("notes.tags");
-  const folders = useNoteFoldersByWorkspace(workspaceId) ?? [];
-  const notes = useNotesByWorkspace(workspaceId) ?? [];
+  const loadedFolders = useNoteFoldersByWorkspace(workspaceId);
+  const folders = useMemo(() => loadedFolders ?? [], [loadedFolders]);
+  const loadedNotes = useNotesByWorkspace(workspaceId);
+  const notes = useMemo(() => loadedNotes ?? [], [loadedNotes]);
   const expandedIds = usePrefs((s) => s.notesUi.expandedFolders);
   const toggleExpanded = usePrefs((s) => s.toggleNotesFolderExpanded);
   const setExpandedFolders = usePrefs((s) => s.setNotesExpandedFolders);
@@ -176,7 +178,8 @@ export function NoteTree({
       cache.set(id, out);
       return out;
     }
-    return walk;
+    for (const folder of folders) walk(folder.id);
+    return (id: string): Set<string> => cache.get(id) ?? new Set<string>();
   }, [folders]);
 
   const tree: RootBucket = useMemo(
@@ -450,7 +453,7 @@ export function NoteTree({
     [folders, notes, descendantsByFolder],
   );
 
-  const onRowDragLeave = useCallback((_event: ReactDragEvent) => {
+  const onRowDragLeave = useCallback(() => {
     // Defer clearing — the next row's dragover will overwrite, and an
     // immediate clear causes flicker between adjacent rows.
     setTimeout(() => setDropTarget(null), 30);
@@ -837,4 +840,3 @@ function countFolderContents(
   }
   return { noteCount, folderCount: allFolders.size - 1 };
 }
-

@@ -2,7 +2,6 @@ import type { SystemBlock } from "@/lib/ai/providers/types";
 import type { ChunkRecord, SourceRecord, WorkspaceRecord } from "@/lib/db/types";
 import type {
   PodcastChapter,
-  PodcastSegment,
   PodcastSourceRef,
   PodcastSpeaker,
 } from "@/lib/podcast/types";

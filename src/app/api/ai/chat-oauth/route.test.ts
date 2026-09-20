@@ -264,7 +264,7 @@ describe("POST /api/ai/chat-oauth", () => {
   it("emits an error frame with friendly text when SDK throws ENOENT (claude binary missing)", async () => {
     scenario = async function* () {
       throw new Error("spawn claude ENOENT");
-      // eslint-disable-next-line no-unreachable
+
       yield;
     };
     const { POST } = await importRoute();

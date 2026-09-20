@@ -1,7 +1,7 @@
 "use client";
 
 import { BookmarkPlus, Loader2, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { Input } from "@/components/ui/Input";
@@ -112,18 +112,21 @@ export function SaveJournalEntryModal({ open, onClose, draft }: Props) {
   const [summary, setSummary] = useState("");
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
   const [aiAttempted, setAiAttempted] = useState(false);
   const cancelRef = useRef<AbortController | null>(null);
 
   // Reset form when a new draft arrives.
-  useEffect(() => {
-    if (!open || !draft) return;
-    setTitle(defaultTitleFrom(draft.question));
-    setTagsText(tagsToString(defaultTagsFrom(draft.source)));
-    setSummary("");
-    setAiAttempted(false);
-  }, [open, draft]);
+  const [previousForm, setPreviousForm] = useState({ open: false, draft });
+  if (previousForm.open !== open || previousForm.draft !== draft) {
+    setPreviousForm({ open, draft });
+    if (open && draft) {
+      setTitle(defaultTitleFrom(draft.question));
+      setTagsText(tagsToString(defaultTagsFrom(draft.source)));
+      setSummary("");
+      setAiAttempted(false);
+    }
+  }
 
   const chatOption = findChatOption(modelId);
   const preset = chatOption ? getPreset(chatOption.presetId) : undefined;

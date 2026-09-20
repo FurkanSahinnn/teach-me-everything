@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  compareManualOrder,
   createNoteSource,
   createSource,
   getNoteSourceByNoteId,
   getSource,
+  listSources,
   markNoteSourceDirty,
   markNoteSourceSynced,
+  reorderSources,
 } from "./sources";
 import { createNote } from "./notes";
 import { db } from "./schema";
@@ -18,6 +21,36 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await db.delete();
+});
+
+describe("sources repo — manual order", () => {
+  it("reorderSources persists positions without bumping updatedAt, and ignores foreign ids", async () => {
+    const ws = await createWorkspace({ name: "W", color: "#000", initials: "W" });
+    const other = await createWorkspace({ name: "Other", color: "#000", initials: "O" });
+    const a = await createSource({ workspaceId: ws.id, type: "md", title: "a" });
+    const b = await createSource({ workspaceId: ws.id, type: "md", title: "b" });
+    const c = await createSource({ workspaceId: ws.id, type: "md", title: "c" });
+    const foreign = await createSource({ workspaceId: other.id, type: "md", title: "x" });
+
+    await reorderSources(ws.id, [c.id, a.id, b.id, foreign.id]);
+
+    const rows = (await listSources(ws.id)).sort(compareManualOrder);
+    expect(rows.map((r) => r.id)).toEqual([c.id, a.id, b.id]);
+    expect((await getSource(a.id))?.updatedAt).toBe(a.updatedAt);
+    expect((await getSource(foreign.id))?.sortOrder).toBeUndefined();
+  });
+
+  it("compareManualOrder puts never-positioned sources after positioned ones, newest first", () => {
+    const base = { workspaceId: "w", type: "md" as const, title: "", ingestStatus: "ready" as const, updatedAt: 0 };
+    const positioned = { ...base, id: "p", sortOrder: 0, createdAt: 1 };
+    const newer = { ...base, id: "n", createdAt: 3 };
+    const older = { ...base, id: "o", createdAt: 2 };
+    expect([older, newer, positioned].sort(compareManualOrder).map((r) => r.id)).toEqual([
+      "p",
+      "n",
+      "o",
+    ]);
+  });
 });
 
 describe("sources repo — Phase 6.9 note-source API", () => {

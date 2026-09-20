@@ -2,16 +2,23 @@ import { describe, expect, it } from "vitest";
 import { PROVIDER_PRESETS, getPreset, isCloudProviderId, listPresets } from "./presets";
 import type { CloudProviderId, ProviderFamily, ProviderId, ToolUseStrategy } from "./types";
 
-const VALID_FAMILIES: ProviderFamily[] = ["anthropic", "openai-compat", "gemini"];
+const VALID_FAMILIES: ProviderFamily[] = [
+  "anthropic",
+  "openai-compat",
+  "gemini",
+  "agent-cli",
+];
 const VALID_TOOL_USE: ToolUseStrategy[] = ["native", "json", "none"];
 
 const LOCAL_IDS: CloudProviderId[] = ["ollama", "lm-studio", "llama-cpp"];
 
 describe("PROVIDER_PRESETS", () => {
-  it("contains exactly 15 presets (12 cloud + 3 local)", () => {
-    expect(Object.keys(PROVIDER_PRESETS).length).toBe(15);
+  it("contains exactly 17 presets (12 cloud + 3 local + 2 agent CLI)", () => {
+    expect(Object.keys(PROVIDER_PRESETS).length).toBe(17);
     const expected: CloudProviderId[] = [
       "anthropic",
+      "claude-cli",
+      "codex-cli",
       "openai",
       "google-gemini",
       "openrouter",
@@ -45,6 +52,12 @@ describe("PROVIDER_PRESETS", () => {
 
   it("baseUrl is a valid http(s) URL — cloud presets use https, local presets use http", () => {
     for (const preset of listPresets()) {
+      // A process-based provider dials nothing, so it carries no URL to
+      // validate — the empty string is the assertion that it stays that way.
+      if (preset.family === "agent-cli") {
+        expect(preset.baseUrl).toBe("");
+        continue;
+      }
       expect(() => new URL(preset.baseUrl)).not.toThrow();
       const url = new URL(preset.baseUrl);
       const isLocal = (LOCAL_IDS as readonly string[]).includes(preset.id);

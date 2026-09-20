@@ -9,6 +9,7 @@
 import type { ProviderId } from "../types";
 import { ANTHROPIC_MODEL_FETCH_ADAPTER } from "./anthropic";
 import { CEREBRAS_MODEL_FETCH_ADAPTER } from "./cerebras";
+import { CODEX_CLI_MODEL_FETCH_ADAPTER } from "./codex-cli";
 import { DEEPSEEK_MODEL_FETCH_ADAPTER } from "./deepseek";
 import { GEMINI_MODEL_FETCH_ADAPTER } from "./gemini";
 import { GLM_MODEL_FETCH_ADAPTER } from "./glm";
@@ -42,6 +43,9 @@ const ADAPTERS = {
   ollama: OLLAMA_MODEL_FETCH_ADAPTER,
   "lm-studio": LM_STUDIO_MODEL_FETCH_ADAPTER,
   "llama-cpp": LLAMA_CPP_MODEL_FETCH_ADAPTER,
+  // Not HTTP: asks the local `codex app-server` what the signed-in account
+  // may use. claude-cli has no entry — the CLI takes bare aliases.
+  "codex-cli": CODEX_CLI_MODEL_FETCH_ADAPTER,
   // perplexity intentionally omitted — no /models catalog endpoint
 } as const satisfies Partial<Record<ProviderId, ModelFetchAdapter>>;
 

@@ -115,6 +115,7 @@ export async function embedNoteAsSource(
   // pages are conceptually one big page until paging becomes meaningful.
   const chunked = chunkPages({
     pages: [{ page: 1, text: note.content }],
+    format: "markdown",
   });
 
   // Defensive: a fully-empty note produces no chunks. Mark the source as

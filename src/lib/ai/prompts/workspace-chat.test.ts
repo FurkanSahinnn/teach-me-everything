@@ -123,8 +123,8 @@ describe("buildWorkspaceChatSystem", () => {
   it("embeds the hybrid grounding rule + multi-source citation format in TR", () => {
     const rules = buildWorkspaceChatSystem(baseInput()).at(0)?.text ?? "";
     // hybrid grounding: general knowledge allowed but must be flagged
-    expect(rules).toContain("Kaynaklarında bu yok — genel bilgiyle:");
-    expect(rules).toContain("ASLA çelişme");
+    expect(rules).toContain("genel bilginle tamamlayabilirsin");
+    expect(rules).toContain("Kaynağı sorgulanamaz otorite kabul etme");
     // multi-source citation marker
     expect(rules).toContain("[§<kaynak-başlığı> · <bölüm>]");
   });
@@ -132,8 +132,8 @@ describe("buildWorkspaceChatSystem", () => {
   it("embeds the hybrid grounding rule + multi-source citation format in EN", () => {
     const rules =
       buildWorkspaceChatSystem(baseInput({ locale: "en" })).at(0)?.text ?? "";
-    expect(rules).toContain("from general knowledge:");
-    expect(rules).toContain("NEVER contradict the sources");
+    expect(rules).toContain("from general knowledge");
+    expect(rules).toContain("Do not treat sources as infallible");
     expect(rules).toContain("[§<source-title> · <section>]");
   });
 
@@ -151,13 +151,13 @@ describe("buildWorkspaceChatSystem", () => {
     expect(enForced).toContain("Always respond in English");
   });
 
-  it("does not append a locale directive when aiResponseLocale follows source / is omitted", () => {
+  it("follows the discussed source language with a user-language fallback", () => {
     const followed =
       buildWorkspaceChatSystem(
         baseInput({ aiResponseLocale: "follow_source" }),
       ).at(0)?.text ?? "";
-    expect(followed).not.toContain("mutlaka");
-    expect(followed).not.toContain("Always respond");
+    expect(followed).toContain("kaynağın/seçili pasajın dilini kullan");
+    expect(followed).toContain("son kullanıcı sorusunun dilini kullan");
   });
 
   it("emits an empty <sources></sources> block when the workspace has no sources", () => {
