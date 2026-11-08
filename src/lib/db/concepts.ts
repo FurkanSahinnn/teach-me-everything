@@ -49,6 +49,10 @@ export async function listConceptsByWorkspace(
   return db.concepts.where("workspaceId").equals(workspaceId).toArray();
 }
 
+export async function countConceptsByWorkspace(workspaceId: string): Promise<number> {
+  return db.concepts.where("workspaceId").equals(workspaceId).count();
+}
+
 export async function deleteConceptsByWorkspace(
   workspaceId: string,
 ): Promise<void> {
@@ -83,6 +87,10 @@ export async function listEdgesByWorkspace(
   workspaceId: string,
 ): Promise<ConceptEdgeRecord[]> {
   return db.conceptEdges.where("workspaceId").equals(workspaceId).toArray();
+}
+
+export async function countEdgesByWorkspace(workspaceId: string): Promise<number> {
+  return db.conceptEdges.where("workspaceId").equals(workspaceId).count();
 }
 
 export async function deleteEdgesByWorkspace(

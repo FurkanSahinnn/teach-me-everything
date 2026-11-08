@@ -96,6 +96,7 @@ export {
   Map,
   Network,
   Layers,
+  SquareStack,
   Grid,
   List,
   // Audio / podcast
