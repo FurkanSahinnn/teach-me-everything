@@ -64,6 +64,8 @@ export type CloudProviderId =
   | "claude-cli"
   // Local OpenAI Codex CLI — same transport, ChatGPT subscription auth.
   | "codex-cli"
+  // Local OpenCode CLI over ACP — models from whatever the user connected in OpenCode.
+  | "opencode-cli"
   | "openai"
   // Distinct provider for OpenAI's `/v1/responses` endpoint — needed by the
   // chat-LLM-search wrapper because the built-in `web_search` server tool

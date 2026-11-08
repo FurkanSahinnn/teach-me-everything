@@ -172,6 +172,21 @@ export async function startAgentCli(
   }
 }
 
+/**
+ * The app-owned folder OpenCode sessions run in (created on demand). ACP's
+ * `session/new` takes it as `cwd`; Rust starts the process in the same folder.
+ * Returns `null` on the web build.
+ */
+export async function getAgentWorkspace(): Promise<string | null> {
+  const core = await getCore();
+  if (!core) return null;
+  try {
+    return await core.invoke<string>("agent_cli_workspace");
+  } catch (err) {
+    throw new Error(invokeErrorMessage(err));
+  }
+}
+
 /** Write one NDJSON turn to a running session. */
 export async function writeAgentCli(session: string, line: string): Promise<void> {
   const core = await getCore();

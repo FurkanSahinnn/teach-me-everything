@@ -256,7 +256,9 @@ function configuredPath(): string | undefined {
 
 function configuredEnv(): Record<string, string> {
   try {
-    return usePrefs.getState().agentCli?.env ?? {};
+    const prefs = usePrefs.getState().agentCli;
+    const home = prefs?.claudeHome?.trim();
+    return { ...(prefs?.env ?? {}), ...(home ? { CLAUDE_CONFIG_DIR: home } : {}) };
   } catch {
     return {};
   }

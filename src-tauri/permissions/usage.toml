@@ -1,0 +1,13 @@
+# Usage screen — read-only scan of the local Claude Code / Codex session logs.
+#
+# Tauri 2.x denies every command by default. This permission lets the main
+# webview (capabilities/default.json) invoke `usage_scan` from
+# src-tauri/src/usage.rs. The command only reads token counters under
+# `<claudeHome>/projects` and `<codexHome>/sessions`.
+
+"$schema" = "../gen/schemas/default-permissions-schema.json"
+
+[[permission]]
+identifier = "allow-usage-scan"
+description = "Allow the webview to aggregate token usage from the local Claude Code and Codex session logs."
+commands.allow = ["usage_scan"]

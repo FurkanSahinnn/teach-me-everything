@@ -1,206 +1,88 @@
 # Static Export Workspace Routing
 
-Date: 2026-06-13
+How runtime workspace routes (`/w/<id>/...`) work under the Tauri static export. This is unrelated to updater signing keys: those only verify update artifacts and never affect routing or Dexie data.
 
-## Summary
+## Problem
 
-Workspace routes use runtime-generated IDs such as `/w/ws_xxx`, but the Tauri
-desktop build uses Next.js static export mode. Static export cannot know user
-created workspace IDs at build time, so the app only emits placeholder shells:
+The desktop app ships `next build` with `output: "export"` (`npm run build:export`, which sets `NEXT_OUTPUT_EXPORT=true`; see `next.config.ts`). Workspace, source, lesson, podcast, roadmap and analysis ids are created at runtime, so they cannot be pre-rendered. Only placeholder shells are emitted under `/w/_/...`:
 
-```text
-/w/_
-/w/_/cards
-/w/_/read/_
-/w/_/audio/_
-/w/_/roadmap/_
-/w/_/study/_
-/w/_/study/journal
-```
+- `src/app/w/[id]/layout.tsx`: `generateStaticParams` returns `[{ id: "_" }]` and `dynamicParams = false`.
+- Each two-level child has its own `[childId]/layout.tsx` returning `[{ <childId>: "_" }]` (see the list below).
 
-If a real route like `/w/ws_xxx` reaches Next/Tauri without a fallback, Next
-treats it as an ungenerated dynamic route and shows the global 404 page.
+A request for `/w/ws_abc/cards/` has no file in the export and the asset resolver would answer with the global 404. Four layers close the gap.
 
-This issue is unrelated to GitHub release signing secrets or updater keys.
-Signing keys only verify updater artifacts; they do not affect app routing or
-Dexie workspace records.
+## 1. Dev and server rewrites (`next.config.ts`)
 
-## Symptom
-
-Selecting any workspace, including a newly created one, navigates to the global
-404 screen:
+In non-export builds `workspaceDevRewrites()` is returned from `rewrites()` as `beforeFiles` rules. Order matters, specific rules first:
 
 ```text
-404
-Sayfa bulunamadi
+/w/:id/audio/:podcastId     -> /w/_/audio/_?workspaceId=:id&podcastId=:podcastId
+/w/:id/read/:sourceId       -> /w/_/read/_?workspaceId=:id&sourceId=:sourceId
+/w/:id/roadmap/:roadmapId   -> /w/_/roadmap/_?workspaceId=:id&roadmapId=:roadmapId
+/w/:id/analysis/:analysisId -> /w/_/analysis/_?workspaceId=:id&analysisId=:analysisId
+/w/:id/study/journal        -> /w/_/study/journal?workspaceId=:id
+/w/:id/study/:lessonId      -> /w/_/study/_?workspaceId=:id&lessonId=:lessonId
+/w/:id/:path*               -> /w/_/:path*?workspaceId=:id      (catch-all)
+/w/:id                      -> /w/_?workspaceId=:id
 ```
 
-The failure can happen even when the workspace exists in IndexedDB. In that
-case, the route shell failed before the client-side workspace lookup could run.
+The export branch of the config has no rewrites; static export cannot run them.
 
-## Root Cause
+## 2. Packaged-app asset fallback (`src-tauri/src/lib.rs`)
 
-The parent workspace segment is configured for static export:
+`run()` replaces the built-in `tauri://` handler with `serve_export_asset`. It asks `asset_resolver().get(path)` first; only on a miss does it call `export_shell_fallback(path)` and retry with the result. Existing assets are served unchanged.
 
-- `src/app/w/[id]/layout.tsx`
-- `generateStaticParams()` returns only `{ id: "_" }`
-- `dynamicParams = false`
+`export_shell_fallback` algorithm:
 
-With `dynamicParams = false`, Next.js serves only generated params. In dev or
-server mode, navigating to `/w/<real-id>` directly 404s unless the request is
-rewritten to the placeholder shell. In packaged Tauri/static mode, the asset
-resolver also needs to serve `/w/_/...` when a real runtime ID is requested.
+1. Split the path on `/`. If it is not `/w/<something>/...` return `None`.
+2. Replace segment 2 (workspace id) with `_` unless it is already `_` or empty, or is a tree marker (`__next*` or `$d$*`).
+3. Scan from segment 3. When a segment is in `DYN_PARENTS` (`audio`, `read`, `study`, `roadmap`, `analysis`) the next segment is a runtime id and becomes `_`. Exceptions: empty, already `_`, a tree marker, or `study/journal` (a static route).
+4. Stop at the first tree marker. The Next 16 RSC segment-tree suffix (`__next.w/$d$id/...`) is keyed on placeholder tokens, identical for all ids, and must pass through byte-for-byte.
+5. Return `Some(joined)` only if something changed.
 
-The app therefore needs two matching fallbacks:
+Leaf routes (`cards`, `chat`, `notes`, ...) need only step 2. Unit tests live next to the function in `lib.rs`.
 
-1. Next dev/server rewrite for local development and `tauri dev`.
-2. Tauri static asset fallback for packaged desktop builds.
+## 3. Client recovery (`src/lib/utils/route-params.ts`)
 
-The client then recovers the real ID from the live URL or rewrite query params.
+The shell renders with `useParams()` returning `"_"`. `useRouteParams()` wraps `useParams`, `usePathname` and `useSearchParams` and delegates to the pure `resolveRouteParams(params, pathname, search)`:
 
-## Current Fix
+- If `id` is missing or `_`, take it from the path (`segs[1]`), else from the `workspaceId` query param (set by the dev rewrites).
+- The child param name comes from `DYNAMIC_CHILD` (`audio: podcastId`, `read: sourceId`, `study: lessonId`, `roadmap: roadmapId`, `analysis: analysisId`), looked up by the parent segment. `study/journal` is excluded.
+- Same recovery for `/setup/<step>`.
 
-### 1. Client Param Recovery
+Rule: never use bare `useParams()` under `/w/[id]`; always `useRouteParams()`. Bare `useParams()` returns `"_"` in the export, the workspace lookup fails and the page calls `notFound()`.
 
-File: `src/lib/utils/route-params.ts`
+## 4. Child layouts returning `"_"`
 
-Use `useRouteParams()` instead of `useParams()` under `/w/[id]`.
+Each has `generateStaticParams` returning the placeholder and `dynamicParams = false` (a static literal is required by `output: export`):
 
-It resolves real params from:
+- `src/app/w/[id]/read/[sourceId]/layout.tsx`
+- `src/app/w/[id]/study/[lessonId]/layout.tsx`
+- `src/app/w/[id]/audio/[podcastId]/layout.tsx`
+- `src/app/w/[id]/roadmap/[roadmapId]/layout.tsx`
+- `src/app/w/[id]/analysis/[analysisId]/layout.tsx`
 
-1. `useParams()` when the route is dynamic in dev.
-2. `usePathname()` when Tauri serves a placeholder shell for a real URL.
-3. Rewrite query params, e.g. `workspaceId`, `sourceId`, `lessonId`.
+`src/app/setup/[step]/layout.tsx` is different: it enumerates the real steps `1` to `4`.
 
-Important edge case:
+## Checklist: adding a `/w/[id]` route
 
-```text
-/w/<id>/study/journal
-```
+Leaf route (for example `/w/[id]/foo`): add `src/app/w/[id]/foo/page.tsx` only. The catch-all dev rewrite and step 2 of the Rust fallback already cover it. Read the id with `useRouteParams()`.
 
-`journal` is a static route segment, not a `lessonId`. The helper must not
-recover `lessonId = "journal"`.
+Two-level child route (`/w/[id]/foo/[fooId]`), all four registrations are required or the detail page 404s:
 
-### 2. Next Dev/Server Rewrites
+1. `next.config.ts`: add a `/w/:id/foo/:fooId` rule to `workspaceDevRewrites()` before the catch-all.
+2. `src/lib/utils/route-params.ts`: add `foo: "fooId"` to `DYNAMIC_CHILD`.
+3. `src-tauri/src/lib.rs`: add `"foo"` to `DYN_PARENTS` in `export_shell_fallback` (update the array length) and extend its tests.
+4. `src/app/w/[id]/foo/[fooId]/layout.tsx`: `generateStaticParams` returning `[{ fooId: "_" }]` and `export const dynamicParams = false`.
 
-File: `next.config.ts`
+If the parent has a static sibling child (like `study/journal`), exclude it in all three places (rewrite order, `childParamFor`, the Rust check). Pages treat `fooId === "_"` as "no id".
 
-The non-static-export config defines workspace rewrites such as:
+## Reproduce and verify
 
-```text
-/w/:id                     -> /w/_?workspaceId=:id
-/w/:id/cards               -> /w/_/cards?workspaceId=:id
-/w/:id/read/:sourceId      -> /w/_/read/_?workspaceId=:id&sourceId=:sourceId
-/w/:id/study/journal       -> /w/_/study/journal?workspaceId=:id
-/w/:id/study/:lessonId     -> /w/_/study/_?workspaceId=:id&lessonId=:lessonId
-```
+Both scripts are throwaway checks; they use Playwright and a fixed port.
 
-This keeps visible URLs human-readable (`/w/ws_xxx/cards`) while ensuring Next
-serves a generated placeholder route.
+1. `npm run build:export` (produces `out/`).
+2. `node scripts/serve-out-repro.mjs`: serves `out/` on `http://localhost:4599`, mimicking Tauri (exact file, then `dir/index.html`, else 404 with no SPA fallback). It carries a JavaScript copy of the rewrite in `/w/` paths and logs `REWRITE`, `200`, `404` lines.
+3. In another shell, `node scripts/repro-allroutes.mjs`: injects workspace `repro-ws-1` into IndexedDB (`tme`), hard-loads home, cards, quiz, map, notes, research, roadmap and study/journal, checks there is no "Sayfa bulunamadı" and the workspace name renders, then checks a soft navigation home to cards keeps the page alive. Exits 0 on all pass.
 
-### 3. Tauri Static Asset Fallback
-
-File: `src-tauri/src/lib.rs`
-
-The custom `tauri://` asset handler tries the requested asset first. If it is a
-missing workspace route, it rewrites runtime IDs to `_` and retries:
-
-```text
-/w/ws_xxx                 -> /w/_
-/w/ws_xxx/cards           -> /w/_/cards
-/w/ws_xxx/read/source_1   -> /w/_/read/_
-```
-
-The fallback preserves Next segment-cache markers such as `__next.*` and
-`$d$...`, and keeps `/study/journal` as a static sibling route.
-
-### 4. Turbopack Root Pinning
-
-File: `next.config.ts`
-
-The config pins:
-
-```ts
-turbopack: { root: process.cwd() }
-```
-
-This avoids Next/Turbopack selecting a parent directory as the workspace root
-when another lockfile exists above the repo. Do not replace this with a local
-absolute path.
-
-## Do Not Regress
-
-Do not remove or loosen these pieces independently:
-
-- `dynamicParams = false` in static-exported workspace layouts.
-- Placeholder `generateStaticParams()` entries.
-- `useRouteParams()` usage under `/w/[id]`.
-- Next dev/server workspace rewrites in `next.config.ts`.
-- Tauri asset fallback in `src-tauri/src/lib.rs`.
-- The `/study/journal` special case.
-
-If one layer is changed, verify both dev and static export paths.
-
-## Verification Checklist
-
-Run targeted checks:
-
-```powershell
-npm.cmd run test:run -- src/lib/utils/route-params.test.ts
-cargo test --manifest-path src-tauri\Cargo.toml export_fallback_tests
-npm.cmd run typecheck
-npx eslint next.config.ts src/lib/utils/route-params.ts src/lib/utils/route-params.test.ts scripts/serve-out-repro.mjs
-```
-
-Run static export build:
-
-```powershell
-npm.cmd run build:export
-```
-
-If the build fails while fetching Google Fonts in a restricted environment,
-rerun with network access. That failure is not a route regression.
-
-Expected static export route output includes:
-
-```text
-/w/_
-/w/_/cards
-/w/_/quiz
-/w/_/map
-/w/_/notes
-/w/_/research
-/w/_/roadmap
-/w/_/read/_
-/w/_/audio/_
-/w/_/study/_
-/w/_/study/journal
-```
-
-Run the static routing repro:
-
-```powershell
-node scripts\serve-out-repro.mjs
-node scripts\repro-allroutes.mjs
-```
-
-Expected result:
-
-```text
-OVERALL: ALL PASS
-```
-
-Manual smoke test:
-
-1. Restart the dev app after changing `next.config.ts`.
-2. Open dashboard.
-3. Create or select a workspace.
-4. Confirm the visible URL remains `/w/<workspace-id>`.
-5. Confirm the page is not the global 404.
-6. Open workspace subroutes: cards, quiz, map, notes, research, roadmap,
-   study journal.
-
-## Privacy Note
-
-Do not document local absolute paths in committed files. This routing fix uses
-`process.cwd()` and generic route params, not machine-specific paths.
+The real fallback is the Rust one; the repro server only approximates it. For a final check run the packaged app (`npm run tauri:build`) and open a workspace, a source and a lesson.

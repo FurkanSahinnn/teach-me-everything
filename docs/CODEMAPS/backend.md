@@ -1,78 +1,52 @@
-<!-- Generated: 2026-08-03 | Files scanned: 612 | Token estimate: ~900 -->
+# Backend codemap
 
-# Backend
+The app has no server database. "Backend" here is (1) the `src/app/api/ai/*` route handlers used by the web dev server, (2) the provider/AI/ingest logic in `src/lib/`, which runs in the browser or webview, and (3) the Rust side in `src-tauri/`. See [architecture](architecture.md) for runtime modes and [PROVIDERS](../PROVIDERS.md) / [PROVIDERS_LOCAL](../PROVIDERS_LOCAL.md) for provider details.
 
-There is no application server. "Backend" = (a) Next route handlers that proxy LLM/search calls on **web dev builds only**, and (b) the **Rust Tauri** command surface. In Tauri builds every route handler is bypassed — the client calls upstream directly via `plugin-http`.
+## Route handlers: `src/app/api/ai/*` (web dev only; not built in static export)
 
-## Route Handlers — `src/app/api/ai/`
-
-| Route | Runtime | Flow |
+| Route | Runtime | Role |
 |---|---|---|
-| `POST /api/ai/chat` | edge | `route.ts` → `upstream/chat-request` → provider base URL (SSE passthrough) |
-| `POST /api/ai/chat-responses` | edge | OpenAI Responses API shape → `upstream/responses-request` |
-| `POST /api/ai/chat-oauth` | nodejs | Claude Code OAuth token flow → `upstream/oauth-request` |
-| `POST /api/ai/embed` | edge | `upstream/embed-request` → `embed-fetch` → embed provider |
-| `POST /api/ai/test` | nodejs | `upstream/test-key` — BYOK key validation ping |
-| `GET /api/ai/research` | nodejs | URL extract dispatch → `research/providers/*` |
-| `GET /api/ai/research/youtube` | nodejs | `research/youtube-fetch` (transcript) |
+| `chat/route.ts` | edge | Chat proxy for anthropic / openai-compat / gemini families; request building in `lib/ai/upstream/chat-request.ts` (`buildChatUpstream`) |
+| `chat-responses/route.ts` | edge | OpenAI Responses API proxy (native `web_search`); `upstream/responses-request.ts` |
+| `chat-oauth/route.ts` | nodejs | Anthropic OAuth chat through `@anthropic-ai/claude-agent-sdk`; `upstream/oauth-request.ts` |
+| `embed/route.ts` | edge | Embedding proxy; `upstream/embed-request.ts`, `embed-fetch.ts` |
+| `test/route.ts` | nodejs | Key / connectivity test per provider |
+| `research/route.ts` | nodejs | CORS-bypass fetch for the readability extractor, with private-host (SSRF) guard |
+| `research/youtube/route.ts` | nodejs | YouTube transcript via `youtube-transcript` |
 
-All are `dynamic = "force-dynamic"`. Keys arrive per-request from the client and are never persisted server-side.
+## `src/lib/ai/`
 
-## Provider Layer — `src/lib/ai/providers/`
+- **Providers** (`providers/`): `types.ts` (`ProviderId`, `ProviderFamily` = anthropic | openai-compat | gemini | agent-cli, `ChatProvider`, `EmbedProvider`, `StreamEvent`); `presets.ts` (`PROVIDER_PRESETS`, `getPreset`); `registry.ts` (`getChatProvider`, `getEmbedProvider`, `listChatProviderIds`); implementations `anthropic.ts`, `anthropic-oauth.ts`, `openai-compat.ts`, `openai-responses.ts`, `gemini.ts` (+ `gemini-retry.ts`), `claude-cli.ts`, `codex-cli.ts`, `codex-app-server.ts`, `opencode-cli.ts` (provider, ACP catalog), `opencode-acp.ts` (ACP streaming); `tool-translator.ts`; `local-bypass.ts` (`isLocalUrl`).
+- **Embeddings:** `providers/embed-presets.ts` (`EMBED_PRESETS`) and `embed-{openai,openai-compat,gemini,cohere,jina,voyage,hf}.ts`.
+- **Model lists:** `providers/model-fetch/` (`getModelFetchAdapter`, per-provider adapters, `tier-infer.ts`); cached in Dexie `providerModelsCache`. `model-options.ts`, `quick-start-presets.ts`, `context-window.ts`, `pricing.ts` (`computeCostUsd`).
+- **Web search:** `providers/web-search/` per-provider request/parse adapters (claude, gemini, glm, mistral, openai-responses, openrouter, perplexity, xai) selected via `web-search/adapter.ts` (`getWebSearchAdapter`, `supportsWebSearch`).
+- **Credentials:** `anthropic-credential.ts` (`resolveChatCredentialForPreset`, `presetIsKeyless`; use it instead of `isLocalUrl` for agent-cli presets, which have an empty `baseUrl`).
+- **Agent CLI status:** `agent-status/` (`probeClaudeStatus`, `probeCodexStatus`, parsers for Claude `initialize`/`get_usage` and Codex `account/read`/`account/rateLimits/read`, `useAgentStatus` store with a 5-minute TTL). `provider-catalog.ts` (`buildProviderCatalog`, `filterEnabledChatOptions`) feeds Settings → Providers.
+- **Runners** (`runners/`): request ownership outside React. `chat-session.ts` (`ChatSession`, `useChatSession`), `stream-writer.ts` (`createStreamWriter`), `workspace-chat-runner.ts` (`useWorkspaceChat`), `article-analysis-runner.ts` (`useArticleAnalysisRunner`).
+- **Staged pipelines:** `stage-runner.ts` (`callStage`, `runWithRetry`, `mapWithConcurrency`, `resolveModelBindings`, `StageError` family); `article-analysis.ts` (`runArticleAnalysis`, `MAP_CONCURRENCY`).
+- **Generators:** `quiz-gen`, `quiz-eval`, `flashcard-gen`, `roadmap-gen`, `curriculum-generation`, `lesson-note-generation`, `study-journal-generation`, `podcast-generation`, `concept-extraction`, `cross-analysis`, `translate`. Prompts live in `prompts/` (one file per feature, plus `chat-guidance.ts`).
+- **Chat context / tools:** `context/` (`gatherContextBlocks`, `budget.ts`, blocks for concepts, notes, performance, roadmap); `tools.ts` (`buildNotebookTools`, `buildWorkspaceTools`) and `tool-handlers.ts`; `retrieval.ts` (`topKChunks`, `cosineSim`) with `retrieval/fallback.ts`.
+- **Egress:** `csp-origins.ts` (`SEED_ORIGINS`, `deriveConnectOrigins`; relative imports because `next.config.ts` loads it).
 
-```
-registry.ts  getChatProvider(id) / getEmbedProvider(id) / listChatProviderIds()
-  ├── anthropic.ts · anthropic-oauth.ts · gemini.ts (+gemini-retry)
-  ├── openai-compat.ts · openai-responses.ts · local-bypass.ts
-  ├── presets.ts          16 cloud + 3 local preset descriptors
-  ├── tool-translator.ts  Anthropic tool schema ↔ OpenAI function schema
-  ├── embed-*.ts          openai, openai-compat, gemini, cohere, voyage, jina, hf
-  ├── model-fetch/        per-provider GET /models → ModelDescriptor[] (16 adapters
-  │                       + adapter.ts, tier-infer.ts) — cached in Dexie
-  └── web-search/         claude, gemini, glm, mistral, openai-responses,
-                          openrouter, perplexity, xai
-```
+## Other `src/lib/` backends
 
-Chat entry point everywhere: `getChatProvider(preset).streamChat()` → consumed by `drainStream` + `estimateCost` ([ai/pricing.ts](src/lib/ai/pricing.ts)).
+- `research/`: `ingest.ts` (`ingestResearchUrl`, `fetchResearchContent`), `url-classifier.ts` (`classifyUrl`), `arxiv-fetch.ts`, `doi-fetch.ts`, `youtube-fetch.ts`, `synthesis.ts` (`runSynthesis`), `credential.ts`; `providers/` extractors (readability, firecrawl, exa, jina-reader, tavily, diffbot, brightdata; `registry.ts`, `presets.ts`); `search/` (`searchWithFallback` in `dispatch.ts`, brave, exa, tavily, `chat-llm-search.ts`).
+- `ingest/`: `pdf.ts` + `pdf-worker.ts`, `docx.ts` + `docx-worker.ts` + `docx-html.ts`, `chunker.ts` (`chunkPages`), `embed.ts` (`embedSourceChunks`), `reembed.ts`, `rechunk.ts`, `ingest-pdf-source.ts`.
+- `usage/`: `aggregateUsage` (totals, provider/model shares, daily token and cost series, cost by type, unpriced models), `rangeToSinceMs`, `lookupPricing`/`costFor`; bridge `src/lib/tauri/usage.ts` (`scanUsage`).
+- `podcast/`: `adapter.ts` (`TtsAdapter`, `registerAdapter`), `adapters/{piper,web-speech,experimental-local}.ts`, `synthesize.ts` (`synthesizePodcastAudio`), `audio-assembly.ts`, `compatibility.ts`, `install.ts`, `voices.ts`.
+- `tauri/`: `env.ts` (`isTauriEnvWithOverride`), `fetch.ts` (`tauriFetch`, `smartFetch`), `agent-cli.ts` (`probeAgentCli`, `startAgentCli`, `writeAgentCli`, `stopAgentCli`, `getAgentWorkspace`), `sysinfo.ts`. `crypto/keychain.ts` wraps the `keychain_*` commands.
 
-## AI Orchestration — `src/lib/ai/`
+## Rust: `src-tauri/src/`
 
-| Generator | Entry | Prompt |
-|---|---|---|
-| Article analysis (multi-stage) | `article-analysis.ts` | `prompts/article-analysis.ts` |
-| Workspace chat | `runners/workspace-chat-runner.ts` | `prompts/workspace-chat.ts` |
-| Curriculum (draft-first) | `curriculum-generation.ts` | `prompts/curriculum.ts` |
-| Roadmap DAG | `roadmap-gen.ts` | `prompts/roadmap-gen.ts` |
-| Flashcards / Quiz / Quiz-eval | `flashcard-gen.ts`, `quiz-gen.ts`, `quiz-eval.ts` | `prompts/*` |
-| Concepts | `concept-extraction.ts` | `prompts/concept-extract.ts` |
-| Podcast script | `podcast-generation.ts` | `prompts/podcast-script.ts` |
-| Lesson note / journal | `lesson-note-generation.ts`, `study-journal-generation.ts` | `prompts/*` |
-
-**Article Analysis pipeline** (hand-rolled multi-agent, no LangGraph):
-```
-listChunksBySource (whole doc, NOT topKChunks)
-  → Map: per-section summary+quote (parallel)
-  → Reduce: understanding layer
-  → fan-out: critic ‖ glossary ‖ reflection (Promise.allSettled)
-  → Synthesize: orientation
-malformed stage → status:'draft' + fallbackReason (never hard-fails)
-```
-
-**Retrieval**: [ai/retrieval.ts](src/lib/ai/retrieval.ts) — `topKChunks()` over `cosineSim`/`dotProduct`/`l2Norm` on in-memory Float32Array embeddings. Dim-guarded via `chunks.embeddingDim`.
-
-**Context injection** (workspace chat chips): `ai/context/{notes,concepts,roadmap,performance,budget}` → token-budgeted prompt blocks.
-
-## Rust Commands — `src-tauri/src/` (1706 LOC)
-
-| Module | Commands |
+| File | Contents |
 |---|---|
-| `keychain.rs` | `keychain_get` · `keychain_set` · `keychain_delete` · `keychain_list` |
-| `sysinfo.rs` | `sysinfo_probe` · `sysinfo_gpu` (VRAM probe for TTS gating) |
-| `tts.rs` | `tts_piper_check_readiness` · `tts_piper_synthesize` · `tts_list_installed_voices` · `tts_install_voice` · `tts_delete_voice` |
-| `lib.rs` (565) | app setup, tray, menu, deep-link, `export_shell_fallback` static-route resolver (`DYN_PARENTS`) |
+| `main.rs` | Entry; calls `tme_lib::run` |
+| `lib.rs` | `run()`: registers plugins (http, fs, dialog, notification, autostart, updater, process, opener, shell), `generate_handler!` for 15 commands, tray and app menu, file-open events; `serve_export_asset` + `export_shell_fallback` with `DYN_PARENTS` (audio, read, study, roadmap, analysis) for the static-export shell |
+| `agent_cli.rs` | `agent_cli_probe`, `agent_cli_start`, `agent_cli_write`, `agent_cli_stop`, `agent_cli_workspace`; `AgentCliState` session map; stdout lines pushed over a `tauri::ipc::Channel` |
+| `agent_process.rs` | `ProcessTree`: Windows job object / Unix process-group ownership so the whole CLI tree is killed |
+| `keychain.rs` | `keychain_get/set/delete/list` over the `keyring` crate |
+| `tts.rs` | `tts_piper_check_readiness`, `tts_piper_synthesize`, `tts_list_installed_voices`, `tts_install_voice`, `tts_delete_voice` (Piper via shell plugin; model download via reqwest) |
+| `sysinfo.rs` | `sysinfo_probe`, `sysinfo_gpu` |
+| `usage.rs` | `usage_scan` (read-only scan of Claude Code / Codex session logs, `.jsonl` and `.jsonl.zst` via `ruzstd`; per-file `UsageCache`; returns per-day, per-model token sums) |
 
-## Research / Search — `src/lib/research/`
-
-- Extract providers: `firecrawl` · `exa` · `tavily` · `jina-reader` · `readability` · `diffbot` · `brightdata` → `providers/registry.ts`
-- Search dispatch: `search/dispatch.ts` → `brave`, `brave-unified`, `exa`, `tavily`, `chat-llm-search`
-- Ingest classifiers: `url-classifier` · `doi-fetch` · `arxiv-fetch` · `youtube-fetch` → `ingest.ts`
+Permissions: each custom command needs an `allow-*` entry in `src-tauri/permissions/{agent-cli,keychain,sysinfo,tts}.toml` and that identifier listed in `src-tauri/capabilities/default.json`; otherwise `invoke` is rejected. The same capability file holds plugin permissions (fs scope limited to `$HOME`, `$DOCUMENT`, `$DESKTOP`) and the `http:default` URL allow list, which must be extended by hand for new cloud hosts.

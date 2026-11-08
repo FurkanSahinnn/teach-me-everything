@@ -77,6 +77,25 @@ export async function listQuizSessionsByWorkspace(
   return items.sort((a, b) => b.startedAt - a.startedAt).slice(0, limit);
 }
 
+export type QuizResultSummary = { correct: number; total: number };
+
+/** Correct/total of the workspace's most recently finished quiz, or null. */
+export async function getLatestQuizResult(
+  workspaceId: string,
+): Promise<QuizResultSummary | null> {
+  const sessions = await listQuizSessionsByWorkspace(workspaceId, Number.MAX_SAFE_INTEGER);
+  let latest: QuizSessionRecord | undefined;
+  for (const session of sessions) {
+    if (session.finishedAt === undefined) continue;
+    if (!latest || session.finishedAt > (latest.finishedAt ?? 0)) latest = session;
+  }
+  if (!latest) return null;
+  return {
+    correct: latest.answers.filter((a) => a.correct === true).length,
+    total: latest.items.length,
+  };
+}
+
 export async function deleteQuizSession(id: string): Promise<void> {
   await db.quizSessions.delete(id);
 }

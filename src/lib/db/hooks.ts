@@ -27,9 +27,12 @@ import {
   listChunksByWorkspace,
 } from "./chunks";
 import {
+  countConceptsByWorkspace,
+  countEdgesByWorkspace,
   listConceptsByWorkspace,
   listEdgesByWorkspace,
 } from "./concepts";
+import { getLatestQuizResult } from "./quiz-sessions";
 import {
   countSources,
   getSource,
@@ -192,6 +195,30 @@ export function useConceptEdgesByWorkspace(workspaceId: string | undefined) {
       workspaceId ? listEdgesByWorkspace(workspaceId) : Promise.resolve([]),
     [workspaceId],
     [],
+  );
+}
+
+export function useConceptCount(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () => (workspaceId ? countConceptsByWorkspace(workspaceId) : Promise.resolve(0)),
+    [workspaceId],
+    0,
+  );
+}
+
+export function useConceptEdgeCount(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () => (workspaceId ? countEdgesByWorkspace(workspaceId) : Promise.resolve(0)),
+    [workspaceId],
+    0,
+  );
+}
+
+export function useLatestQuizResult(workspaceId: string | undefined) {
+  return useLiveQuery(
+    () => (workspaceId ? getLatestQuizResult(workspaceId) : Promise.resolve(null)),
+    [workspaceId],
+    null,
   );
 }
 

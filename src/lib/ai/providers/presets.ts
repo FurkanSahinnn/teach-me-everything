@@ -67,6 +67,28 @@ export const PROVIDER_PRESETS: Partial<Record<CloudProviderId, ProviderPreset>> 
     freeTier: false,
     docsUrl: "https://developers.openai.com/codex/cli",
   },
+  "opencode-cli": {
+    id: "opencode-cli",
+    label: "OpenCode (local CLI)",
+    family: "agent-cli",
+    kind: "chat",
+    baseUrl: "",
+    auth: { kind: "bearer" },
+    capabilities: { cacheControl: false, toolUse: "json", streaming: true, vision: false },
+    // "default" leaves the model chosen inside OpenCode in place, so the preset
+    // works whichever providers the user connected there.
+    defaultModels: { chat: "default" },
+    // Offline fallback only; the opencode-cli model-fetch adapter lists the
+    // models of the providers connected in OpenCode.
+    availableModels: [
+      { id: "default", displayName: "OpenCode default", tier: "balanced", hint: "Model selected in OpenCode" },
+    ],
+    // OpenCode authenticates each provider itself. Absent from PRICING: the
+    // cost depends on which upstream provider and plan the user picked.
+    externalAuth: true,
+    freeTier: false,
+    docsUrl: "https://opencode.ai/docs",
+  },
   anthropic: {
     id: "anthropic",
     label: "Anthropic",

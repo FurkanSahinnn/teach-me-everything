@@ -49,6 +49,10 @@
   --color-warn:         #A86A1C;
   --color-err:          #8E2F2F;
 
+  /* ---- Color: chart series (categorical, validated per surface) ---- */
+  --color-series-1:     #2a78d6;  /* Codex */
+  --color-series-2:     #eb6834;  /* Claude */
+
   /* ---- Radius (12px central) ---- */
   --radius-xs:          6px;
   --radius-sm:          10px;
@@ -129,6 +133,10 @@
    Surface stratejisi: border ağırlıklı, shadow neredeyse yok.
    ========================================================================= */
 [data-theme="sepia"] {
+  /* ---- Color: chart series (categorical, validated per surface) ---- */
+  --color-series-1:     #2a78d6;  /* Codex */
+  --color-series-2:     #c4501f;  /* Claude */
+
   --color-paper:        #F6EAD2;
   --color-paper-2:      #EFDFC0;
   --color-paper-3:      #E5D2AC;
@@ -188,6 +196,10 @@
   --color-warn:         #D89A4A;
   --color-err:          #C9594A;
 
+  /* ---- Color: chart series (categorical, validated per surface) ---- */
+  --color-series-1:     #3987e5;  /* Codex */
+  --color-series-2:     #d95926;  /* Claude */
+
   --shadow-soft:        0 1px 0 rgb(255 244 224 / 0.03), 0 16px 40px -32px rgb(0 0 0 / 0.85);
   --shadow-medium:      0 1px 0 rgb(255 244 224 / 0.04), 0 20px 56px -28px rgb(0 0 0 / 0.90);
   --shadow-deep:        0 1px 0 rgb(255 244 224 / 0.05), 0 30px 80px -26px rgb(0 0 0 / 0.95);
@@ -231,6 +243,10 @@
   --color-ok:           #3FB950;  /* success.fg                */
   --color-warn:         #D29922;  /* attention.fg              */
   --color-err:          #F85149;  /* danger.fg                 */
+
+  /* ---- Color: chart series (categorical, validated per surface) ---- */
+  --color-series-1:     #3987e5;  /* Codex */
+  --color-series-2:     #d95926;  /* Claude */
 
   --shadow-soft:        0 1px 1px 0 rgb(1 4 9 / 0.60), 0 1px 3px 0 rgb(1 4 9 / 0.60);
   --shadow-medium:      0 1px 1px 0 rgb(1 4 9 / 0.40), 0 3px 6px 0 rgb(1 4 9 / 0.80);

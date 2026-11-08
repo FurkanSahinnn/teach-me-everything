@@ -475,7 +475,7 @@ export function GenerateScriptModal({
                   "No installed voices for this provider. ",
                 )}
                 <a
-                  href="/settings#models"
+                  href="/settings/models"
                   className="font-medium text-accent-ink underline"
                 >
                   {pick(

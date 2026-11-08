@@ -311,7 +311,7 @@ function CostChip() {
         : `~$${totalUsd.toFixed(2)}`;
   return (
     <Link
-      href="/settings#cost"
+      href="/settings/usage"
       title={t("topbar_tooltip")}
       aria-label={t("topbar_tooltip")}
       className={cn(

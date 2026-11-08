@@ -3,6 +3,7 @@ import { AnthropicChatProvider } from "./anthropic";
 import { getAnthropicOAuthChatProvider } from "./anthropic-oauth";
 import { ClaudeCliChatProvider } from "./claude-cli";
 import { CodexCliChatProvider } from "./codex-cli";
+import { OpencodeCliChatProvider } from "./opencode-cli";
 import { CohereEmbedProvider } from "./embed-cohere";
 import { GeminiEmbedProvider } from "./embed-gemini";
 import { HuggingFaceEmbedProvider } from "./embed-hf";
@@ -67,6 +68,7 @@ function constructChatProvider(id: ProviderId): ChatProvider {
   // family dispatch below would otherwise reject it as unimplemented.
   if (id === "claude-cli") return new ClaudeCliChatProvider();
   if (id === "codex-cli") return new CodexCliChatProvider();
+  if (id === "opencode-cli") return new OpencodeCliChatProvider();
   // Responses API uses a dedicated provider class — Chat Completions can't
   // accept the `web_search` built-in tool that drives chat-LLM search.
   if (id === "openai-responses") return new OpenAIResponsesChatProvider();

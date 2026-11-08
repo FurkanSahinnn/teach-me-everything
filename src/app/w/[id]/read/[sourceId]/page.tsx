@@ -2390,7 +2390,7 @@ function ChatPanel({
           >
             <Languages className="h-3.5 w-3.5" aria-hidden />
           </Button>
-          <Link href="/settings#api" title={pick("API ayarları", "API settings")}>
+          <Link href="/settings/providers" title={pick("API ayarları", "API settings")}>
             <Button
               size="icon-sm"
               variant="ghost"
@@ -2444,7 +2444,7 @@ function ChatPanel({
             `${skippedCount} chunks were embedded with a different model. Reembed for consistent results.`,
           )}
           <Link
-            href="/settings#embed"
+            href="/settings/embedding"
             className="ml-2 underline underline-offset-2"
           >
             {pick("Ayarlardan reembed", "Reembed in Settings")}

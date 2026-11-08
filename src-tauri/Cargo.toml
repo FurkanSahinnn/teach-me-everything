@@ -57,6 +57,12 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 # (wmic on Windows, system_profiler on macOS, lspci on Linux) so we avoid
 # pulling in heavy graphics dependencies like wgpu/ash.
 sysinfo = { version = "0.32", default-features = false, features = ["system", "disk"] }
+# Usage screen: read-only scan of the local Claude Code / Codex session logs.
+# Codex stores rollouts as `.jsonl.zst`; ruzstd is a pure-Rust decoder, so
+# no C toolchain is needed. walkdir and chrono were already in the lock file.
+walkdir = "2.5"
+chrono = "0.4"
+ruzstd = "0.9.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }

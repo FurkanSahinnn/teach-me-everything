@@ -1,14 +1,11 @@
 "use client";
 
 import {
-  BookOpen,
   ChevronDown,
   FileText,
   GripVertical,
   Headphones,
   Highlighter,
-  Layers,
-  Map,
   NotebookPen,
   Plus,
   RefreshCw,
@@ -45,12 +42,17 @@ import {
 } from "@/components/sources/SourceUploader";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import {
+  useConceptCount,
+  useConceptEdgeCount,
+  useDueFlashcardCount,
   useFlashcardCount,
   useHighlightCount,
+  useLatestQuizResult,
   useSourceCount,
   useSources,
   useWorkspace,
 } from "@/lib/db/hooks";
+import { WorkspaceQuickActions } from "@/components/workspaces/WorkspaceQuickActions";
 import type {
   EmbeddingStatus,
   IngestStatus,
@@ -254,6 +256,10 @@ function WorkspaceView({ id }: { id: string }) {
   const sourceCount = useSourceCount(id) ?? 0;
   const highlightCount = useHighlightCount(id) ?? 0;
   const flashcardCount = useFlashcardCount(id) ?? 0;
+  const dueFlashcardCount = useDueFlashcardCount(id) ?? 0;
+  const lastQuiz = useLatestQuizResult(id) ?? null;
+  const conceptCount = useConceptCount(id) ?? 0;
+  const conceptEdgeCount = useConceptEdgeCount(id) ?? 0;
   const { toast } = useToast();
 
   const [query, setQuery] = useState("");
@@ -602,35 +608,17 @@ function WorkspaceView({ id }: { id: string }) {
           </div>
         </header>
 
-        <section className="mb-7 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <QuickAction
-            href={firstSourceHref}
-            icon={BookOpen}
-            title={t("okumaya_basla")}
-            subtitle={pick(
-              "Son okuduğun yerden devam et",
-              "Resume where you left off",
-            )}
-          />
-          <QuickAction
-            href={`/w/${id}/cards`}
-            icon={Layers}
-            title={t("kart_tekrari")}
-            subtitle={t("7_kart_bugun")}
-          />
-          <QuickAction
-            href={`/w/${id}/quiz`}
-            icon={SquareStack}
-            title={t("quiz_baslat")}
-            subtitle={t("4_uzerine_8_soru")}
-          />
-          <QuickAction
-            href={`/w/${id}/map`}
-            icon={Map}
-            title={t("zihin_haritasi")}
-            subtitle={t("42_konsept_89_baglanti")}
-          />
-        </section>
+        <WorkspaceQuickActions
+          workspaceId={id}
+          firstSourceHref={firstSourceHref}
+          stats={{
+            flashcardCount,
+            dueFlashcardCount,
+            lastQuiz,
+            conceptCount,
+            conceptEdgeCount,
+          }}
+        />
 
         <section>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -1273,29 +1261,6 @@ function WorkspaceStat({
       <div className="font-mono text-[16px] font-semibold text-ink">{value}</div>
       <div className="mt-0.5 truncate text-[11.5px] text-ink-4">{label}</div>
     </div>
-  );
-}
-
-function QuickAction({
-  href,
-  icon: Icon,
-  title,
-  subtitle,
-}: {
-  href: string;
-  icon: LucideIcon;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-[var(--radius-lg)] border border-rule bg-paper-2 p-4 shadow-[var(--shadow-soft)] transition-[background,border-color,transform] duration-[160ms] hover:-translate-y-[1px] hover:border-rule-strong hover:bg-paper-3"
-    >
-      <Icon className="h-4 w-4 text-accent" aria-hidden />
-      <div className="mt-4 text-[14px] font-semibold text-ink">{title}</div>
-      <div className="mt-1 text-[12.5px] leading-5 text-ink-3">{subtitle}</div>
-    </Link>
   );
 }
 

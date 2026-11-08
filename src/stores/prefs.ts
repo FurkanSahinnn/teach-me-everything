@@ -43,8 +43,14 @@ export type AgentCliPrefs = {
   claudePath?: string;
   /** Explicit `codex` binary path. Absent or empty means auto-detect. */
   codexPath?: string;
+  /** Explicit `opencode` binary path. Absent or empty means auto-detect. */
+  opencodePath?: string;
   /** Extra environment variables handed to the spawned process. */
   env?: Record<string, string>;
+  /** Claude config directory (`CLAUDE_CONFIG_DIR`). Absolute path; empty means default. */
+  claudeHome?: string;
+  /** Codex home directory (`CODEX_HOME`). Absolute path; empty means default. */
+  codexHome?: string;
 };
 
 export type CustomEndpointFamily = "openai-compat" | "gemini";
@@ -718,6 +724,12 @@ type PrefsState = {
   aiResponseLocale: AiResponseLocale;
   customEndpoints: CustomEndpoint[];
   agentCli: AgentCliPrefs;
+  /**
+   * Provider ids (preset id or `custom:<id>`) the user switched off in
+   * Settings → Providers; they are hidden from model pickers. Persisted state
+   * from before this field merges over the `[]` default, so no migration.
+   */
+  disabledProviders: string[];
   modelBindings: ModelBindings;
   srs: SrsPrefs;
   readerWidth: ReaderWidth;
@@ -772,6 +784,7 @@ type PrefsState = {
   setAiResponseLocale: (value: AiResponseLocale) => void;
   addCustomEndpoint: (endpoint: CustomEndpoint) => void;
   setAgentCli: (value: AgentCliPrefs) => void;
+  setProviderEnabled: (providerId: string, enabled: boolean) => void;
   removeCustomEndpoint: (id: string) => void;
   setCustomEndpointHasKey: (id: string, hasKey: boolean) => void;
   setModelBinding: (task: keyof ModelBindings, value: string) => void;
@@ -852,6 +865,7 @@ export const usePrefs = create<PrefsState>()(
       aiResponseLocale: "follow_source",
       customEndpoints: [],
       agentCli: {},
+      disabledProviders: [],
       modelBindings: { ...DEFAULT_MODEL_BINDINGS },
       srs: { ...DEFAULT_SRS_PREFS },
       readerWidth: "narrow",
@@ -895,6 +909,12 @@ export const usePrefs = create<PrefsState>()(
       },
       setAgentCli: (value) => {
         set({ agentCli: value });
+      },
+      setProviderEnabled: (providerId, enabled) => {
+        set((s) => {
+          const rest = s.disabledProviders.filter((id) => id !== providerId);
+          return { disabledProviders: enabled ? rest : [...rest, providerId] };
+        });
       },
       addCustomEndpoint: (endpoint) => {
         set((s) => ({ customEndpoints: [...s.customEndpoints, endpoint] }));

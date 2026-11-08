@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Network } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Card } from "@/components/ui/Card";
+import { SettingsGroup, SettingsRow } from "@/components/settings/layout/SettingsPrimitives";
 import { Button } from "@/components/ui/Button";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { useWorkspaces } from "@/lib/db/hooks";
@@ -18,29 +17,17 @@ export function ConceptsSection() {
   const [openWorkspaceId, setOpenWorkspaceId] = useState<string | null>(null);
 
   return (
-    <Card padding="md" id="concepts">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Network className="h-4 w-4 text-ink-3" aria-hidden />
-            <h3 className="font-serif text-[15px] font-medium">
-              {pick("Konsept grafiği", "Concept graph")}
-            </h3>
-          </div>
-          <p className="mt-1 text-[12.5px] text-ink-3">
-            {pick(
-              "Workspace başına model bir konsept grafiği üretir; mind map sayfası bu grafiği gezilebilir hale getirir.",
-              "The model produces a concept graph per workspace; the mind map page lets you navigate it.",
-            )}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-2">
+    <>
+      <SettingsGroup>
+        <SettingsRow
+          title={pick("Konsept grafiği", "Concept graph")}
+          description={pick(
+            "Workspace başına model bir konsept grafiği üretir; mind map sayfası bu grafiği gezilebilir hale getirir.",
+            "The model produces a concept graph per workspace; the mind map page lets you navigate it.",
+          )}
+        />
         {list.length === 0 ? (
-          <p className="text-[12.5px] text-ink-3">
-            {pick("Henüz workspace yok.", "No workspaces yet.")}
-          </p>
+          <SettingsRow title={pick("Henüz workspace yok.", "No workspaces yet.")} />
         ) : (
           list.map((w) => (
             <ConceptsRow
@@ -51,7 +38,7 @@ export function ConceptsSection() {
             />
           ))
         )}
-      </div>
+      </SettingsGroup>
 
       {openWorkspaceId ? (
         <ExtractConceptsModal
@@ -60,7 +47,7 @@ export function ConceptsSection() {
           workspaceId={openWorkspaceId}
         />
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -85,29 +72,26 @@ function ConceptsRow({
     0,
   );
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-rule-soft bg-paper-2 px-3 py-2">
-      <div className="min-w-0">
-        <div className="truncate text-[13.5px] font-medium text-ink">
-          {workspaceName}
-        </div>
-        <div className="font-mono text-[11px] text-ink-3">
+    <SettingsRow
+      title={workspaceName}
+      description={
+        <span className="font-mono text-[11px]">
           {count === 0
             ? pick("Henüz konsept çıkarılmadı.", "No concepts yet.")
-            : `${count} ${pick("konsept", "concepts")} · ${pick(
-                "son",
-                "last",
-              )} ${
+            : `${count} ${pick("konsept", "concepts")} · ${pick("son", "last")} ${
                 latest && latest > 0
                   ? formatRelativeDay(latest, pick("tr", "en"))
                   : "—"
               }`}
-        </div>
-      </div>
-      <Button size="sm" onClick={onOpen}>
-        {count === 0
-          ? pick("Çıkar…", "Extract…")
-          : pick("Yeniden çıkar…", "Re-extract…")}
-      </Button>
-    </div>
+        </span>
+      }
+      control={
+        <Button size="sm" onClick={onOpen}>
+          {count === 0
+            ? pick("Çıkar…", "Extract…")
+            : pick("Yeniden çıkar…", "Re-extract…")}
+        </Button>
+      }
+    />
   );
 }

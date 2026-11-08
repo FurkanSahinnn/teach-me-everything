@@ -186,7 +186,7 @@ export function streamCodexAppServer(req: ChatRequest): ChatStreamHandle {
       const prefs = usePrefs.getState().agentCli;
       const path = prefs?.codexPath?.trim();
       const key = await startAgentCli({ session, cli: "codex", args: ["app-server"],
-        env: prefs?.env ?? {}, ...(path ? { path } : {}),
+        env: { ...(prefs?.env ?? {}), ...(prefs?.codexHome?.trim() ? { CODEX_HOME: prefs.codexHome.trim() } : {}) }, ...(path ? { path } : {}),
         stdin: rpc({ id: INIT, method: "initialize", params: {
           clientInfo: { name: "tme", title: "Teach Me Everything", version: "1" },
         } }),

@@ -8,6 +8,7 @@ mod agent_process;
 mod keychain;
 mod sysinfo;
 mod tts;
+mod usage;
 
 use std::borrow::Cow;
 
@@ -54,6 +55,7 @@ pub fn run() {
       agent_cli::agent_cli_start,
       agent_cli::agent_cli_write,
       agent_cli::agent_cli_stop,
+      agent_cli::agent_cli_workspace,
       keychain::keychain_get,
       keychain::keychain_set,
       keychain::keychain_delete,
@@ -65,8 +67,10 @@ pub fn run() {
       tts::tts_delete_voice,
       sysinfo::sysinfo_probe,
       sysinfo::sysinfo_gpu,
+      usage::usage_scan,
     ])
     .manage(agent_cli::AgentCliState::default())
+    .manage(usage::UsageCache::default())
     .on_page_load(|webview, payload| {
       if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
         webview.state::<agent_cli::AgentCliState>().shutdown();
