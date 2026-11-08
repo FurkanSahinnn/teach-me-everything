@@ -23,36 +23,26 @@ export interface ModelPricing {
   cacheCreation: number;
 }
 
-// Anthropic published prompt-caching reads at 10% of input and writes at
-// 1.25x input. Embedding models bill input only.
+// Anthropic list prices, checked 2026-11-08 against
+// https://platform.claude.com/docs/en/about-claude/pricing. `cacheCreation` is
+// the 5-minute cache-write rate (1-hour writes cost more). Cache reads are 0.1x
+// input except Fable 5.1 (0.025x) and Opus 5.5 / Sonnet 5.5 (0.05x). Haiku 5.5
+// is the up-to-100K-token prompt rate. Embedding models bill input only.
 export const PRICING: Record<string, ModelPricing> = {
-  "claude-opus-4-7": {
-    input: 15,
-    output: 75,
-    cacheRead: 1.5,
-    cacheCreation: 18.75,
-  },
-  "claude-sonnet-4-6": {
-    input: 3,
-    output: 15,
-    cacheRead: 0.3,
-    cacheCreation: 3.75,
-  },
-  "claude-haiku-4-5-20251001": {
-    input: 0.8,
-    output: 4,
-    cacheRead: 0.08,
-    cacheCreation: 1.0,
-  },
-  // Undated alias — Anthropic accepts both forms; the alias auto-tracks the
-  // latest haiku-4-5 build. UI catalog + default modelBindings use the alias
-  // so users see "Claude Haiku 4.5" without a confusing date suffix.
-  "claude-haiku-4-5": {
-    input: 0.8,
-    output: 4,
-    cacheRead: 0.08,
-    cacheCreation: 1.0,
-  },
+  "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheCreation: 12.5 },
+  "claude-fable-5": { input: 10, output: 50, cacheRead: 1, cacheCreation: 12.5 },
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheCreation: 5 },
+  "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheCreation: 6.25 },
+  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheCreation: 6.25 },
+  "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheCreation: 6.25 },
+  "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheCreation: 6.25 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheCreation: 2.5 },
+  "claude-sonnet-5": { input: 2, output: 10, cacheRead: 0.2, cacheCreation: 2.5 },
+  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheCreation: 3.75 },
+  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheCreation: 0.125 },
+  // Dated and undated Haiku 4.5 ids are both accepted by the API.
+  "claude-haiku-4-5-20251001": { input: 1, output: 5, cacheRead: 0.1, cacheCreation: 1.25 },
+  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreation: 1.25 },
   "text-embedding-3-small": {
     input: 0.02,
     output: 0,
@@ -63,7 +53,17 @@ export const PRICING: Record<string, ModelPricing> = {
   // OpenAI chat
   "gpt-5-mini": { input: 0.25, output: 2.0, cacheRead: 0, cacheCreation: 0 },
   "gpt-5-nano": { input: 0.05, output: 0.4, cacheRead: 0, cacheCreation: 0 },
-  "gpt-5": { input: 1.25, output: 10.0, cacheRead: 0, cacheCreation: 0 },
+  // OpenAI standard tier, <=272K input, checked 2026-11-08 against
+  // https://developers.openai.com/api/docs/pricing. cacheCreation = 30-minute
+  // cache-write rate where OpenAI publishes one.
+  "gpt-6-astra": { input: 10, output: 50, cacheRead: 1, cacheCreation: 12.5 },
+  "gpt-5.6-sol": { input: 4, output: 20, cacheRead: 0.4, cacheCreation: 5 },
+  "gpt-5.6-terra": { input: 2, output: 12, cacheRead: 0.2, cacheCreation: 2.5 },
+  "gpt-5.6-luna": { input: 0.2, output: 1.2, cacheRead: 0.02, cacheCreation: 0.25 },
+  "gpt-5.5": { input: 5, output: 30, cacheRead: 0.5, cacheCreation: 0 },
+  "gpt-5.4-mini": { input: 0.75, output: 4.5, cacheRead: 0.075, cacheCreation: 0 },
+  "gpt-5.3-codex": { input: 1.75, output: 14, cacheRead: 0.175, cacheCreation: 0 },
+  "gpt-5": { input: 1.25, output: 10, cacheRead: 0.125, cacheCreation: 0 },
   "o3-mini": { input: 1.1, output: 4.4, cacheRead: 0, cacheCreation: 0 },
   o3: { input: 2.0, output: 8.0, cacheRead: 0, cacheCreation: 0 },
   // OpenAI legacy (still widely used)
