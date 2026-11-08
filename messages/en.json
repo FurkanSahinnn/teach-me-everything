@@ -327,7 +327,30 @@
     "tema": "Theme",
     "dil": "Language",
     "font": "Font",
-    "yogunluk": "Density"
+    "yogunluk": "Density",
+    "nav_search": "Search settings",
+    "nav_no_match": "No matching section",
+    "nav_group": {
+      "ai": "AI",
+      "knowledge": "Knowledge",
+      "system": "System"
+    },
+    "nav": {
+      "general": "General",
+      "appearance": "Appearance",
+      "learning": "Learning",
+      "providers": "Providers",
+      "models": "Models",
+      "usage": "Usage",
+      "embedding": "Embedding",
+      "research": "Search & research",
+      "audio": "Audio",
+      "concepts": "Concepts",
+      "notes": "Notes & vault",
+      "data": "Data & storage",
+      "updates": "Updates",
+      "about": "About"
+    }
   },
   "setup": {
     "kurulum": "Setup",

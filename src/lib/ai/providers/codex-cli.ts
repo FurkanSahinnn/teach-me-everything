@@ -30,7 +30,9 @@ function configuredPath(): string | undefined {
 
 function configuredEnv(): Record<string, string> {
   try {
-    return usePrefs.getState().agentCli?.env ?? {};
+    const prefs = usePrefs.getState().agentCli;
+    const home = prefs?.codexHome?.trim();
+    return { ...(prefs?.env ?? {}), ...(home ? { CODEX_HOME: home } : {}) };
   } catch {
     return {};
   }

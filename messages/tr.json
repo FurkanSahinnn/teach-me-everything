@@ -327,7 +327,30 @@
     "tema": "Tema",
     "dil": "Dil",
     "font": "Font",
-    "yogunluk": "Yoğunluk"
+    "yogunluk": "Yoğunluk",
+    "nav_search": "Ayarlarda ara",
+    "nav_no_match": "Eşleşen bölüm yok",
+    "nav_group": {
+      "ai": "Yapay zekâ",
+      "knowledge": "Bilgi",
+      "system": "Sistem"
+    },
+    "nav": {
+      "general": "Genel",
+      "appearance": "Görünüm",
+      "learning": "Öğrenme",
+      "providers": "Sağlayıcılar",
+      "models": "Modeller",
+      "usage": "Kullanım",
+      "embedding": "Embedding",
+      "research": "Arama ve araştırma",
+      "audio": "Ses",
+      "concepts": "Kavramlar",
+      "notes": "Notlar ve vault",
+      "data": "Veri ve depolama",
+      "updates": "Güncellemeler",
+      "about": "Hakkında"
+    }
   },
   "setup": {
     "kurulum": "Kurulum",

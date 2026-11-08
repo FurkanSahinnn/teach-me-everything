@@ -131,7 +131,7 @@ export default function MindMapPage() {
             <span>{concepts.length} {pick("konsept", "concepts")}</span>
             <span aria-hidden>·</span>
             <span>{edges.length} {pick("kenar", "edges")}</span>
-            <Link href="/settings#concepts" className="ml-3">
+            <Link href="/settings/concepts" className="ml-3">
               <Button size="sm">
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
                 {pick("Yeniden çıkar", "Re-extract")}
@@ -154,7 +154,7 @@ export default function MindMapPage() {
               )}
               action={{
                 label: pick("Konseptleri çıkar", "Extract concepts"),
-                href: "/settings#concepts",
+                href: "/settings/concepts",
               }}
             />
           </div>

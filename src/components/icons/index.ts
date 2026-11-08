@@ -109,4 +109,18 @@ export {
   ExternalLink,
   Link as LinkIcon,
   Globe,
+  // Settings navigation
+  SlidersHorizontal,
+  GraduationCap,
+  Plug,
+  Boxes,
+  Gauge,
+  Binary,
+  AudioLines,
+  NotebookPen,
+  Database,
+  Terminal,
+  Server,
+  Cloud,
 } from "lucide-react";
+export type { LucideIcon } from "lucide-react";

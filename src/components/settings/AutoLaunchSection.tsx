@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Power } from "lucide-react";
+import { SettingsGroup, SettingsRow } from "@/components/settings/layout/SettingsPrimitives";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { isTauriEnv } from "@/lib/tauri/env";
@@ -104,42 +104,30 @@ export function AutoLaunchSection(): React.ReactElement | null {
   }
 
   return (
-    <section
-      className="rounded-2xl border border-line bg-paper-soft p-5 shadow-sm"
-      data-testid="auto-launch-section"
-    >
-      <header className="flex items-start gap-3">
-        <span
-          className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-wash text-accent-ink"
-          aria-hidden
-        >
-          <Power size={18} strokeWidth={1.6} />
-        </span>
-        <div className="flex-1">
-          <h2 className="text-sm font-semibold text-ink">{t("title")}</h2>
-          <p className="mt-1 text-xs text-ink-soft">{t("description")}</p>
-        </div>
-      </header>
-      <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-line/60 bg-paper px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">{t("toggle_label")}</p>
-          <p className="mt-0.5 text-xs text-ink-soft">
+    <SettingsGroup>
+      <SettingsRow
+        title={t("title")}
+        description={
+          <>
+            {t("description")}{" "}
             {enabled === null
               ? t("loading_state")
               : enabled
                 ? t("currently_on")
                 : t("currently_off")}
-          </p>
-        </div>
-        <Switch
-          checked={enabled === true}
-          disabled={enabled === null || busy}
-          onCheckedChange={(next) => {
-            void handleToggle(next);
-          }}
-          ariaLabel={t("toggle_aria")}
-        />
-      </div>
-    </section>
+          </>
+        }
+        control={
+          <Switch
+            checked={enabled === true}
+            disabled={enabled === null || busy}
+            onCheckedChange={(next) => {
+              void handleToggle(next);
+            }}
+            ariaLabel={t("toggle_aria")}
+          />
+        }
+      />
+    </SettingsGroup>
   );
 }

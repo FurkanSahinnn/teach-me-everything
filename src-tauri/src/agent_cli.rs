@@ -102,8 +102,16 @@ fn validate_entry(cli: &str, path: &Path) -> Result<(), String> {
 fn validate_options(options: &StartOptions) -> Result<(), String> {
   validate_cli(&options.cli)?;
   if options.cwd.is_some() { return Err("Agent working directories are managed by TME".into()); }
-  for key in options.env.keys() {
-    if !matches!(key.to_ascii_uppercase().as_str(), "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY" | "NO_PROXY"
+  for (key, value) in &options.env {
+    let upper = key.to_ascii_uppercase();
+    if matches!(upper.as_str(), "CLAUDE_CONFIG_DIR" | "CODEX_HOME") {
+      // A config home must be an absolute path to an existing directory.
+      if !Path::new(value).is_absolute() || !Path::new(value).is_dir() {
+        return Err(format!("{key} must be an absolute path to an existing directory"));
+      }
+      continue;
+    }
+    if !matches!(upper.as_str(), "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY" | "NO_PROXY"
       | "ANTHROPIC_API_KEY" | "ANTHROPIC_AUTH_TOKEN" | "OPENAI_API_KEY") {
       return Err(format!("Unsupported agent environment override: {key}"));
     }
@@ -861,6 +869,23 @@ mod tests {
     assert!(validate_options(&options).is_err());
     options.env.clear();
     options.args = vec!["exec".into(), "--dangerously-bypass-approvals-and-sandbox".into()];
+    assert!(validate_options(&options).is_err());
+  }
+
+  #[test]
+  fn config_home_env_requires_an_existing_absolute_directory() {
+    let mut options = fixture_options("home-env", Path::new("codex.exe"), None, false);
+    options.cli = "codex".into();
+    options.args = vec!["app-server".into()];
+    let dir = std::env::temp_dir().to_string_lossy().into_owned();
+    options.env.insert("CODEX_HOME".into(), dir.clone());
+    assert!(validate_options(&options).is_ok());
+    options.env.clear();
+    options.env.insert("CLAUDE_CONFIG_DIR".into(), dir);
+    assert!(validate_options(&options).is_ok());
+    options.env.insert("CLAUDE_CONFIG_DIR".into(), "relative/dir".into());
+    assert!(validate_options(&options).is_err());
+    options.env.insert("CLAUDE_CONFIG_DIR".into(), "/definitely/not/a/real/dir-xyz".into());
     assert!(validate_options(&options).is_err());
   }
 

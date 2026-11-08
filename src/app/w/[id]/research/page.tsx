@@ -1079,7 +1079,7 @@ function NoKeyCard({
           <p className="mt-1 text-[12.5px] text-ink-3">{description}</p>
         </div>
         <a
-          href="/settings#preferences"
+          href="/settings/research"
           className="inline-flex h-7 items-center gap-1 rounded-md border border-rule bg-paper px-2.5 py-1 text-[12.5px] font-medium text-ink hover:bg-paper-2"
         >
           {actionLabel}
