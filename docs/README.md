@@ -1,28 +1,39 @@
-# Teach Me Everything — Documentation
+# Teach Me Everything — Dokümantasyon
 
-Bu klasör projenin tüm dokümantasyonunu içerir. Dosyaları aşağıdaki sıra ile okumak önerilir.
+Bu klasör katkıda bulunanlar için proje belgelerini içerir. Belgeler güncel kodu anlatır; geçmiş faz notları ve
+tarihli doğrulama raporları burada tutulmaz (git geçmişindedir).
 
-## Okuma Sırası
+## Okuma sırası
 
-1. **[PROJECT_INDEX.md](PROJECT_INDEX.md)** — Üst düzey envanter, sayfa listesi, veri modelleri özeti, teknoloji yığını
-2. **[ARCHITECTURE.md](ARCHITECTURE.md)** — Next.js + TS + Tailwind mimari planı, klasör yapısı, routing, state management, AI katmanı
-3. **[FEATURES.md](FEATURES.md)** — Her sayfa için UI bölümleri, veri modelleri, etkileşimler, AI bağlantıları
-4. **[DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)** — CSS tokenları → Tailwind v4 eşlemesi, component class örnekleri
-5. **[UI_REDESIGN_PLAN.md](UI_REDESIGN_PLAN.md)** — Dark-first premium akademik redesign planı, responsive hedefler, ekran bazlı dönüşüm
-6. **[MISSING.md](MISSING.md)** — Proje eksikleri kategorize edilmiş punch list, öncelik sıralı
-7. **[ROADMAP.md](ROADMAP.md)** — 6 fazlı uygulama planı, zamanlama, başarı metrikleri
+1. **[PROJECT_INDEX.md](PROJECT_INDEX.md)**: proje ne, ilkeler, rota tablosu, sözlük, şema/sürüm numaraları.
+2. **[ARCHITECTURE.md](ARCHITECTURE.md)**: çalışma modları (web dev ve Tauri), katmanlar, veri, AI katmanı,
+   masaüstü kabuğu, release, güvenlik, test.
+3. **[FEATURES.md](FEATURES.md)**: sayfa sayfa özellikler, kullanılan bileşenler, tablolar ve AI çağrıları.
+4. **[DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)**: tasarım token'ları, temalar, UI bileşenleri.
+5. **[PROVIDERS.md](PROVIDERS.md)**: bulut sağlayıcılar, anahtarlar, CORS/proxy, fiyat tablosu.
+6. **[PROVIDERS_LOCAL.md](PROVIDERS_LOCAL.md)**: yerel ve kendi sunucunuzdaki modeller; Claude Code ve Codex CLI
+   sağlayıcıları.
+7. **[STATIC_EXPORT_WORKSPACE_ROUTING.md](STATIC_EXPORT_WORKSPACE_ROUTING.md)**: statik export altında `/w/[id]`
+   rotaları ve yeni rota ekleme kontrol listesi.
+8. **[CODEMAPS/](CODEMAPS/architecture.md)**: dosya düzeyinde haritalar:
+   [architecture](CODEMAPS/architecture.md) · [backend](CODEMAPS/backend.md) · [frontend](CODEMAPS/frontend.md) ·
+   [data](CODEMAPS/data.md) · [dependencies](CODEMAPS/dependencies.md).
 
-## Hızlı Başvuru
+## Hızlı başvuru
 
-| Soru | Cevap nerede? |
-|------|---------------|
-| Proje ne? | `PROJECT_INDEX.md` §1 |
-| Hangi sayfalar var? | `PROJECT_INDEX.md` §3, `FEATURES.md` tamamı |
-| Nasıl yapacağım? | `ARCHITECTURE.md` + `ROADMAP.md` |
-| Tasarım nasıl aktarılır? | `DESIGN_SYSTEM.md` |
-| Yeni UI yönü ne? | `UI_REDESIGN_PLAN.md` |
-| Ne eksik? | `MISSING.md` |
-| Bugün ne yapmalıyım? | `CLAUDE.md` § Status (güncel faz) + `MISSING.md` öncelik tablosu |
-| Kod nerede, ne nereye bağlı? | `CODEMAPS/` — architecture · backend · frontend · data · dependencies |
+| Soru | Nerede? |
+|---|---|
+| Proje ne, hangi sayfalar var? | `PROJECT_INDEX.md` |
+| Bir istek uçtan uca nasıl akıyor? | `ARCHITECTURE.md` §6 |
+| Bir sayfa ne yapıyor? | `FEATURES.md` |
+| Yeni renk/font eklenebilir mi? | `DESIGN_SYSTEM.md` (önce token) |
+| Sağlayıcı anahtarı nasıl alınır, neden CORS hatası? | `PROVIDERS.md` |
+| Ollama / LM Studio / Claude Code CLI / Codex nasıl bağlanır? | `PROVIDERS_LOCAL.md` |
+| Yeni `/w/[id]/...` rotası neden 404 veriyor? | `STATIC_EXPORT_WORKSPACE_ROUTING.md` |
+| Bir dosya ya da sembol nerede? | `CODEMAPS/` |
+| Release nasıl çıkılır? | `ARCHITECTURE.md` §10 |
 
-Proje rehberi (Claude Code için): **[`../CLAUDE.md`](../CLAUDE.md)**
+Kodlama ajanları için rehber: [`../CLAUDE.md`](../CLAUDE.md).
+
+`.gitignore` bu klasörde yalnız yukarıdaki belgeleri ve `CODEMAPS/` klasörünü git'e alır. Buraya eklenen başka
+dosyalar yerel kalır; yeni bir belge paylaşılacaksa `.gitignore` içindeki `!/docs/...` listesine de eklenmeli.

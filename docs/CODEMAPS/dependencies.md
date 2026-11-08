@@ -1,85 +1,55 @@
-<!-- Generated: 2026-08-03 | Files scanned: 612 | Token estimate: ~850 -->
+# Dependencies codemap
 
-# Dependencies
+Versions are the ranges in `package.json` and `src-tauri/Cargo.toml`; read those files for exact numbers. "Used in" comes from import greps over `src/`. Related: [architecture](architecture.md), [backend](backend.md), [PROVIDERS](../PROVIDERS.md).
 
-All third-party services are **BYOK** — the user supplies every key. Nothing is bundled, nothing phones home ([no telemetry, ever](../../CLAUDE.md)).
+## Runtime (npm)
 
-## Runtime Stack
-
-| Package | Version | Role |
+| Purpose | Packages | Used in |
 |---|---|---|
-| `next` | ^16.2.7 | App Router; static export for Tauri |
-| `react` / `react-dom` | 19.2.4 | UI |
-| `dexie` + `dexie-react-hooks` | ^4.4 | IndexedDB store + live queries |
-| `zustand` | ^5.0.12 | prefs / selection / vault stores |
-| `zod` | ^4.4.3 | schema validation (AI payloads, forms) |
-| `next-intl` | ^4.9.1 | TR / EN i18n |
-| `tailwindcss` | ^4 | `@theme` tokens, 3 themes |
-| `lucide-react` | ^1.8.0 | icons |
-| `clsx` + `tailwind-merge` | — | `cn()` utility |
-| `cmdk` | ^1.1.1 | command palette |
+| Framework | `next`, `react`, `react-dom` | `src/app`, all components; `react-dom/server` in `lib/study/pdf-export.ts`, portals in `ui/Modal.tsx` |
+| State, data | `zustand`, `dexie`, `dexie-react-hooks` | `src/stores`; `src/lib/db` (+ a few components using live queries) |
+| Validation | `zod` | `lib/roadmap`, `lib/cross-analysis`, `lib/article-analysis`, `lib/ai` schemas |
+| i18n | `next-intl` | `src/i18n`, nearly every component |
+| UI helpers | `lucide-react`, `clsx`, `tailwind-merge`, `cmdk` | components; `lib/utils/cn.ts`; `components/palette` |
+| Markdown render | `markdown-it`, `@vscode/markdown-it-katex`, `highlight.js`, `isomorphic-dompurify` | `lib/markdown`, `lib/utils/sanitize.ts` |
+| Markdown in chat | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-katex` | `components/notebook/ChatBubble.tsx`, `lib/study` |
+| Math styling | `katex` | CSS import in `src/app/globals.css` only |
+| Note editor | `@codemirror/{state,view,commands,language,autocomplete,search,lang-markdown}`, `@lezer/markdown` | `lib/notes` (extensions, live preview), `components/notes` |
+| Ingest | `pdfjs-dist`, `mammoth`, `@mozilla/readability`, `turndown` | `lib/ingest`, `components/sources/PdfViewer.tsx`, `lib/research` |
+| Export | `html2pdf.js` | `lib/study` (PDF export) |
+| YouTube | `youtube-transcript` | `src/app/api/ai/research/youtube/route.ts` |
+| Agent SDK | `@anthropic-ai/claude-agent-sdk` | `src/app/api/ai/chat-oauth/route.ts` only |
+| Tauri JS | `@tauri-apps/api` | `lib/tauri`, `lib/podcast`, `lib/vault`, `components/mounts` |
+| | `@tauri-apps/plugin-http` | `lib/tauri/fetch.ts` |
+| | `@tauri-apps/plugin-fs`, `plugin-dialog` | `lib/vault` (fs-adapter, watcher), settings |
+| | `@tauri-apps/plugin-updater`, `plugin-process`, `plugin-opener` | `components/settings` (UpdatesSection), `components/mounts` |
+| | `@tauri-apps/plugin-autostart` | dynamic import in `components/settings/AutoLaunchSection.tsx` |
 
-## Content Processing
+No import found in `src/`: `@tauri-apps/plugin-notification` (the Rust plugin is registered in `lib.rs` and permitted via `notification:default`) and `rehype-highlight`.
 
-| Package | Role |
-|---|---|
-| `pdfjs-dist` ^5.6 | PDF parse (worker) + reader canvas/textLayer |
-| `mammoth` ^1.8 | DOCX → HTML → chunks |
-| `@mozilla/readability` ^0.5 | local URL extraction (no API key) |
-| `turndown` ^7.2 | HTML → Markdown |
-| `markdown-it` + `@vscode/markdown-it-katex` | document preview (VS Code engine parity) |
-| `react-markdown` + `remark-gfm/math` + `rehype-katex/highlight` | chat + note preview |
-| `katex`, `highlight.js` | math + code rendering |
-| `isomorphic-dompurify` | sanitize untrusted HTML |
-| `youtube-transcript` ^1.2 | YouTube ingestion |
-| `html2pdf.js` | legacy raster export path (analysis/study exports use iframe print instead) |
-| `@codemirror/*` + `@lezer/markdown` | notes editor + live-preview widgets |
+## Dev (npm)
 
-## Desktop Shell — Tauri 2.11
+TypeScript 5, ESLint 9 with `eslint-config-next` (`eslint.config.mjs`), Tailwind v4 via `tailwindcss` + `@tailwindcss/postcss`, Vitest 2 with `@vitest/coverage-v8`, `jsdom`, `fake-indexeddb`, Testing Library (`react`, `jest-dom`, `user-event`), `@playwright/test`, `@tauri-apps/cli`, `cross-env`, type packages (`@types/node`, `react`, `react-dom`, `markdown-it`, `turndown`).
 
-`@tauri-apps/api` + plugins: `http` (direct provider calls, bypasses `/api`) · `fs` + watch (filesystem vault) · `dialog` · `notification` · `autostart` · `updater` · `process` · `opener`.
-Rust crates: `keyring-rs` (OS keychain), `sysinfo` (RAM/VRAM probe), tray-icon.
-Sidecar: **Piper** TTS binary, fetched by `scripts/fetch-piper.mjs` on `postinstall` / `tauri:dev` / `tauri:build`.
+## Rust crates (`src-tauri/Cargo.toml`)
 
-## External Services (all BYOK, all optional)
+| Group | Crates | Used in |
+|---|---|---|
+| Core | `tauri` (feature `tray-icon`), `tauri-build`, `serde`, `serde_json`, `log` | `lib.rs`, `build.rs` |
+| Tauri plugins | `tauri-plugin-{http, fs (watch), dialog, notification, autostart, updater, process, opener, shell, log}` | `lib.rs` registration; `shell` also in `tts.rs` |
+| Credentials | `keyring` (apple-native, windows-native, sync-secret-service) | `keychain.rs` |
+| Agent CLI | `shared_child`, `tempfile`; `windows-sys` (Windows job objects), `libc` (Unix) | `agent_cli.rs`, `agent_process.rs` |
+| TTS download | `reqwest` (rustls, stream), `tokio` (fs, io-util), `futures-util` | `tts.rs` |
+| System probe | `sysinfo` (system, disk) | `sysinfo.rs` |
 
-**Chat/LLM presets (16 cloud + 3 local)** — anthropic, claude-code-oauth, openai, google-gemini, openrouter, groq, deepseek, glm, xai, mistral, together, cerebras, perplexity · local: ollama, lm-studio, llama-cpp · plus `custom:${string}` endpoints.
+Piper TTS binaries are bundled as Tauri resources (`tauri.conf.json` `bundle.resources`, `src-tauri/binaries/`), fetched by `scripts/fetch-piper.mjs`.
 
-**Embeddings** — openai, openai-compat, google-gemini, voyage, cohere, jina, huggingface.
+## External services
 
-**Web search (in-chat)** — claude, gemini, glm, mistral, openai-responses, openrouter, perplexity, xai.
+All calls are user-initiated with the user's own keys (BYOK), except free metadata endpoints. Hosts come from the files below; egress control is described in [architecture](architecture.md).
 
-**Source search** — brave, brave-unified, exa, tavily, chat-llm-search.
-
-**URL extraction** — firecrawl, exa, tavily, jina-reader, diffbot, brightdata, readability (local, keyless).
-
-**Keyless ingest** — arXiv API, DOI/Crossref, YouTube transcripts.
-
-## TTS Runtimes
-
-| Adapter | Status |
-|---|---|
-| `piper` | default, local sidecar |
-| `web-speech` | browser fallback |
-| `experimental-local` | Kokoro / XTTS / VibeVoice POC slot (Phase 12, not shipped) |
-
-ElevenLabs was removed in Phase 11 (paid + cloud); Dexie v26 deletes its stored key.
-
-## Dev / Test
-
-`typescript` ^5 (strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`) · `vitest` ^2.1.9 + `@vitest/coverage-v8` + `fake-indexeddb` + `jsdom` · `@testing-library/{react,jest-dom,user-event}` · `@playwright/test` ^1.59 (17 E2E specs) · `eslint` ^9 + `eslint-config-next` · `cross-env`.
-
-`@anthropic-ai/claude-agent-sdk` is present as a dependency but is **not** on the app's runtime provider path — chat goes through `lib/ai/providers/*`.
-
-## Forbidden / Absent By Policy
-
-- **PostgreSQL, Supabase, any server DB** — local-first only.
-- **Cloud deploy targets** (Vercel / Netlify / CF Pages) — distribution is Tauri-only via GitHub Releases.
-- **Telemetry / analytics SDKs** — none, at any tier.
-- **Bundled API keys or mock/stub paths in production.**
-
-## Release Blockers (user-side, unchanged)
-
-1. `npx tauri signer generate` → replace PLACEHOLDER pubkey in `tauri.conf.json`
-2. GH Secrets `TAURI_SIGNING_PRIVATE_KEY` + `_PASSWORD`
-3. Updater endpoint repo URL
+- **Chat** (`src/lib/ai/providers/presets.ts`, `PROVIDER_PRESETS`): Anthropic, OpenAI, Google Gemini, OpenRouter, Groq, DeepSeek, GLM (open.bigmodel.cn), xAI, Mistral, Together, Cerebras, Perplexity; loopback Ollama, LM Studio, llama.cpp; no host for `claude-cli` / `codex-cli` (local binaries). User-defined endpoints via `customEndpoints` in prefs.
+- **Embeddings** (`src/lib/ai/providers/embed-presets.ts`, `EMBED_PRESETS`): OpenAI, OpenRouter, Voyage, Gemini, Cohere, Jina, Mistral, Hugging Face router, local Ollama.
+- **Research extractors** (`src/lib/research/providers/presets.ts`): readability (local), Firecrawl, Exa, Jina Reader, Tavily, Diffbot, Bright Data. Search: Brave, Exa, Tavily (`src/lib/research/search/`).
+- **Seed origins** (`src/lib/ai/csp-origins.ts`, `SEED_ORIGINS`): `'self'`, api.anthropic.com, huggingface.co (Piper voice download), api.crossref.org and api.openalex.org (DOI), export.arxiv.org, api.search.brave.com.
+- **Tauri HTTP allow list** (`src-tauri/capabilities/default.json`, `http:default`): hand-maintained. It includes hosts without a current preset (fireworks.ai, api.z.ai, `*.openai.azure.com`, www.googleapis.com, youtube.googleapis.com) and lacks `api.cerebras.ai`, which `PROVIDER_PRESETS` defines; the CSP list is derived automatically, this one is not.

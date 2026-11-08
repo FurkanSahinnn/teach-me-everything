@@ -1,352 +1,124 @@
-# Design System v2 — Teach Me Everything
+# Design System
 
-> **Son güncelleme:** 2026-08-27 · v2 (UI overhaul) + `github` teması · Dark sütunu globals.css ile senkronlandı
-> Tek doğruluk kaynağı: `src/app/globals.css`. Bu dokümandan farklı değer
-> kullanma; ne renk, ne radius, ne shadow. Yeni token önerin varsa önce
-> burayı güncelle, sonra `globals.css`'e ekle.
->
-> **Redesign notu:** Bu dosya mevcut implementasyonun token ve komponent notlarını açıklar. Yeni görsel yön için kaynak `UI_REDESIGN_PLAN.md` dosyasıdır. Onaydan sonra bu doküman dark-first premium akademik sisteme göre güncellenecektir.
+The token system and UI primitives of Teach Me Everything. The single source of truth for tokens is `src/app/globals.css`. For where the pages that use it live, see [FEATURES.md](FEATURES.md); for the component layout, see [CODEMAPS/frontend.md](CODEMAPS/frontend.md).
 
----
+## Rules
 
-## 1. Felsefe
+- **Tokens first.** A new color, font, radius, shadow or spacing value is added as a token in `globals.css` (`@theme`, and every theme block if it varies by theme) and documented here before any component uses it. No raw hex values or ad hoc font stacks in components.
+- **No `dark:` prefix.** Themes switch through CSS variables under `data-theme`, so a token-based class (`bg-paper`, `text-ink`) is already correct in every theme. Tailwind's `dark:` variant follows `prefers-color-scheme`, not `data-theme`, and does not match the app's themes. (A few legacy usages remain in `src/components/notes/EmbedAsSourceButton.tsx`, `src/components/notes/NoteTreeContextMenu.tsx` and `src/app/settings/page.tsx`; do not copy them.)
+- **Primitives before one-offs.** Use `src/components/ui/*` and the icon barrel before writing new markup.
+- Every UI string goes through i18n (TR + EN), see `messages/{tr,en}.json`.
 
-**Mevcut baseline:** modern minimal · akademik kimlik korunur · hover-lift mikro-etkileşim · shell tarafında mobile-first.
+## Tailwind v4 setup
 
-**Planlanan yön:** dark-first premium akademik çalışma alanı · dengeli yoğunluk · sepia güçlü reader modu · landing ve tüm app ekranlarında tutarlı responsive yapı.
+`globals.css` starts with `@import "tailwindcss"` and the KaTeX stylesheet, then declares an `@theme` block. Tokens named `--color-*`, `--radius-*`, `--shadow-*`, `--font-*`, `--ease-*`, `--duration-*` become Tailwind utilities (`bg-paper-2`, `text-ink-3`, `border-rule`, `rounded-[var(--radius-sm)]`, `shadow-[var(--shadow-soft)]`). Custom utilities are declared with `@utility`: `paper-grid`, `no-scrollbar`, `eyebrow`, `page-container`, `grain`.
 
-- Genel dil **Linear / Notion** sadeliği — temiz boşluk, tutarlı 12px radius, ölçülü shadow
-- **Premium amber** dual-token (`--color-accent` daha akademik, `--color-accent-hot` CTA) — white/sepia/dark üçlüsünde ortak. `github` teması bunun tek istisnası: GitHub'ın kimliği mavi link rengi olduğu için aksanı da mavi (`#58A6FF` / `#1F6FEB`)
-- **4 tema · 3 yoğunluk · 2 dil** kullanıcı tercihi → `data-theme`, `data-density`, `lang` attribute'larıyla anında değişir
-- Tipografi: **Source Serif 4** (display), **Inter** (UI), **JetBrains Mono** (code)
-- Tüm ikonografi `lucide-react` üzerinden — `src/components/icons/index.ts` barrel'ından tüketilir
+## Color tokens
 
----
+Each theme redefines the same names (values below are the `white` theme, which is also the `:root` default; the `@theme` block holds the same values).
 
-## 2. Tema Mimarisi
+| Group | Tokens | White values |
+|---|---|---|
+| Surface (`paper`) | `paper`, `paper-2`, `paper-3`, `paper-4` | `#FFFFFF`, `#FAFAF9`, `#F4F4F2`, `#EDEDEA` |
+| Border (`rule`) | `rule`, `rule-soft`, `rule-strong` | `#E5E5E1`, `#EFEEEA`, `#D4D3CD` |
+| Text (`ink`) | `ink`, `ink-2` ... `ink-5` | `#0F0F0E`, `#2B2B29`, `#5C5B57`, `#8B8A85`, `#B8B7B1` |
+| Accent | `accent`, `accent-hot`, `accent-soft`, `accent-wash`, `accent-ink` | `#B86A2B`, `#C26A2E`, `#E8C9A8`, `#FCEFDC`, `#6E3A0F` |
+| Tags | `moss`, `plum`, `slate` | `#4E5E3E`, `#6B3A5E`, `#3C4A58` (not redefined per theme) |
+| Semantic | `ok`, `warn`, `err` | `#4E6E3E`, `#A86A1C`, `#8E2F2F` (overridden in `dark` and `github`) |
 
-### Dört tema
+Usage convention: `paper` is the page, `paper-2` sidebars and sunken areas, `paper-3`/`paper-4` hover and pressed; `ink` is body text, `ink-3` secondary, `ink-4`/`ink-5` tertiary and disabled; `accent-wash` plus `accent-ink` is the highlighted/selected surface; `accent-hot` is the filled call-to-action.
 
-| Tema | Default | Karakter | Surface stratejisi |
-|------|---------|----------|--------------------|
-| `white` | — (sistem takibi açıksa, light) | Modern minimal · saf beyaz · Linear/Notion | Border + soft shadow |
-| `sepia` | — | Akademik · warm parchment · okuma odaklı | Border ağırlıklı · shadow minimal |
-| `dark` | ✅ (temiz kurulum) | Sofistike · warm ink-black · gece modu | Border + belirgin shadow |
-| `github` | — | GitHub Dark · Primer paleti · kod/geliştirici karakteri | Border-first · shadow yalnızca floating katmanda (+ring) |
+## Themes
 
-**Default `dark`, sistem tercihi değil.** Temiz kurulumda `prefers-color-scheme` **dinlenmez**: `prefs.ts` `theme: "dark"` + `themeFollowsSystem: false` ile başlar, `theme-script.ts` de localStorage boşken `dark` yazar. Sistem tercihi yalnızca kullanıcı "sistemi takip et"i açtığında (`setThemeFollowsSystem(true)`) devreye girer; o zaman `getSystemTheme()` `white`/`dark` döndürür ve bir `matchMedia` listener'ı canlı takip eder. Kullanıcı elle tema seçtiğinde `themeFollowsSystem` tekrar `false` olur ve tercih persist edilir.
+Four themes, selected with `data-theme` on `<html>`. The `Theme` type in `src/stores/prefs.ts` is `"white" | "sepia" | "dark" | "github"`.
 
-`github` **sistem tercihinden asla otomatik seçilmez** — `getSystemTheme()` yalnızca `white`/`dark` döndürür; GitHub teması açık bir kullanıcı seçimidir.
+| Theme | Character | Paper (base) | Ink | Accent | `color-scheme` |
+|---|---|---|---|---|---|
+| `white` | clean minimal; also the `:root` fallback | `#FFFFFF` | `#0F0F0E` | `#B86A2B` | light |
+| `sepia` | warm parchment, reading; border-heavy, almost no shadow | `#F6EAD2` | `#2E1F0E` | `#B86A2B` | light |
+| `dark` | warm dark; border plus soft shadow | `#11100E` | `#F5F0E7` | `#D99A5E` | dark |
+| `github` | GitHub Dark (Primer palette); border-first, ring on overlays | `#0D1117` | `#E6EDF3` | `#58A6FF` | dark |
 
-### Theme switching akışı
+How switching works:
 
-1. **FOUC önleyici inline script** (`lib/utils/theme-script.ts`) `<head>` içinde, React hydrate olmadan önce `data-theme`/`data-density`/`lang` atribütlerini set eder
-2. `prefs.ts` Zustand store her `setTheme`/`setDensity`/`setLocale` çağrısında `<html>` attribute'ünü senkron tutar
-3. `prefers-color-scheme` change listener `themeFollowsSystem` true ise sistem temasına otomatik geçirir
-4. Tüm color/shadow token'ları `[data-theme]` selector'ları üzerinden override edilir; component'lerde `dark:` prefix **yok**
+- `usePrefs` (`src/stores/prefs.ts`) holds `theme`, `themeFollowsSystem` and `density`, and mirrors them to `data-theme` / `data-density` on `<html>`. The store default is `dark`.
+- `themeInitScript` (`src/lib/utils/theme-script.ts`), inlined in `<head>` by `src/app/layout.tsx`, reads `tme:prefs` from localStorage before hydration so the first paint has the right theme (default `dark`; with "follow system" it picks `dark` or `white`).
+- `ThemeToggle` (`src/components/ui/ThemeToggle.tsx`) is a four-option radiogroup (White, Sepia, Dark, GitHub); `TweaksPanel` (`src/components/shell/TweaksPanel.tsx`) exposes theme, language and width.
+- Shadows are theme-specific: every theme block redefines `--shadow-soft`, `--shadow-medium`, `--shadow-deep`, `--shadow-lift`.
 
-### Token örneği
+### Density
 
-```css
-@theme {
-  --color-paper:    #FFFFFF;
-  --color-ink:      #0F0F0E;
-  --color-accent:   #B86A2B;
-  --color-accent-hot: #C26A2E;
-  --shadow-soft:    0 1px 2px rgb(15 15 14 / 0.04), 0 4px 12px -4px rgb(15 15 14 / 0.06);
-  --radius:         12px;
-  --row:            36px;
-  /* …kalan tokenler globals.css'te… */
-}
+`data-density` = `compact` | `normal` | `comfy` redefines `--space`, `--pad-x`, `--pad-y`, `--row-sm`/`--row`/`--row-lg` and the type scale `--type-xs` ... `--type-xl`.
 
-[data-theme="sepia"] {
-  --color-paper: #F6EAD2;
-  --color-ink:   #2E1F0E;
-  --shadow-soft: 0 1px 2px rgb(46 31 14 / 0.05);
-}
-
-[data-theme="dark"] {
-  --color-paper: #11100E;
-  --color-ink:   #F5F0E7;
-  --shadow-soft: 0 1px 0 rgb(255 244 224 / 0.03), 0 16px 40px -32px rgb(0 0 0 / 0.85);
-}
-
-/* GitHub Dark — değerler @primer/primitives dark.css'ten birebir alınır,
-   tahmin edilmez. Yeni bir GitHub token'ı lazımsa kaynağı orası. */
-[data-theme="github"] {
-  --color-paper:      #0D1117;  /* bgColor-default   */
-  --color-rule:       #30363D;  /* borderColor-default */
-  --color-ink:        #E6EDF3;  /* fgColor-default   */
-  --color-accent:     #58A6FF;  /* fgColor-accent    */
-  --color-accent-hot: #1F6FEB;  /* bgColor-accent-emphasis */
-}
-```
-
----
-
-## 3. Tam Token Tablosu
-
-### 3.1 Color (her tema kendi değerini override eder)
-
-| Token | White | Sepia | Dark | GitHub | Kullanım |
-|-------|-------|-------|------|--------|----------|
-| `--color-paper` | `#FFFFFF` | `#F6EAD2` | `#11100E` | `#0D1117` | Primary surface |
-| `--color-paper-2` | `#FAFAF9` | `#EFDFC0` | `#1B1814` | `#161B22` | Sunken surface, sidebar |
-| `--color-paper-3` | `#F4F4F2` | `#E5D2AC` | `#282219` | `#21262D` | Hover state |
-| `--color-paper-4` | `#EDEDEA` | `#DCC79A` | `#342B20` | `#30363D` | Pressed state |
-| `--color-rule` | `#E5E5E1` | `#C9B68F` | `#473B2D` | `#30363D` | Default border |
-| `--color-rule-soft` | `#EFEEEA` | `#D6C4A0` | `#322A21` | `#21262D` | Subtle divider |
-| `--color-rule-strong` | `#D4D3CD` | `#A6925F` | `#6D5A42` | `#6E7681` | Hover border |
-| `--color-ink` | `#0F0F0E` | `#2E1F0E` | `#F5F0E7` | `#E6EDF3` | Primary text |
-| `--color-ink-2` | `#2B2B29` | `#4A331A` | `#DCD2C1` | `#C9D1D9` | Secondary text |
-| `--color-ink-3` | `#5C5B57` | `#6B4F30` | `#A99D8B` | `#8B949E` | Tertiary text, icons |
-| `--color-ink-4` | `#8B8A85` | `#8E7651` | `#776D60` | `#6E7681` | Placeholder, eyebrow |
-| `--color-ink-5` | `#B8B7B1` | `#B19979` | `#524B42` | `#484F58` | Disabled / muted |
-| `--color-accent` | `#B86A2B` | `#B86A2B` | `#D99A5E` | `#58A6FF` | Aksanlı vurgu (akademik) |
-| `--color-accent-hot` | `#C26A2E` | `#B25920` | `#E8A764` | `#1F6FEB` | Primary CTA |
-| `--color-accent-soft` | `#E8C9A8` | `#DDB988` | `#6F4A27` | `#1E4273` | Tinted surface |
-| `--color-accent-wash` | `#FCEFDC` | `#ECD8B0` | `#2F2417` | `#121D2F` | Highlight bg |
-| `--color-accent-ink` | `#6E3A0F` | `#5C2E08` | `#F2C995` | `#A5D6FF` | Accent text on wash |
-| `--color-ok` | `#4E6E3E` | `#4E6E3E` | `#7BA85F` | `#3FB950` | Başarı |
-| `--color-warn` | `#A86A1C` | `#A86A1C` | `#D89A4A` | `#D29922` | Uyarı |
-| `--color-err` | `#8E2F2F` | `#8E2F2F` | `#C9594A` | `#F85149` | Hata |
-
-### 3.2 Radius (12px central)
-
-| Token | Değer | Kullanım |
-|-------|-------|----------|
-| `--radius-xs` | `6px` | Inline pill, küçük chip |
-| `--radius-sm` | `10px` | Button, input |
-| `--radius` | `12px` | Card default, segmented |
-| `--radius-md` | `12px` | (alias) |
-| `--radius-lg` | `16px` | Panel, modal, drawer |
-| `--radius-xl` | `24px` | Hero card, splash |
-| `--radius-2xl` | `32px` | Marketing surface |
-
-### 3.3 Shadow (tema-bazlı override)
-
-| Token | Beyaz/Dark | Sepia |
-|-------|-----------|-------|
-| `--shadow-soft` | Card default | Belirgin azaltılmış |
-| `--shadow-medium` | Floating menu | Çok hafif |
-| `--shadow-deep` | Modal, drawer | Modal, drawer |
-| `--shadow-lift` | Hover-lift state | Hover-lift state |
-
-`github` teması GitHub'ın düz yüzey dilini izler: `soft`/`medium` neredeyse görünmez (`#010409` tabanlı), `deep`/`lift` ise gölgeye ek olarak `0 0 0 1px #30363D` ring taşır — GitHub'ta kartlar düz durur, sadece overlay'ler yükselir.
-
-### 3.4 Density (compact / normal / comfy)
-
-| Token | Compact | Normal | Comfy |
-|-------|---------|--------|-------|
+| Token | compact | normal | comfy |
+|---|---|---|---|
 | `--space` | 6px | 8px | 12px |
-| `--pad-x` | 10px | 14px | 18px |
-| `--pad-y` | 6px | 9px | 12px |
-| `--row-sm` | 24px | 28px | 32px |
-| `--row` | 30px | 36px | 42px |
-| `--row-lg` | 36px | 44px | 50px |
-| `--type-base` | 13px | 14px | 15px |
+| `--pad-x` / `--pad-y` | 10 / 6px | 14 / 9px | 18 / 12px |
+| `--row-sm` / `--row` / `--row-lg` | 24 / 30 / 36px | 28 / 36 / 44px | 32 / 42 / 50px |
+| `--type-xs` ... `--type-xl` | 11, 12, 13, 14, 16px | 12, 13, 14, 15, 17px | 13, 14, 15, 17, 19px |
 
-Component'ler `var(--row)` arbitrary value'ları ile yoğunluğa duyarlı.
+`body` uses `--type-base` for its font size and 1.5 line height.
 
-### 3.5 Motion
+## Typography
 
-| Token | Değer | Kullanım |
-|-------|-------|----------|
-| `--ease-out` | `cubic-bezier(0.2, 0.6, 0.2, 1)` | Default |
-| `--ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | Switch knob, FAB |
-| `--duration-fast` | `120ms` | Hover/active |
-| `--duration-normal` | `180ms` | Theme transition, switch |
-| `--duration-slow` | `280ms` | Drawer slide, modal fade |
+Fonts are loaded in `src/app/layout.tsx` with `next/font/google` (self-hosted at build, `display: "swap"`) and exposed as CSS variables on `<html>`:
 
----
+| Loader | Variable | Weights / subsets | Token | Fallbacks |
+|---|---|---|---|---|
+| `Source_Serif_4` | `--font-source-serif` | 400-700; latin, latin-ext | `--font-serif` | Charter, Iowan Old Style, Georgia, serif |
+| `Geist` | `--font-geist` | default; latin, latin-ext | `--font-sans` | system sans |
+| `JetBrains_Mono` | `--font-jetbrains-mono` | 400, 500; latin | `--font-mono` | SF Mono, ui-monospace, Menlo |
 
-## 4. Component Spec
+- `body` is `font-sans`. Serif is for reading surfaces and headings that need it; mono is for code, keys and eyebrow labels.
+- `eyebrow` utility: mono, `--type-xs`, 0.08em tracking, uppercase, `ink-3`.
+- A new font means a new loader in `layout.tsx` plus a `--font-*` token in `@theme`.
 
-### 4.1 `Button` (`src/components/ui/Button.tsx`)
+## Radius, motion, layout
 
-5 variant × 6 size, hover-lift mikro-etkileşim default.
+- Radius: `--radius-xs` 6px, `--radius-sm` 10px, `--radius` and `--radius-md` 12px (central), `--radius-lg` 16px, `--radius-xl` 24px, `--radius-2xl` 32px.
+- Motion: `--ease-out` `cubic-bezier(0.2, 0.6, 0.2, 1)`, `--ease-spring` `cubic-bezier(0.34, 1.56, 0.64, 1)`; `--duration-fast` 120ms, `--duration-normal` 180ms, `--duration-slow` 280ms. A `prefers-reduced-motion` rule collapses animation and transition durations globally.
+- `page-container`: max width 1180px, centered; padding 20/16px, widening at 640px and 1024px.
+- Scrollbars: thin, themed with `rule` / `rule-strong`; `scroll-paper` class for custom scroll areas.
 
-| Variant | Açıklama | Background | Use case |
-|---------|----------|------------|----------|
-| `default` | Soft tinted (varsayılan) | `bg-paper-2` + border | Sekonder eylemler |
-| `primary` | Solid ink | `bg-ink text-paper` | Save / Continue / Apply |
-| `accent` | Solid CTA | `bg-accent-hot text-white` | Generate / Yapay zekâ aksiyonları |
-| `ghost` | Transparent | `bg-transparent` | Icon-only nav, toolbar |
-| `danger` | Destructive | `bg-paper-2 text-err` | Delete / Reset |
+## UI primitives (`src/components/ui/`)
 
-| Size | Yükseklik | Padding | Use |
-|------|-----------|---------|-----|
-| `sm` | 32px | 12px | Toolbar, inline |
-| `md` | 40px | 16px | **Default** |
-| `lg` | 48px | 20px | Hero CTA |
-| `icon-sm/md/lg` | 32/40/48px | square | Icon-only |
+| Component | Props worth knowing |
+|---|---|
+| `Button` | `variant`: `default` (default), `primary`, `accent`, `ghost`, `danger`. `size`: `sm`, `md` (default), `lg`, `icon-sm`, `icon-md`, `icon-lg`. `loading`. |
+| `Card` | `variant`: `default`, `sunken`, `floating`, `ghost`, `accent`. Padding scale: `none`, `sm`, `md`, `lg`, `xl`. |
+| `Chip` | `variant`: `default`, `accent`, `muted`, `ok`, `warn`, `err`. `size`: `sm`, `md`. |
+| `Input` | `variant`: `default` or `mono`; `invalid`. |
+| `Modal` | `open`, `onClose`, `title`, `description`, `footer`, `size`: `sm`, `md`, `lg`, `xl`, `full`; `closeOnBackdrop`, `closeOnEsc`, `initialFocusRef`. |
+| `ConfirmDeleteModal` | Destructive confirm built on `Modal` and `Button variant="danger"`. |
+| `SegmentedControl<T>` | Generic option list; `size`: `sm`, `md`; `tone`: `default`, `inverted`. |
+| `Switch` | `size`: `sm`, `md`. |
+| `Tooltip` | `content`, `side`: `top`, `bottom`, `left`, `right`; `delay`, `hideOnMobile`. |
+| `Toast` | `ToastProvider` (mounted in `layout.tsx`) and `useToast()`; `variant`: `info`, `success`, `warn`, `error`; errors and warnings use `role="alert"`. |
+| `EmptyState` | `icon`, `title`, `description`, optional `action` (`label` plus `onClick` or `href`). |
+| `Skeleton` | `variant`: `text`, `rect`, `circle`; `lines` for multi-line text. |
+| `Kbd` | Keyboard key cap (mono, `rule` border). |
+| `ThemeToggle` | `size`: `sm`, `md`. |
 
-**Hover-lift:** `hover:-translate-y-[1px]` + `hover:shadow-[var(--shadow-lift)]`, 120ms ease-out. Active'de geri iner.
+Compose class names with `cn` from `@/lib/utils/cn`. Primitives take `className` for layout tweaks, not for recoloring.
 
-### 4.2 `Chip`
+## Icons
 
-6 variant (`default`, `accent`, `muted`, `ok`, `warn`, `err`) × 2 size. Pill shape (`rounded-full`).
+Icons come from `lucide-react`, re-exported through the barrel `src/components/icons/index.ts` (grouped by purpose: navigation, actions, and so on). Add a new icon to the barrel first and import it from `@/components/icons`. Some existing files (for example `ThemeToggle`, `src/lib/fixtures/navigation.ts`) still import `lucide-react` directly. Sizes are set with `h-*/w-*` classes (commonly `h-3.5 w-3.5` to `h-4 w-4`); decorative icons carry `aria-hidden`.
 
-### 4.3 `Card`
+## Markdown and prose
 
-5 variant: `default`, `sunken`, `floating`, `ghost`, `accent`. `padding` prop: `none|sm|md|lg|xl`. `interactive` flag hover-lift ekler.
+Rendered by `MarkdownPreview` (`src/components/markdown/MarkdownPreview.tsx`) under the `.markdown-preview` class; chat uses `.chat-bubble-markdown` for KaTeX display math. All rules are in `globals.css`.
 
-Surface karakteri tema bazlı:
-- White: border + `--shadow-soft`
-- Sepia: border heavy + `--shadow-soft` (çok hafif)
-- Dark: border + `--shadow-soft` (belirgin)
+- Block styles: headings `h1`-`h6`, `p`, `strong`, `a`, `ul`/`ol`/`li`, `blockquote`, `hr`, `table`/`thead`/`th`/`td`, `mark`, footnotes (`.footnote-ref`, `.footnote-label`, `p.footnote-def`), task lists (`li.task-list-item`, `.task-list-checkbox`).
+- Code: `pre.markdown-code-block`, `code.markdown-inline-code`, highlight.js token classes `.hljs-*`. Code colors come from `--md-code-*` and `--md-inline-code-bg` variables: a light GitHub skin by default, and the dark GitHub skin under `dark`, `sepia` and `github` themes.
+- Callouts: `blockquote.callout` with `.callout-title`, and type modifiers `callout-warning`, `callout-caution`, `callout-danger`, `callout-bug`, `callout-failure`, `callout-error`, and `callout-tip`, `callout-hint`, `callout-success`, `callout-check`, `callout-done`. Default callouts use `accent` and `accent-wash`.
+- Wikilinks: `a.wikilink` and `.wikilink-embed`.
+- Math: KaTeX (`.katex`, `.katex-display`).
+- PDF text layer: `.textLayer` rules for `PdfViewer` selection and highlighting.
+- Citation chips: `CitationChip` and `WebCitationChip` (`src/components/notebook/`) are components styled with token utilities (no dedicated CSS class). `.citation-pulse` (keyframes `citation-pulse`, 1.2s, `accent-wash`) briefly highlights the target chunk after a chip jumps to it in the reader.
 
-### 4.4 `Switch`
+## Adding to the system
 
-Modern knob — spring easing (`var(--ease-spring)`), white knob ile her temada kontrast. `sm`/`md` size.
-
-### 4.5 `SegmentedControl`
-
-`default` ve `inverted` ton. Active state'te `bg-paper` + soft shadow (raised look). Density'ye duyarlı.
-
-### 4.6 `Input`
-
-`focus-visible:ring-2 ring-accent/25` + border accent. `invalid` state error kırmızısı + ring/30. `disabled` paper-2 + opacity-60.
-
-### 4.7 `Kbd`
-
-Inset bottom shadow (klavye tuş hissi), paper-2 bg, ink-3 text, mono font. Topbar `⌘K` ipucu için.
-
-### 4.8 `ThemeToggle` (yeni)
-
-3 segment pill: Sun (white) · BookOpen (sepia) · Moon (dark). Active'te raised paper background.
-
----
-
-## 5. Shell — Mobile-First Hibrit
-
-### Desktop (≥768px)
-```
-┌────────┬──────────────────┐
-│ Side   │ Topbar (sticky)  │
-│ bar    ├──────────────────┤
-│ 260px  │                  │
-│        │ Main content     │
-│        │                  │
-└────────┴──────────────────┘
-```
-
-### Mobile (<768px)
-```
-┌──────────────────┐
-│ Topbar           │  ← Hamburger + Search + ⚡
-│                  │
-│                  │  ← MobileDrawer (sidebar slide-in)
-│ Main content     │
-│                  │
-│                  │
-├──────────────────┤
-│ ⊞  ⊟  ⊕  🔍 ⚙️ │  ← BottomBar (fixed)
-└──────────────────┘
-```
-
-### Komponentler
-
-| Komponent | Sorumluluk |
-|-----------|-----------|
-| `AppShell` | Responsive grid orchestrator; drawer/search state |
-| `Sidebar` | Desktop'ta sabit, `MobileDrawer` içinde reuse |
-| `MobileDrawer` | <md: slide-in panel + backdrop, ESC kapatır |
-| `Topbar` | Sticky, blur backdrop, mobile'da hamburger + search ikonu |
-| `BottomBar` | <md: 4 nav + ortada CTA FAB (Add) |
-| `TweaksPanel` | Floating gear → tema/yoğunluk/dil pop-up |
-
----
-
-## 6. Token → Tailwind Eşleştirme
-
-Tüm `--color-*`, `--radius-*`, `--shadow-*`, `--font-*` token'ları `@theme` üzerinden Tailwind utility'sine bağlanır:
-
-```tsx
-<div className="bg-paper border-rule rounded-[var(--radius)] shadow-[var(--shadow-soft)]">
-```
-
-Density token'ları için arbitrary CSS variable kullanın:
-```tsx
-<button className="h-[var(--row)] px-[var(--pad-x)]">
-```
-
----
-
-## 7. İkonografi
-
-`lucide-react` standart. Yeni ikon ekleme:
-1. `src/components/icons/index.ts` barrel'ına re-export ekle
-2. Sayfalardan import: `import { Search } from "@/components/icons"`
-3. Boyut `h-4 w-4` (16px) UI default; `h-5 w-5` (20px) topbar/CTA; `h-3.5 w-3.5` (14px) chip içi
-
----
-
-## 8. Tipografi Skala
-
-| Sınıf | Font | Size | Weight | Use |
-|-------|------|------|--------|-----|
-| Display | serif | 32-48px | 400-500 | Page hero |
-| H1 | serif | 28px | 500 | Page title |
-| H2 | sans/serif | 21px | 500 | Section |
-| H3 | sans | 17px | 600 | Subsection |
-| Body | sans | 14-15px | 400 | UI default |
-| Small | sans | 13px | 400 | Helper |
-| Eyebrow | mono | 11-12px | 500 | Section labels (UPPERCASE, tracking 0.08em) |
-| Code | mono | 13px | 400 | Code/keys |
-
-Reader prose (`/notebook`) için ayrı `prose-tme` utility — Source Serif 4, 17px, line-height 1.68, drop-cap, mark.hl.
-
----
-
-## 9. Mikro-Etkileşim Kuralları
-
-1. **Hover-lift** (default for tüm clickable surface'ler): `translateY(-1px)` + `shadow-lift`, 120ms ease-out
-2. **Active**: lift'i geri al (`translate-y-0`) + shadow-none
-3. **Focus-visible**: 2px ring `ring-accent` + 2px offset `ring-paper`. Hiçbir komponent focus halkasız bırakılmaz
-4. **Disabled**: `opacity-50`, hover effect kapalı, `cursor-not-allowed`
-5. **Loading**: spinner overlay, içerik invisible
-6. **prefers-reduced-motion**: tüm transition/animation 0.01ms'a düşer (CSS guard global)
-7. **Tema geçişi**: 180ms color/background fade — body üzerinde
-
----
-
-## 10. Erişilebilirlik
-
-| Alan | Kural |
-|------|-------|
-| Contrast | WCAG AA 4.5:1 minimum (her tema 3 ana ink seviyesi paper üstüne testli) |
-| Focus ring | Tüm interactive'larda `ring-accent` görünür |
-| ARIA | Sidebar/Topbar/Main landmark + `role` ataması |
-| Icon-only btn | `aria-label` zorunlu |
-| Reduced motion | Global CSS guard |
-| Color-scheme | Her tema `color-scheme` declarative — form control'ler doğal eşleşir |
-| Touch targets | Mobile bottom-bar 52px min-width, FAB 48px |
-
----
-
-## 11. Migration Notları (v1 → v2)
-
-| Eski | Yeni | Notu |
-|------|------|------|
-| `Theme = "light" \| "sepia"` | `Theme = "white" \| "sepia" \| "dark"` | `prefs.ts` v5 migration `light` → `white` map'ler |
-| `--paper, --ink, --accent` (raw) | `--color-paper, --color-ink, --color-accent` | Tailwind utility üretimi için `--color-*` zorunlu |
-| `radius: 6px` | `radius: 12px` | Modern feel; button 10px, chip pill |
-| Inline SVG ikonlar | `lucide-react` barrel | `components/icons/index.ts` |
-| Sabit 248px sidebar | 260px desktop + drawer mobile | `AppShell` responsive grid |
-| `accent: #B8601C` (tek) | `accent: #B86A2B` + `accent-hot: #C26A2E` | Dual-token; `accent-hot` CTA-only |
-| `themeFollowsSystem` yok | Var (default `false`) | Opt-in; kapalıyken ilk açılış `dark` |
-| FOUC riski | `theme-init-script` inline `<head>` | Hydrate öncesi data-theme set |
-
----
-
-## 12. Yapılacaklar (post-v2)
-
-- [ ] `dompurify` markdown render için
-- [ ] Toast/Snackbar component (sticky bottom-right)
-- [ ] Modal/Dialog component (focus trap + backdrop)
-- [ ] Tooltip component (Radix-free, native popover veya custom)
-- [ ] Command palette (`cmdk` paketi) — Topbar `⌘K` modal'ını besler
-- [ ] Skeleton loader pattern (`animate-pulse` + paper-2 fill)
-- [ ] Reader prose stili (`prose-tme` utility) — Phase 2 source ingest ile
-- [ ] Visual regression snapshot'ları (`docs/visual-regression/`)
+1. Add the token to `@theme`; if it differs by theme, add it to all four theme blocks (`white`, `sepia`, `dark`, `github`) and check contrast in each.
+2. Document it in this file.
+3. Use the token-based utility in the component. Add a variant to the relevant primitive rather than restyling it at the call site.
