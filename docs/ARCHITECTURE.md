@@ -41,7 +41,10 @@ directly but through `src/lib/ai` modules or runners; `src/lib/tauri` is the onl
 
 ## 3. Routing
 
-- Top level: `/` (landing), `/dashboard`, `/workspaces`, `/settings`, `/setup/[step]`.
+- Top level: `/` (landing), `/dashboard`, `/workspaces`, `/setup/[step]`, and settings: `/settings` (general) plus one
+  static route per section (`/settings/providers`, `/settings/usage`, `/settings/models`, …). `src/app/settings/layout.tsx`
+  renders the shell and left nav; sections, groups, search keywords and the redirect of old `/settings#tab` links live in
+  `src/components/settings/layout/settings-nav.ts`.
 - Workspace: `/w/[id]` plus `read/[sourceId]`, `chat`, `notes`, `cards`, `quiz`, `map`, `research`,
   `study/[lessonId]`, `study/journal`, `audio/[podcastId]`, `roadmap`, `roadmap/[roadmapId]`,
   `analysis`, `analysis/[analysisId]`. There is no `/w/[id]/study` index page.
@@ -91,6 +94,25 @@ Provider setup: [PROVIDERS.md](PROVIDERS.md), [PROVIDERS_LOCAL.md](PROVIDERS_LOC
 - Model lists are fetched live where the provider allows (`providers/model-fetch/`); the preset's list is the
   offline fallback. Codex lists models through `codex app-server`.
 - Local agent CLIs (`claude-cli`, `codex-cli`) are processes, not HTTP: see [PROVIDERS_LOCAL.md](PROVIDERS_LOCAL.md).
+- Account and limit status for those CLIs comes from the CLIs themselves (`src/lib/ai/agent-status`: Claude
+  `initialize` / `get_usage` control requests, Codex app-server `account/read` / `account/rateLimits/read`), cached
+  in the `useAgentStatus` store. No credential file is read.
+- Settings → Providers is built from `buildProviderCatalog` (`src/lib/ai/provider-catalog.ts`): chat presets grouped
+  as CLI / local / cloud / custom with a status per entry. `prefs.disabledProviders` hides a provider from model
+  pickers via `filterEnabledChatOptions`, except where a saved binding still uses it.
+
+### Usage scan
+
+Settings → Usage reads the local Claude Code and Codex logs, not TME's own records. The Rust command `usage_scan`
+(`src-tauri/src/usage.rs`) walks `<claude home>/projects/**/*.jsonl` and `<codex home>/sessions/**/*.jsonl[.zst]`
+read-only, without following symlinks. It skips files older than the range and caches parsed events per file
+(by mtime and size).
+
+Claude usage is de-duplicated by `message.id:requestId`; Codex usage is taken as deltas of the cumulative counters,
+with fork copies de-duplicated. The command returns only per-day, per-model token sums and session counts.
+
+`src/lib/usage` turns the sums into totals, provider and model shares, a daily series and cost by type, using
+`PRICING`. The cost is labelled an API estimate. Unpriced models count as zero and are listed.
 
 ### Prompts
 
@@ -163,8 +185,9 @@ vault; `src/stores/vault.ts` is an always-unlocked stub kept for old call sites.
 
 ## 9. Desktop shell (Tauri 2)
 
+- `src-tauri/src/usage.rs` holds the read-only `usage_scan` command (permission `allow-usage-scan`).
 - `src-tauri/src/lib.rs` registers plugins (http, fs, dialog, notification, autostart, updater, process, opener,
-  shell; log in debug builds), the system tray, the commands (`agent_cli_*`, `keychain_*`, `tts_*`, `sysinfo_*`) and
+  shell; log in debug builds), the system tray, the commands (`agent_cli_*`, `keychain_*`, `tts_*`, `sysinfo_*`, `usage_scan`) and
   the static-export asset fallback. Agent CLI sessions are shut down on webview reload and app exit.
 - Tauri denies app commands by default: each command needs a `src-tauri/permissions/*.toml` entry and its identifier
   in `src-tauri/capabilities/default.json`. The same capability holds the plugin-http `allow` list of upstream hosts,

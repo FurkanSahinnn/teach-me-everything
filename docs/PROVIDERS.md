@@ -66,9 +66,11 @@ HTTP sağlayıcıları ortama göre dallanır (`isTauriEnvWithOverride()`, `src/
 `src/lib/ai/pricing.ts` içindeki `PRICING` haritası model id'sine göre USD / 1M token oranlarını tutar (`input`, `output`, `cacheRead`, `cacheCreation`) ve yalnızca kullanıcıya gösterilen **tahmini** maliyet (`computeCostUsd`) içindir. Fatura otoritesi sağlayıcının kendi faturasıdır.
 
 - **Global bir "tazelik" kapısı bilinçli olarak yoktur.** BYOK'ta her sağlayıcının fiyat tempo'su farklıdır; OpenRouter ve özel uç noktaların oranları ise hiç bilinemez. Tek bir tarih yanlış kesinlik verirdi. Değişen girişler tek tek güncellenir.
-- Güncelleme: sağlayıcının fiyat sayfasına bak, ilgili model girişindeki oranları değiştir, `npm run typecheck` ve `npm run test:run` çalıştır.
+- Güncelleme: sağlayıcının fiyat sayfasına bak, ilgili model girişindeki oranları değiştir, `npm run typecheck` ve `npm run test:run` çalıştır. Claude ve güncel OpenAI girişleri resmi sayfalardan alınmıştır (kaynak bağlantıları `pricing.ts` yorumunda); `pricing.test.ts` içindeki "PRICING list prices" tablosu bu değerleri sabitler, fiyat değişince ikisi birlikte güncellenir.
+- `cacheCreation` 5 dakikalık (OpenAI'de 30 dakikalık) önbellek yazma ücretidir. Claude Code çoğunlukla 1 saatlik önbellek yazar; Kullanım ekranındaki maliyet bu yüzden biraz düşük tahmin edilir.
+- Önbellek okuma oranı her modelde 0.1× değildir: Fable 5.1 0.025×, Opus 5.5 ve Sonnet 5.5 0.05×.
 - `PRICING` içinde olmayan model 0 USD sayılır ve tek seferlik `console.warn` düşer; hata fırlatılmaz.
-- **Abonelik CLI modelleri kasten yoktur.** `claude-cli` (`opus`, `sonnet`, `haiku` takma adları) ve `codex-cli` model id'leri `PRICING`'e girmez; böylece maliyet çipi gizlenir. Abone token başına ödemez; yanlış bir dolar tutarı ya da "Free" yazmak yanıltıcı olurdu.
+- **Abonelik CLI takma adları kasten yoktur.** `claude-cli` takma adları (`opus`, `sonnet`, `haiku`) `PRICING`'e girmez; böylece uygulama içi maliyet çipi gizlenir. Abone token başına ödemez; yanlış bir dolar tutarı ya da "Free" yazmak yanıltıcı olurdu. Kullanım ekranı ise CLI günlüklerindeki gerçek model id'lerini (`claude-opus-5-5`, `gpt-6-astra` …) fiyatlandırır ve bunu açıkça "API tahmini" olarak etiketler.
 - Web arama maliyeti ayrı hesaplanır: `computeWebSearchCostUsd`.
 
 ## 6. Dinamik model listeleri

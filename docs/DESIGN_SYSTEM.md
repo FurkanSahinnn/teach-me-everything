@@ -25,6 +25,9 @@ Each theme redefines the same names (values below are the `white` theme, which i
 | Accent | `accent`, `accent-hot`, `accent-soft`, `accent-wash`, `accent-ink` | `#B86A2B`, `#C26A2E`, `#E8C9A8`, `#FCEFDC`, `#6E3A0F` |
 | Tags | `moss`, `plum`, `slate` | `#4E5E3E`, `#6B3A5E`, `#3C4A58` (not redefined per theme) |
 | Semantic | `ok`, `warn`, `err` | `#4E6E3E`, `#A86A1C`, `#8E2F2F` (overridden in `dark` and `github`) |
+| Chart series | `series-1` (Codex), `series-2` (Claude) | `#2a78d6`, `#eb6834`; sepia `#2a78d6`/`#c4501f`; dark and github `#3987e5`/`#d95926` |
+
+Chart series colors identify a provider wherever it appears (usage chart, limit meters, breakdown dots); they never encode rank and are never reused for status. Each theme's pair was checked with the dataviz palette validator against that theme's `paper-2` surface (lightness band, chroma, CVD and normal-vision separation, 3:1 contrast). Text next to a series mark stays in ink tokens. Parts of one total (token types) use the neutral `ink-5 … ink` steps instead of series hues.
 
 Usage convention: `paper` is the page, `paper-2` sidebars and sunken areas, `paper-3`/`paper-4` hover and pressed; `ink` is body text, `ink-3` secondary, `ink-4`/`ink-5` tertiary and disabled; `accent-wash` plus `accent-ink` is the highlighted/selected surface; `accent-hot` is the filled call-to-action.
 

@@ -42,7 +42,7 @@ Workspace-scoped tables also index `workspaceId`. To change the schema, add a ne
 ## Preferences (`src/stores/prefs.ts`)
 
 - Zustand `persist` to `localStorage` key `tme:prefs`; `PREFS_VERSION = 25` (same file). The whole state is persisted (no `partialize`).
-- State groups: appearance (`theme`, `themeFollowsSystem`, `density`, `locale`, `readerWidth`); AI (`preferredAnthropicAuth`, `strictAnthropicAuth`, `aiResponseLocale`, `customEndpoints`, `agentCli`, `modelBindings` with `DEFAULT_MODEL_BINDINGS`); `webSearchPrefs`, `searchProviders`; `srs`, `costPrefs`, `curriculumGeneration`; `notesUi`; `vault` (`VaultPrefs`: folder path, setup flag, autoSync, conflict policy); `ttsProvider`, `podcastFeatureEnabled`, `autoCheckUpdates`.
+- State groups: appearance (`theme`, `themeFollowsSystem`, `density`, `locale`, `readerWidth`); AI (`preferredAnthropicAuth`, `strictAnthropicAuth`, `aiResponseLocale`, `customEndpoints`, `agentCli` (paths, `claudeHome`/`codexHome`, proxy `env`), `disabledProviders` (hidden from model pickers), `modelBindings` with `DEFAULT_MODEL_BINDINGS`); `webSearchPrefs`, `searchProviders`; `srs`, `costPrefs`, `curriculumGeneration`; `notesUi`; `vault` (`VaultPrefs`: folder path, setup flag, autoSync, conflict policy); `ttsProvider`, `podcastFeatureEnabled`, `autoCheckUpdates`.
 - Migration: exported `migratePrefs(persisted, version)` applies cumulative `if (version < N)` steps. A strict `isValidModelBindings` check resets the whole `modelBindings` object when a required key is missing, so new binding keys must be patched in place inside the migration. Tests: `src/stores/prefs*.test.ts`.
 
 ## Backup (`src/lib/backup/`)

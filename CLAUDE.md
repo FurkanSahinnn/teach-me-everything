@@ -65,6 +65,8 @@ last command's exit code and hides failures.
 - `src/lib/` — domain logic: `ai/` (providers, runners, prompts, retrieval, pipelines), `db/` (Dexie schema +
   repos + hooks), `ingest/`, `notes/`, `vault/`, `srs/`, `quiz/`, `roadmap/`, `article-analysis/`,
   `cross-analysis/`, `research/`, `podcast/`, `backup/`, `tauri/` (Rust bridges), `utils/`.
+- Settings are static routes under `src/app/settings/<section>/` built from `SettingsPage` / `SettingsSection` /
+  `SettingsGroup` / `SettingsRow` (`src/components/settings/layout/`); a new section is registered in `settings-nav.ts`.
 - `src/stores/` — Zustand (`prefs.ts` persisted with migrations). `src/i18n/` + `messages/{tr,en}.json`.
 - `src-tauri/` — Rust shell: `lib.rs` (plugins, commands, asset fallback), `agent_cli.rs` + `agent_process.rs`,
   `keychain.rs`, `tts.rs`, `sysinfo.rs`; permissions in `capabilities/default.json` + `permissions/*.toml`.

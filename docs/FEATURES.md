@@ -33,17 +33,20 @@ Tanıtım sayfası. `Brand` (shell) ve `FirstRunGate` (setup) kullanır; ilk ça
 
 Çalışma alanlarını listeler; oluşturma, düzenleme, silme. `WorkspaceCard`, `WorkspaceFormModal`. Tablo: `workspaces`. AI yok.
 
-## Ayarlar (`/settings`)
+## Ayarlar (`/settings/*`)
 
-Tek sayfa; bölümler `src/components/settings/` altında:
+Solda gruplu menü (`SettingsSidebarNav`, arama kutulu), sağda başlık + kart satırları (`SettingsPage` / `SettingsSection` / `SettingsGroup` / `SettingsRow`, `src/components/settings/layout/`). Her bölüm statik bir rota; menü ve eski `#hash` bağlantılarının yönlendirmesi `settings-nav.ts` içinde.
 
-- Sağlayıcı ve anahtarlar: `PresetChooser` (setup), `CustomEndpointSection` / `CustomEndpointModal`, `AgentCliSection` (yerel `claude-cli` / `codex-cli`, anahtarsız). Anahtarlar `api-keys-repo` üzerinden; masaüstünde OS keychain.
-- Varsayılan modeller (binding'ler), `CostSection`, `QuotaSection`, `AILocaleSection` (AI çıktı dili).
-- Gömme: `EmbedSection`, `ReembedModal`. Yeniden parçalama: `RechunkSection`.
-- Arama: `WebSearchSection`, `SearchProvidersSection`.
-- Konseptler: `ConceptsSection`, `ExtractConceptsModal` (`summary` binding'i).
-- Masaüstü: `VaultSection`, `DailyNotesSection`, `AutoLaunchSection`, `UpdatesSection`, `TtsProviderSection`, `PodcastFeatureSection`.
-- Veri: `BackupSection`. Görünüm: tema, yoğunluk, dil (Ortak özellikler bölümüne bakın).
+- `/settings` Genel: arayüz dili, AI çıktı dili (`AILocaleSection`), otomatik başlatma.
+- `/settings/appearance` tema, yazı tipi, yoğunluk · `/settings/learning` SRS sınırları.
+- `/settings/providers` **Sağlayıcılar** (`ProvidersManager`): solda liste (Bu bilgisayarda / Yerel sunucular / Bulut / Özel uç noktalar), her satırda durum ve açma-kapama anahtarı (`disabledProviders`; kapalı sağlayıcı model seçicilerde görünmez). Sağda ayrıntı:
+  - Claude Code ve Codex CLI (`CliProviderDetail`): kurulu sürüm, oturum durumu, e-posta ve plan (ör. "Claude Max", "ChatGPT Plus"), kullanım limitleri, ikili dosya yolu, `CLAUDE_CONFIG_DIR` / `CODEX_HOME` klasörü, vekil sunucu değişkenleri. Bilgiler CLI'ların kendisinden okunur (`lib/ai/agent-status`); token dosyası okunmaz.
+  - Bulut ve yerel sağlayıcılar (`ApiProviderDetail`): anahtar alanları (`ApiKeyRow`), adres, araç kullanımı, model sayısı; özel uç noktalar için bilgi ve silme. "Sağlayıcı ekle" `CustomEndpointModal` açar.
+- `/settings/models` varsayılan model binding'leri · `/settings/embedding` `EmbedSection`, `RechunkSection`.
+- `/settings/usage` **Kullanım** (`UsageView`): Maliyet / Token / Limitler sekmeleri, 24 saat–90 gün aralığı. Bu bilgisayardaki Claude Code ve Codex günlüklerini yalnız okuyarak (`usage_scan`) toplam, sağlayıcı ve model dökümü, günlük grafik, türe göre dağılım ve önbellek tasarrufu gösterir; maliyet liste fiyatlarıyla API tahminidir. Limitler sekmesi oturum / haftalık / model bazlı pencereleri ve sıfırlanma süresini gösterir. Altında uygulama içi maliyet tercihleri (`CostSection`).
+- `/settings/research` araştırma anahtarları, `SearchProvidersSection`, `WebSearchSection` · `/settings/audio` `TtsProviderSection`, `PodcastFeatureSection`.
+- `/settings/concepts` `ConceptsSection` · `/settings/notes` `VaultSection`, `DailyNotesSection`.
+- `/settings/data` `BackupSection`, `QuotaSection` · `/settings/updates` `UpdatesSection` · `/settings/about`.
 
 ## Kurulum sihirbazı (`/setup/[step]`)
 

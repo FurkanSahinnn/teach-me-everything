@@ -9,7 +9,7 @@ Next.js 16 App Router, React 19, Tailwind v4. Every page is a client-driven scre
 | `/` | `page.tsx` | Landing; wraps `FirstRunGate` |
 | `/dashboard` | `dashboard/page.tsx` | |
 | `/workspaces` | `workspaces/page.tsx` | Workspace list (`components/workspaces/`) |
-| `/settings` | `settings/page.tsx` | Composes `components/settings/*` sections |
+| `/settings`, `/settings/<section>` | `settings/layout.tsx`, `settings/page.tsx` (General), one folder per section (`appearance`, `learning`, `providers`, `models`, `usage`, `embedding`, `research`, `audio`, `concepts`, `notes`, `data`, `updates`, `about`) | Layout renders the left nav; sections come from `components/settings/layout/settings-nav.ts` |
 | `/setup/[step]` | `setup/[step]/{layout,page}.tsx` | First-run wizard (`components/setup/`) |
 | `/w/[id]` | `w/[id]/page.tsx` | Workspace home; `layout.tsx` exports `generateStaticParams` yielding only `{id:"_"}` and `dynamicParams = false`, mounts `WorkspaceVaultMount` |
 | `/w/[id]/read/[sourceId]` | `read/[sourceId]/{layout,page}.tsx` | Reader + source chat (`PdfViewer`, `TweaksPanel`) |
@@ -44,7 +44,7 @@ Rules for dynamic routes: pages under `/w/[id]/...` read params with `useRoutePa
 | `podcast/` | `GenerateScriptModal`, `InstallModelModal`, `CompatibilityChip` |
 | `roadmap/` | `RoadmapCanvas`, `NodeInspector`, `RoadmapCard`, `RoadmapEmptyState`, `RoadmapWizardModal` |
 | `article-analysis/` | `AnalysisDetailView`, `AnalysisCard`, `AnalysisGenerateModal`, `AnalysisEmptyState` |
-| `settings/` | One `*Section.tsx` per settings block (AgentCli, Backup, Vault, Embed, WebSearch, SearchProviders, CustomEndpoint, Cost, Quota, Updates, AutoLaunch, TtsProvider, ...) plus `ReembedModal`, `ExtractConceptsModal` |
+| `settings/` | `layout/` (`SettingsSidebarNav`, `SettingsPrimitives`: `SettingsPage`/`SettingsSection`/`SettingsGroup`/`SettingsRow`, `settings-nav.ts`); `providers/` (`ProvidersManager`, `ProviderList`, `CliProviderDetail`, `ApiProviderDetail`); `usage/` (`UsageView`, `UsageLimitsPanel`, `UsageTotalsPanel`, `UsageDailyChart`, `LimitMeter`, formatters); shared rows (`ApiKeyRow`, `ModelBindingRows`, `PreferenceRows`); one `*Section.tsx` per block (Backup, Vault, Embed, WebSearch, SearchProviders, CustomEndpoint, Cost, Quota, Updates, AutoLaunch, TtsProvider, …) plus `ReembedModal`, `ExtractConceptsModal` |
 | `setup/` | `FirstRunGate`, `WelcomeStep`, `PresetChooser`, `ExamplesStep`, `DoneStep` |
 | `workspaces/` | `WorkspaceCard`, `WorkspaceFormModal` |
 | `vault/` | `VaultSetupBoot`, `VaultSetupModal`, `WorkspaceVaultMount`, `VaultReconcilerProvider` |

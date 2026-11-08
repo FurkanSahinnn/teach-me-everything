@@ -103,7 +103,27 @@ Rust beyaz listesi hâlâ bir `codex exec --json ... -` profilini kabul eder ve 
 
 ### B.7 Settings ve tercihler
 
-`src/components/settings/AgentCliSection.tsx` (`src/app/settings/page.tsx` içinde render edilir; web'de hiçbir şey çizmez). Her CLI için bir satır: otomatik tespit, sürüm ve `node` başlatıcı bilgisi, hata nedeni ve ikili yolunu elle girme alanı. Yol değişince probe yeniden çalışır. Bulunan CLI'nın sağlayıcısı Settings → varsayılan modeller'de seçilebilir olur. Tercihler `usePrefs().agentCli` (`AgentCliPrefs`, `src/stores/prefs.ts`): `claudePath?`, `codexPath?`, `env?`. Boş yol "otomatik tespit" demektir. `env` oluşturulan sürece eklenir ve Rust beyaz listesine tabidir; arayüzde düzenleme alanı yoktur.
+Ayarlar → Sağlayıcılar (`/settings/providers`, `ProvidersManager`). Listede iki CLI "Bu bilgisayarda" grubunda sürüm ve durumla görünür; ayrıntı paneli `src/components/settings/providers/CliProviderDetail.tsx`:
+
+- **Durum:** oturum açık mı, e-posta ve plan (B.10), kullanım limitleri (`LimitMeter`).
+- **İkili dosya yolu:** boşsa otomatik bulunur; kaydedince `probeAgentCli` çözülen yolu ve `node` başlatıcısını gösterir.
+- **Ev klasörü:** `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Tam yol olmalı ve var olmalı; Rust `validate_options` başka değeri reddeder.
+- **Ortam değişkenleri:** yalnız `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`; iki CLI için ortaktır. API anahtarı türü değişkenler arayüzde yoktur: prefs `localStorage`'da düz metin durur, anahtarlar keychain'li alanlara aittir.
+
+Tercihler `usePrefs().agentCli` (`AgentCliPrefs`): `claudePath?`, `codexPath?`, `claudeHome?`, `codexHome?`, `env?`. Ev klasörü ayarlanınca sohbet sağlayıcıları ve durum yoklamaları süreci ilgili ortam değişkeniyle başlatır. Sağlayıcı listesindeki anahtar kapatılırsa (`disabledProviders`) CLI model seçicilerde görünmez; kayıtlı bir binding hâlâ kullanıyorsa görünür kalır.
+
+### B.10 Hesap ve limit yoklaması
+
+`src/lib/ai/agent-status/` (`probes.ts`, `parsers.ts`, `store.ts`). Hiçbir kimlik dosyası okunmaz, özel HTTP uç noktası çağrılmaz; her şey kullanıcının kendi CLI'ından gelir. Sonuçlar `useAgentStatus` içinde 5 dakika önbellekte tutulur (`AGENT_STATUS_TTL_MS`); "Yeniden kontrol et" zorlar.
+
+- **Claude:** çıkarım argümanlarıyla (`haiku` modeli) başlatılır, kullanıcı mesajı gönderilmez, böylece kota harcanmaz. stdin'e iki control request yazılır:
+  - `{"type":"control_request","request":{"subtype":"initialize"}}` → `account.{email, organization, subscriptionType}` ve `claude_code_version`.
+  - `get_usage` → `rate_limits.five_hour`, `seven_day`, `model_scoped[]` (`utilization` 0–100, `resets_at`).
+  - `get_usage` belgelenmemiş ve deneyseldir. Hata verirse hesap bilgisi limitsiz döner (`limitsError`).
+- **Codex:** `codex app-server` → `initialize` (`capabilities.experimentalApi: true`) → `account/read` (`account.{type, email, planType}`; `null` ise oturum yok) → ChatGPT hesabında `account/rateLimits/read` (`primary` = oturum penceresi, `secondary` = haftalık, `individualLimit` = aylık kredi; `resetsAt` saniye).
+- Bütçe 20 saniye (`PROBE_BUDGET_MS`); süreç her durumda `finally` içinde durdurulur.
+
+Kullanım ekranındaki token ve maliyet verisi ayrı bir yoldan gelir: Rust `usage_scan` komutu (`src-tauri/src/usage.rs`) `~/.claude/projects/**/*.jsonl` ve `~/.codex/sessions/**/*.jsonl(.zst)` günlüklerini yalnız okur. Sayılar günlük ve model bazında birleştirilir, içerik dönmez. Ayrıntı: [ARCHITECTURE.md](./ARCHITECTURE.md) §6.
 
 ### B.8 Bilinen sınırlar
 
