@@ -1,6 +1,6 @@
 # Local agent-CLI command permissions.
 #
-# Tauri 2.x denies every command by default, so the four commands defined in
+# Tauri 2.x denies every command by default, so the commands defined in
 # src-tauri/src/agent_cli.rs need an explicit grant here before the main webview
 # (declared in capabilities/default.json) can invoke them. Without it the
 # renderer gets "agent_cli_start not allowed. Command not found" — the command
@@ -8,7 +8,8 @@
 #
 # Both grants execute trusted local software. The probe permits only a bounded
 # --version invocation; sessions additionally permit inference and model
-# discovery profiles plus stdin traffic.
+# discovery profiles plus stdin traffic, and resolve the app-owned folder that
+# OpenCode sessions run in.
 
 "$schema" = "../gen/schemas/default-permissions-schema.json"
 
@@ -19,9 +20,10 @@ commands.allow = ["agent_cli_probe"]
 
 [[permission]]
 identifier = "allow-agent-cli-session"
-description = "Allow the webview to start the configured agent CLI, write turns to its stdin, and stop it."
+description = "Allow the webview to start the configured agent CLI, write turns to its stdin, stop it, and read its workspace folder."
 commands.allow = [
   "agent_cli_start",
   "agent_cli_write",
   "agent_cli_stop",
+  "agent_cli_workspace",
 ]

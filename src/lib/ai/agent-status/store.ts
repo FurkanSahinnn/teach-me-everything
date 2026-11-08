@@ -1,27 +1,43 @@
 import { create } from "zustand";
 import { usePrefs } from "@/stores/prefs";
-import { probeClaudeStatus, probeCodexStatus } from "./probes";
+import { probeClaudeStatus, probeCodexStatus, probeOpencodeStatus } from "./probes";
 import type { AgentAccountStatus, AgentCliId, AgentProbeOptions } from "./types";
 
 export const AGENT_STATUS_TTL_MS = 5 * 60 * 1000;
 
-const ALL: readonly AgentCliId[] = ["claude", "codex"];
+const ALL: readonly AgentCliId[] = ["claude", "codex", "opencode"];
+const PROBES: Readonly<Record<AgentCliId, (opts: AgentProbeOptions) => Promise<AgentAccountStatus>>> = {
+  claude: probeClaudeStatus,
+  codex: probeCodexStatus,
+  opencode: probeOpencodeStatus,
+};
+type PrefKeys = {
+  path: "claudePath" | "codexPath" | "opencodePath";
+  home?: { key: "claudeHome" | "codexHome"; env: string };
+};
+/** Binary path pref and, where the CLI has one, its config-home variable. */
+const PREF_KEYS: Readonly<Record<AgentCliId, PrefKeys>> = {
+  claude: { path: "claudePath", home: { key: "claudeHome", env: "CLAUDE_CONFIG_DIR" } },
+  codex: { path: "codexPath", home: { key: "codexHome", env: "CODEX_HOME" } },
+  opencode: { path: "opencodePath" },
+};
 const inflight = new Map<AgentCliId, Promise<void>>();
 
 type AgentStatusState = {
   statuses: Partial<Record<AgentCliId, AgentAccountStatus>>;
   loading: boolean;
-  /** Refresh one CLI (or both). Cached results younger than the TTL are reused unless `force`. */
+  /** Refresh one CLI (or all). Cached results younger than the TTL are reused unless `force`. */
   refresh: (cli?: AgentCliId, opts?: { force?: boolean }) => Promise<void>;
 };
 
 function probeOptions(cli: AgentCliId): AgentProbeOptions {
   const prefs = usePrefs.getState().agentCli;
-  const path = (cli === "claude" ? prefs?.claudePath : prefs?.codexPath)?.trim();
-  const home = (cli === "claude" ? prefs?.claudeHome : prefs?.codexHome)?.trim();
+  const keys = PREF_KEYS[cli];
+  const path = prefs?.[keys.path]?.trim();
+  const home = keys.home ? prefs?.[keys.home.key]?.trim() : undefined;
   const env = {
     ...(prefs?.env ?? {}),
-    ...(home ? { [cli === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"]: home } : {}),
+    ...(home && keys.home ? { [keys.home.env]: home } : {}),
   };
   return { ...(path ? { path } : {}), env };
 }
@@ -36,7 +52,7 @@ export const useAgentStatus = create<AgentStatusState>()((set, get) => {
     }
     const run = (async () => {
       const opts = probeOptions(cli);
-      const status = await (cli === "claude" ? probeClaudeStatus(opts) : probeCodexStatus(opts));
+      const status = await PROBES[cli](opts);
       set((s) => ({ statuses: { ...s.statuses, [cli]: status } }));
     })().finally(() => {
       inflight.delete(cli);

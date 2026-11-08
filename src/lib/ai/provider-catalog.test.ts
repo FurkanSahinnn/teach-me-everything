@@ -30,10 +30,19 @@ describe("buildProviderCatalog", () => {
     expect(groups.at(-1)).toBe("custom");
   });
 
-  it("orders Claude before Codex among the CLIs", () => {
+  it("orders Claude, then Codex, then OpenCode among the CLIs", () => {
     const cli = buildProviderCatalog(input()).filter((e) => e.group === "cli");
 
-    expect(cli.map((e) => e.id)).toEqual(["claude-cli", "codex-cli"]);
+    expect(cli.map((e) => e.id)).toEqual(["claude-cli", "codex-cli", "opencode-cli"]);
+  });
+
+  it("describes a ready OpenCode by its model count instead of a plan", () => {
+    const entry = buildProviderCatalog(
+      input({ agentStatuses: { opencode: status({ cli: "opencode", modelCount: 73, version: "2.2.6" }) } }),
+    ).find((e) => e.id === "opencode-cli");
+
+    expect(entry?.status).toEqual({ tone: "ok", key: "cli_ready", values: { count: "73" } });
+    expect(entry?.cli).toBe("opencode");
   });
 
   it("describes an authenticated CLI with its plan and version", () => {

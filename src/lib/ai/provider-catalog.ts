@@ -17,6 +17,7 @@ export type ProviderStatus = {
     | "cli_error"
     | "cli_authenticated"
     | "cli_authenticated_no_plan"
+    | "cli_ready"
     | "local_server"
     | "key_saved"
     | "key_missing";
@@ -28,7 +29,7 @@ export type ProviderEntry = {
   id: string;
   group: ProviderGroup;
   label: string;
-  /** Set for the two local agent CLIs. */
+  /** Set for the local agent CLIs. */
   cli?: AgentCliId;
   version?: string;
   status: ProviderStatus;
@@ -53,7 +54,11 @@ export type ProviderCatalogInput = {
 const CLI_BY_PRESET: Readonly<Record<string, AgentCliId>> = {
   "claude-cli": "claude",
   "codex-cli": "codex",
+  "opencode-cli": "opencode",
 };
+
+/** Display order inside the "On this computer" group. */
+const CLI_ORDER: Readonly<Record<AgentCliId, number>> = { claude: 0, codex: 1, opencode: 2 };
 
 /** Anthropic counts as configured with either an API key or a Claude Code OAuth token. */
 const KEY_ALIASES: Readonly<Record<string, readonly string[]>> = {
@@ -72,6 +77,11 @@ function cliStatus(status: AgentAccountStatus | undefined): ProviderStatus {
     case "error":
       return { tone: "error", key: "cli_error" };
     case "authenticated":
+      // OpenCode has no single account or plan; what matters is how many
+      // models its connected providers expose.
+      if (status.cli === "opencode") {
+        return { tone: "ok", key: "cli_ready", values: { count: String(status.modelCount ?? 0) } };
+      }
       return status.planLabel
         ? { tone: "ok", key: "cli_authenticated", values: { plan: status.planLabel } }
         : { tone: "ok", key: "cli_authenticated_no_plan" };
@@ -113,7 +123,7 @@ export function buildProviderCatalog(input: ProviderCatalogInput): ProviderEntry
       enabled: !input.disabledProviders.has(id),
     };
   });
-  const cliOrder = (e: ProviderEntry) => (e.id === "claude-cli" ? 0 : 1);
+  const cliOrder = (e: ProviderEntry) => (e.cli ? CLI_ORDER[e.cli] : 0);
   // Stable sort keeps preset declaration order within each group.
   return [...presets, ...custom].sort(
     (a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || (a.group === "cli" ? cliOrder(a) - cliOrder(b) : 0),

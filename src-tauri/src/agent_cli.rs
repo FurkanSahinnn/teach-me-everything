@@ -1,7 +1,7 @@
 //! Local agent-CLI transport.
 //!
-//! Spawns a user-installed agent CLI (`claude` or `codex`) as a child
-//! process and streams its NDJSON stdout to the webview over a
+//! Spawns a user-installed agent CLI (`claude`, `codex` or `opencode`) as a
+//! child process and streams its NDJSON stdout to the webview over a
 //! `tauri::ipc::Channel`.
 //!
 //! Why this lives in Rust rather than the webview: the Tauri build is a static
@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use shared_child::SharedChild;
 use crate::agent_process::ProcessTree;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 /// Files that are scripts for a JS runtime rather than native binaries. The
 /// Agent SDK's own check is extension-only and omits `.cjs`, which is exactly
@@ -49,6 +49,17 @@ const REFUSED_EXTENSIONS: [&str; 3] = ["cmd", "bat", "ps1"];
 /// stopped reading, so we always drain it; this only bounds what we keep.
 const STDERR_TAIL_CAP: usize = 8192;
 
+/// Primary agent TME registers inside OpenCode for its sessions. The webview
+/// selects it by this name (`OPENCODE_AGENT` in `opencode-acp.ts`).
+const OPENCODE_AGENT: &str = "tme-tutor";
+
+/// System text for OpenCode sessions started without one (model discovery,
+/// status probes). Non-empty on purpose: an empty agent `system` falls back to
+/// OpenCode's coding prompt.
+const OPENCODE_DEFAULT_SYSTEM: &str = "You are a helpful tutor.";
+
+const PROXY_ENV_KEYS: [&str; 4] = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"];
+
 /// One spawned agent process.
 ///
 /// `stdin` sits behind its own lock, separate from the session registry: the
@@ -62,6 +73,9 @@ struct Session {
   tree: Arc<ProcessTree>,
   prompt: Option<Arc<tempfile::TempPath>>,
   stdin: Arc<Mutex<Option<ChildStdin>>>,
+  /// Set for OpenCode: every write is checked against this workspace
+  /// (`check_opencode_input`).
+  opencode_workspace: Option<PathBuf>,
 }
 
 type SessionMap = Arc<Mutex<HashMap<String, Session>>>;
@@ -84,8 +98,8 @@ impl AgentCliState {
 }
 
 fn validate_cli(cli: &str) -> Result<(), String> {
-  if matches!(cli, "claude" | "codex") { Ok(()) }
-  else { Err("Only claude and codex CLIs are supported".into()) }
+  if matches!(cli, "claude" | "codex" | "opencode") { Ok(()) }
+  else { Err("Only claude, codex and opencode CLIs are supported".into()) }
 }
 
 fn validate_entry(cli: &str, path: &Path) -> Result<(), String> {
@@ -94,6 +108,8 @@ fn validate_entry(cli: &str, path: &Path) -> Result<(), String> {
   let allowed = match cli {
     "claude" => matches!(name.as_str(), "claude" | "claude.exe" | "cli.js" | "cli-wrapper.cjs"),
     "codex" => matches!(name.as_str(), "codex" | "codex.exe" | "codex.js"),
+    // `opencode-cli` is the copy OpenCode Desktop bundles.
+    "opencode" => matches!(name.as_str(), "opencode" | "opencode.exe" | "opencode-cli" | "opencode-cli.exe"),
     _ => false,
   };
   if allowed { Ok(()) } else { Err(format!("Expected a {cli} executable or its package entry point")) }
@@ -104,6 +120,15 @@ fn validate_options(options: &StartOptions) -> Result<(), String> {
   if options.cwd.is_some() { return Err("Agent working directories are managed by TME".into()); }
   for (key, value) in &options.env {
     let upper = key.to_ascii_uppercase();
+    if options.cli == "opencode" {
+      // OpenCode's configuration is assembled here (`opencode_env`). An
+      // OPENCODE_* value from the webview could replace that profile, and an
+      // inline config can declare MCP servers and plugins, i.e. commands.
+      if !PROXY_ENV_KEYS.contains(&upper.as_str()) {
+        return Err(format!("Unsupported agent environment override: {key}"));
+      }
+      continue;
+    }
     if matches!(upper.as_str(), "CLAUDE_CONFIG_DIR" | "CODEX_HOME") {
       // A config home must be an absolute path to an existing directory.
       if !Path::new(value).is_absolute() || !Path::new(value).is_dir() {
@@ -117,7 +142,9 @@ fn validate_options(options: &StartOptions) -> Result<(), String> {
     }
   }
   let args = &options.args;
-  if options.cli == "codex" {
+  if options.cli == "opencode" {
+    if args == &["acp"] { return Ok(()); }
+  } else if options.cli == "codex" {
     if args == &["app-server"] { return Ok(()); }
     let prefix = ["exec", "--json", "--color", "never", "--ephemeral", "--ignore-user-config",
       "--ignore-rules", "--skip-git-repo-check", "--sandbox", "read-only", "--model"];
@@ -185,6 +212,10 @@ pub struct StartOptions {
   /// its prompt to EOF (`codex exec -`); wrong for one that holds a session
   /// open and waits for further turns (`claude --input-format stream-json`).
   pub close_stdin: Option<bool>,
+  /// Working directory for CLIs that need one (`opencode`). Filled in by
+  /// `agent_cli_start` from the app's own data folder, never by the webview.
+  #[serde(skip)]
+  pub workspace: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -273,6 +304,10 @@ fn candidate_paths(cli: &str) -> Vec<PathBuf> {
 
   if let Some(home) = home_dir() {
     out.push(home.join(".local").join("bin").join(&exe));
+    if cli == "opencode" {
+      // Where OpenCode's install script puts the binary.
+      out.push(home.join(".opencode").join("bin").join(&exe));
+    }
     if cfg!(windows) {
       out.push(
         home
@@ -289,8 +324,8 @@ fn candidate_paths(cli: &str) -> Vec<PathBuf> {
   }
 
   if cfg!(windows) {
-    if let Some(appdata) = std::env::var_os("APPDATA") {
-      let npm = PathBuf::from(appdata).join("npm");
+    if let Some(appdata) = std::env::var_os("APPDATA").map(PathBuf::from) {
+      let npm = appdata.join("npm");
       out.push(npm.join(&exe));
       // npm on Windows ships `.cmd` / `.ps1` / POSIX shims we refuse, so reach
       // past them to the package's own entry point.
@@ -319,6 +354,15 @@ fn candidate_paths(cli: &str) -> Vec<PathBuf> {
           );
           out.push(modules.join("@openai").join("codex").join("bin").join("codex.js"));
         }
+        "opencode" => {
+          // `@opencode/cli` copies the native binary into its own bin folder.
+          out.push(modules.join("@opencode").join("cli").join("bin").join("opencode.exe"));
+          // OpenCode Desktop keeps a CLI per release, e.g. `cli\2.2.6-x64\`.
+          let desktop = appdata.join("ai.opencode.desktop").join("cli");
+          if let Some(dir) = newest_version_dir(&desktop) {
+            out.push(dir.join("opencode-cli.exe"));
+          }
+        }
         _ => {}
       }
     }
@@ -334,6 +378,23 @@ fn candidate_paths(cli: &str) -> Vec<PathBuf> {
   }
 
   out
+}
+
+/// The child folder of `dir` with the highest version-like name ("2.2.6-x64").
+/// Versions compare numerically, so 2.10 sorts after 2.9.
+fn newest_version_dir(dir: &Path) -> Option<PathBuf> {
+  std::fs::read_dir(dir).ok()?
+    .filter_map(Result::ok)
+    .filter(|entry| entry.path().is_dir())
+    .filter_map(|entry| version_key(&entry.file_name().to_string_lossy()).map(|key| (key, entry.path())))
+    .max_by(|a, b| a.0.cmp(&b.0))
+    .map(|(_, path)| path)
+}
+
+/// Leading dotted number of a folder name: "2.10.1-x64" -> [2, 10, 1].
+fn version_key(name: &str) -> Option<Vec<u64>> {
+  let numeric = name.split(|c: char| !(c.is_ascii_digit() || c == '.')).next()?;
+  numeric.split('.').map(|part| part.parse().ok()).collect()
 }
 
 fn detect_cli(cli: &str) -> Option<PathBuf> {
@@ -353,6 +414,145 @@ fn sanitize_session(session: &str) -> Result<String, String> {
     return Err("Invalid session key".to_string());
   }
   Ok(session.to_string())
+}
+
+/// Environment for an OpenCode ACP session.
+///
+/// Rust builds the one profile TME needs: a primary agent that denies every
+/// tool permission and carries TME's system prompt. It also switches off
+/// project files and the Claude Code fallbacks, which would otherwise put a
+/// coding setup into a tutoring answer.
+///
+/// The prompt is referenced with `{file:}`, never inlined. OpenCode expands
+/// `{env:}` and `{file:}` inside config text, so a document quoting
+/// `{file:~/.ssh/id_rsa}` would pull that file into the request. A referenced
+/// file's contents are inserted verbatim (checked against OpenCode 2.2.6).
+/// The file also keeps a long prompt clear of Windows' 32 767-character limit
+/// on one environment variable.
+fn opencode_env(system_file: Option<&Path>) -> Result<Vec<(&'static str, String)>, String> {
+  let system = match system_file {
+    Some(path) => {
+      // Forward slashes need no JSON escaping, and Windows accepts them.
+      let reference = path.to_string_lossy().replace('\\', "/");
+      if reference.contains('}') {
+        return Err("The system prompt file has a path OpenCode cannot reference".into());
+      }
+      format!("{{file:{reference}}}")
+    }
+    None => OPENCODE_DEFAULT_SYSTEM.to_string(),
+  };
+  let config = serde_json::json!({
+    // Sessions start in the TME agent, and the built-in agents, which allow
+    // every tool by default, are switched off. `check_opencode_input` also
+    // refuses switching to any other agent, including ones the user defined.
+    "default_agent": OPENCODE_AGENT,
+    "agents": {
+      OPENCODE_AGENT: {
+        "mode": "primary",
+        "description": "Teach Me Everything tutor",
+        "system": system,
+        "permissions": [{ "action": "*", "resource": "*", "effect": "deny" }],
+      },
+      "build": { "disabled": true },
+      "plan": { "disabled": true },
+      "general": { "disabled": true },
+      "explore": { "disabled": true },
+      // OpenCode spends a model call naming each new session. TME deletes the
+      // session after its turn, so that title would be paid for and thrown away.
+      "title": { "disabled": true },
+    },
+  });
+  Ok(vec![
+    ("OPENCODE_CONFIG_CONTENT", config.to_string()),
+    ("OPENCODE_DISABLE_PROJECT_CONFIG", "1".to_string()),
+    ("OPENCODE_DISABLE_CLAUDE_CODE", "1".to_string()),
+    ("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS", "1".to_string()),
+    ("OPENCODE_DISABLE_AUTOUPDATE", "1".to_string()),
+    ("OPENCODE_DISABLE_FILEWATCHER", "1".to_string()),
+  ])
+}
+
+/// Checks what the webview writes to an OpenCode ACP session.
+///
+/// argv and env are not the whole surface: over stdin, ACP `session/new` takes
+/// `mcpServers`, which OpenCode spawns as commands, and a mode switch can pick
+/// an agent that allows every tool. So only the messages TME itself sends get
+/// through: a session in the TME workspace without MCP servers, the TME agent
+/// or a model as session options, text-only prompts, cancel/delete, and
+/// declining replies to OpenCode's own requests.
+fn check_opencode_input(payload: &str, workspace: &Path) -> Result<(), String> {
+  // A trailing fragment could be completed by the next write into a line
+  // that was never checked as a whole.
+  if !payload.ends_with('\n') {
+    return Err("OpenCode input must be complete JSON-RPC lines".into());
+  }
+  for line in payload.split('\n').map(str::trim).filter(|l| !l.is_empty()) {
+    let message: serde_json::Value = serde_json::from_str(line)
+      .map_err(|_| "OpenCode input must be JSON-RPC lines".to_string())?;
+    check_opencode_message(&message, workspace)?;
+  }
+  Ok(())
+}
+
+fn check_opencode_message(message: &serde_json::Value, workspace: &Path) -> Result<(), String> {
+  let params = &message["params"];
+  let refuse = |what: &str| Err(format!("TME does not send {what} to OpenCode"));
+  let is_request = message.get("id").is_some();
+  match message.get("method").and_then(serde_json::Value::as_str) {
+    Some("initialize" | "session/delete") if is_request => Ok(()),
+    Some("session/new") if is_request => {
+      let in_workspace = params["cwd"].as_str().is_some_and(|cwd| Path::new(cwd) == workspace);
+      let empty = |key: &str| params.get(key).map_or(true, |v| v.as_array().is_some_and(Vec::is_empty));
+      if in_workspace && empty("mcpServers") && empty("additionalDirectories") {
+        Ok(())
+      } else {
+        refuse("a session outside its workspace or with MCP servers")
+      }
+    }
+    Some("session/set_config_option") if is_request => {
+      match (params["configId"].as_str(), params["value"].as_str()) {
+        (Some("mode"), Some(OPENCODE_AGENT)) | (Some("model"), Some(_)) => Ok(()),
+        _ => refuse("that session option"),
+      }
+    }
+    Some("session/prompt") if is_request => {
+      let text_only = params["prompt"].as_array().is_some_and(|blocks| {
+        blocks.iter().all(|block| block["type"] == "text" && block["text"].is_string())
+      });
+      if text_only { Ok(()) } else { refuse("non-text prompt content") }
+    }
+    Some("session/cancel") if !is_request => Ok(()),
+    Some(method) => refuse(method),
+    // A reply to OpenCode's own request: TME only ever declines.
+    None if is_request => {
+      let declined = message.get("error").is_some()
+        || message["result"] == serde_json::json!({ "outcome": { "outcome": "cancelled" } });
+      if declined { Ok(()) } else { refuse("that reply") }
+    }
+    None => refuse("that message"),
+  }
+}
+
+/// Empty folder that OpenCode sessions run in. ACP's `session/new` requires an
+/// existing absolute `cwd`, and a folder of our own keeps a project's
+/// AGENTS.md, opencode.json and git state out of the turn. It lives under the
+/// per-user app data folder rather than a shared temp directory, where another
+/// local user could plant those files first.
+fn ensure_workspace(app: &AppHandle) -> Result<PathBuf, String> {
+  let dir = app
+    .path()
+    .app_local_data_dir()
+    .map_err(|e| format!("Could not locate the app data folder: {e}"))?
+    .join("agent-workspace");
+  std::fs::create_dir_all(&dir).map_err(|e| format!("Could not prepare the agent workspace: {e}"))?;
+  Ok(dir)
+}
+
+/// The folder OpenCode sessions run in, created on demand. The webview needs
+/// it for ACP `session/new`, which takes the working directory as a parameter.
+#[tauri::command]
+pub fn agent_cli_workspace(app: AppHandle) -> Result<String, String> {
+  ensure_workspace(&app).map(|dir| dir.display().to_string())
 }
 
 fn stage_prompt(text: &str) -> Result<Arc<tempfile::TempPath>, String> {
@@ -518,12 +718,16 @@ fn spawn_managed(cmd: &mut Command) -> Result<(Arc<SharedChild>, Arc<ProcessTree
 /// the `tauri:dev` console is where it is actually useful.
 #[tauri::command]
 pub async fn agent_cli_start(
+  app: AppHandle,
   state: State<'_, AgentCliState>,
-  options: StartOptions,
+  mut options: StartOptions,
   on_event: Channel<AgentCliEvent>,
 ) -> Result<String, String> {
   let sessions = state.sessions.clone();
   validate_options(&options)?;
+  if options.cli == "opencode" {
+    options.workspace = Some(ensure_workspace(&app)?);
+  }
   let result = tauri::async_runtime::spawn_blocking(move || {
     start_session(&sessions, options, on_event)
   })
@@ -579,11 +783,15 @@ fn start_session(
   let mut args = launch.prefix_args.clone();
   args.extend(options.args.iter().cloned());
 
+  let is_opencode = options.cli == "opencode";
   let sys_path = match options.system_prompt.as_ref() {
     Some(text) => {
       let p = stage_prompt(text)?;
-      args.push("--system-prompt-file".to_string());
-      args.push(p.display().to_string());
+      // OpenCode reads the file through its config instead (`opencode_env`).
+      if !is_opencode {
+        args.push("--system-prompt-file".to_string());
+        args.push(p.display().to_string());
+      }
       Some(p)
     }
     None => None,
@@ -595,6 +803,24 @@ fn start_session(
         let _ = std::fs::remove_file(&***p);
       }
     }
+  };
+  let opencode = if is_opencode {
+    let profile = options.workspace.clone()
+      .ok_or_else(|| "OpenCode sessions need a workspace folder".to_string())
+      .and_then(|dir| match options.stdin.as_deref() {
+        Some(opening) => check_opencode_input(opening, &dir).map(|()| dir),
+        None => Ok(dir),
+      })
+      .and_then(|dir| opencode_env(sys_path.as_deref().map(|p| &**p)).map(|env| (dir, env)));
+    match profile {
+      Ok(profile) => Some(profile),
+      Err(e) => {
+        cleanup_sys();
+        return Err(e);
+      }
+    }
+  } else {
+    None
   };
 
   let mut cmd = Command::new(&launch.program);
@@ -611,6 +837,11 @@ fn start_session(
   }
   if let Some(dir) = options.cwd.as_deref().filter(|d| !d.trim().is_empty()) {
     cmd.current_dir(PathBuf::from(dir));
+  }
+  // Applied after the caller's env so a webview value can never override it
+  // (`validate_options` already refuses OPENCODE_* keys).
+  if let Some((dir, env)) = opencode.as_ref() {
+    cmd.current_dir(dir).envs(env.iter().map(|(k, v)| (*k, v.as_str())));
   }
   let (child, tree) = match spawn_managed(&mut cmd) {
     Ok(pair) => pair,
@@ -633,6 +864,7 @@ fn start_session(
         tree: tree.clone(),
         prompt: sys_path.clone(),
         stdin: stdin.clone(),
+        opencode_workspace: opencode.as_ref().map(|(dir, _)| dir.clone()),
       },
     );
   drop(registry);
@@ -780,15 +1012,18 @@ pub async fn agent_cli_write(
 fn write_session(sessions: &SessionMap, session: &str, line: &str) -> Result<(), String> {
   // Take the stdin handle out from under the registry lock before writing, so
   // a slow write cannot stall `start` / `stop` / the exit bookkeeping.
-  let stdin = {
+  let (stdin, opencode_workspace) = {
     let map = sessions
       .lock()
       .map_err(|_| "Agent session registry is poisoned".to_string())?;
     map
       .get(session)
-      .map(|entry| entry.stdin.clone())
+      .map(|entry| (entry.stdin.clone(), entry.opencode_workspace.clone()))
       .ok_or_else(|| format!("No running agent session {session}"))?
   };
+  if let Some(workspace) = opencode_workspace.as_deref() {
+    check_opencode_input(line, workspace)?;
+  }
   let mut guard = stdin
     .lock()
     .map_err(|_| "Agent session input is poisoned".to_string())?;
@@ -870,6 +1105,155 @@ mod tests {
     options.env.clear();
     options.args = vec!["exec".into(), "--dangerously-bypass-approvals-and-sandbox".into()];
     assert!(validate_options(&options).is_err());
+  }
+
+  #[test]
+  fn opencode_accepts_only_the_acp_profile_and_proxy_env() {
+    assert!(validate_entry("opencode", Path::new("opencode.exe")).is_ok());
+    assert!(validate_entry("opencode", Path::new("opencode-cli.exe")).is_ok());
+    assert!(validate_entry("opencode", Path::new("opencode.cmd")).is_err());
+    let mut options = fixture_options("opencode-validation", Path::new("opencode.exe"), None, false);
+    options.cli = "opencode".into();
+    options.args = vec!["acp".into()];
+    options.env.insert("HTTPS_PROXY".into(), "http://proxy:8080".into());
+    assert!(validate_options(&options).is_ok());
+    for key in ["OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG", "ANTHROPIC_API_KEY", "CODEX_HOME"] {
+      let mut bad = fixture_options("opencode-env", Path::new("opencode.exe"), None, false);
+      bad.cli = "opencode".into();
+      bad.args = vec!["acp".into()];
+      bad.env.insert(key.into(), std::env::temp_dir().to_string_lossy().into_owned());
+      assert!(validate_options(&bad).is_err(), "{key} must be refused for opencode");
+    }
+    for args in [vec!["run"], vec!["acp", "--cwd", "/"], vec!["serve"], vec![]] {
+      options.args = args.iter().map(|a| a.to_string()).collect();
+      assert!(validate_options(&options).is_err(), "{args:?} must be refused");
+    }
+  }
+
+  #[test]
+  fn opencode_env_references_the_prompt_file_and_denies_every_tool() {
+    let env = opencode_env(Some(Path::new(r"C:\Temp\tme-agent-sys-1.txt"))).unwrap();
+    let get = |key: &str| env.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone());
+    let config: serde_json::Value = serde_json::from_str(&get("OPENCODE_CONFIG_CONTENT").unwrap()).unwrap();
+    let agent = &config["agents"][OPENCODE_AGENT];
+    assert_eq!(agent["system"], "{file:C:/Temp/tme-agent-sys-1.txt}");
+    assert_eq!(agent["mode"], "primary");
+    assert_eq!(agent["permissions"], serde_json::json!([{ "action": "*", "resource": "*", "effect": "deny" }]));
+    assert_eq!(config["agents"]["title"]["disabled"], true);
+    for flag in ["OPENCODE_DISABLE_PROJECT_CONFIG", "OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_AUTOUPDATE"] {
+      assert_eq!(get(flag).as_deref(), Some("1"), "{flag}");
+    }
+    let without = opencode_env(None).unwrap();
+    let config: serde_json::Value = serde_json::from_str(&without[0].1).unwrap();
+    assert_eq!(config["agents"][OPENCODE_AGENT]["system"], OPENCODE_DEFAULT_SYSTEM);
+    assert!(opencode_env(Some(Path::new("/tmp/a}b.txt"))).is_err());
+  }
+
+  #[test]
+  fn opencode_env_locks_sessions_to_the_tme_agent() {
+    let env = opencode_env(None).unwrap();
+    let config: serde_json::Value = serde_json::from_str(&env[0].1).unwrap();
+    assert_eq!(config["default_agent"], OPENCODE_AGENT);
+    for agent in ["build", "plan", "general", "explore"] {
+      assert_eq!(config["agents"][agent]["disabled"], true, "{agent} must be disabled");
+    }
+  }
+
+  fn acp(lines: &[serde_json::Value]) -> String {
+    lines.iter().map(|l| format!("{l}\n")).collect()
+  }
+
+  #[test]
+  fn opencode_input_accepts_the_messages_tme_sends() {
+    let ws = std::env::temp_dir().join("tme-ws");
+    let cwd = ws.display().to_string();
+    let payload = acp(&[
+      serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": cwd, "mcpServers": []}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 3, "method": "session/set_config_option", "params": {"sessionId": "s", "configId": "mode", "value": OPENCODE_AGENT}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 4, "method": "session/set_config_option", "params": {"sessionId": "s", "configId": "model", "value": "opencode/big-pickle"}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 5, "method": "session/prompt", "params": {"sessionId": "s", "prompt": [{"type": "text", "text": "hi"}]}}),
+      serde_json::json!({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": "s"}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 6, "method": "session/delete", "params": {"sessionId": "s"}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 99, "result": {"outcome": {"outcome": "cancelled"}}}),
+      serde_json::json!({"jsonrpc": "2.0", "id": 100, "error": {"code": -32601, "message": "no"}}),
+    ]);
+    assert_eq!(check_opencode_input(&payload, &ws), Ok(()));
+  }
+
+  #[test]
+  fn opencode_input_refuses_anything_that_widens_the_session() {
+    let ws = std::env::temp_dir().join("tme-ws");
+    let cwd = ws.display().to_string();
+    let other = std::env::temp_dir().display().to_string();
+    let refused = [
+      // MCP servers are commands OpenCode would spawn.
+      serde_json::json!({"id": 2, "method": "session/new", "params": {"cwd": cwd, "mcpServers": [{"name": "x", "command": "cmd.exe", "args": [], "env": []}]}}),
+      serde_json::json!({"id": 2, "method": "session/new", "params": {"cwd": other, "mcpServers": []}}),
+      serde_json::json!({"id": 2, "method": "session/new", "params": {"cwd": cwd, "mcpServers": [], "additionalDirectories": ["/"]}}),
+      serde_json::json!({"id": 3, "method": "session/set_config_option", "params": {"sessionId": "s", "configId": "mode", "value": "build"}}),
+      serde_json::json!({"id": 3, "method": "session/set_config_option", "params": {"sessionId": "s", "configId": "thought_level", "value": "high"}}),
+      serde_json::json!({"id": 3, "method": "session/set_mode", "params": {"sessionId": "s", "modeId": "build"}}),
+      serde_json::json!({"id": 3, "method": "session/load", "params": {"sessionId": "s", "cwd": cwd, "mcpServers": []}}),
+      serde_json::json!({"id": 5, "method": "session/prompt", "params": {"sessionId": "s", "prompt": [{"type": "resource_link", "uri": "file:///etc/passwd", "name": "p"}]}}),
+      serde_json::json!({"id": 99, "result": {"outcome": {"outcome": "selected", "optionId": "allow"}}}),
+      serde_json::json!({"method": "session/update", "params": {}}),
+    ];
+    for message in refused {
+      assert!(check_opencode_input(&acp(&[message.clone()]), &ws).is_err(), "must refuse {message}");
+    }
+    let partial = r#"{"id": 1, "method": "initialize", "params": {}}"#;
+    assert!(check_opencode_input(partial, &ws).is_err(), "a line without its newline could be glued to the next write");
+    assert!(check_opencode_input("not json\n", &ws).is_err());
+  }
+
+  #[test]
+  fn live_opencode_input_is_checked_at_start_and_on_every_write() {
+    if !node_available() {
+      eprintln!("skipping: node not installed");
+      return;
+    }
+    let script = temp_file("tme-test-opencode-echo.cjs", br#"
+require("readline").createInterface({ input: process.stdin }).on("line", (l) => process.stdout.write(`got:${l}\n`));
+"#);
+    let workspace = tempfile::tempdir().unwrap();
+    let opencode = |stdin: Option<String>| {
+      let mut options = fixture_options("live-opencode-input", &script, stdin, false);
+      options.cli = "opencode".into();
+      options.args = vec!["acp".into()];
+      options.workspace = Some(workspace.path().to_path_buf());
+      options
+    };
+    let sessions: SessionMap = Arc::default();
+    let bad_open = acp(&[serde_json::json!({"id": 1, "method": "session/set_mode", "params": {}})]);
+    assert!(start_session(&sessions, opencode(Some(bad_open)), capture_channel().0).is_err());
+    assert!(sessions.lock().unwrap().is_empty(), "a refused opening turn must not spawn");
+
+    let (channel, rx) = capture_channel();
+    let key = start_session(&sessions, opencode(None), channel).expect("start_session");
+    let mcp = acp(&[serde_json::json!({"id": 2, "method": "session/new", "params": {
+      "cwd": workspace.path().display().to_string(), "mcpServers": [{"name": "x", "command": "cmd.exe", "args": [], "env": []}],
+    }})]);
+    assert!(write_session(&sessions, &key, &mcp).is_err());
+    write_session(&sessions, &key, &acp(&[serde_json::json!({"id": 6, "method": "session/delete", "params": {"sessionId": "s"}})])).unwrap();
+    let echoed = rx.recv_timeout(LIVE_TIMEOUT).expect("echo of the allowed line");
+    assert!(echoed.contains("session/delete") && !echoed.contains("mcpServers"), "got {echoed}");
+    stop_session(&sessions, &key).unwrap();
+    drain_until_exit(&rx);
+    let _ = std::fs::remove_file(&script);
+  }
+
+  #[test]
+  fn newest_version_dir_compares_numerically() {
+    let root = tempfile::tempdir().unwrap();
+    for name in ["2.9.0-x64", "2.10.1-x64", "notes", "1.0.0"] {
+      std::fs::create_dir(root.path().join(name)).unwrap();
+    }
+    std::fs::write(root.path().join("9.9.9"), b"a file, not a folder").unwrap();
+    assert_eq!(newest_version_dir(root.path()), Some(root.path().join("2.10.1-x64")));
+    assert_eq!(version_key("2.2.6-x64"), Some(vec![2, 2, 6]));
+    assert_eq!(version_key("x64"), None);
+    assert_eq!(newest_version_dir(&root.path().join("missing")), None);
   }
 
   #[test]
@@ -980,11 +1364,14 @@ mod tests {
   }
 
   #[test]
-  fn candidate_paths_do_not_cross_wire_the_two_clis() {
+  fn candidate_paths_do_not_cross_wire_the_clis() {
     let codex = candidate_paths("codex");
     assert!(codex.iter().all(|p| p.file_stem().is_some_and(|s| s == "codex")));
     let claude = candidate_paths("claude");
     assert!(claude.iter().all(|p| p.file_stem().is_some_and(|s| s == "claude" || s == "cli" || s == "cli-wrapper")));
+    let opencode = candidate_paths("opencode");
+    assert!(opencode.iter().all(|p| p.file_stem().is_some_and(|s| s == "opencode" || s == "opencode-cli")));
+    assert!(opencode.iter().any(|p| p.to_string_lossy().contains(".opencode")));
   }
 
   // ------------------------------------------------------------------------
@@ -1049,6 +1436,7 @@ mod tests {
       cwd: None,
       stdin,
       close_stdin: Some(close_stdin),
+      workspace: None,
     }
   }
 
@@ -1161,6 +1549,106 @@ rl.on("line", (l) => { if (l === "quit") process.exit(0); process.stdout.write(`
     assert!(!prompt.exists(), "the staged prompt must be deleted on exit");
     // Stopping again is the no-op the providers rely on after a natural exit.
     stop_session(&sessions, &key).expect("second stop is a no-op");
+  }
+
+  #[test]
+  fn live_opencode_session_runs_in_the_workspace_with_the_rust_profile() {
+    if !node_available() {
+      eprintln!("skipping: node not installed");
+      return;
+    }
+    // Stands in for `opencode acp`: reports where it runs and what it was given.
+    let script = temp_file("tme-test-opencode-env.cjs", br#"
+const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || "{}");
+const file = /^\{file:(.+)\}$/.exec(config.agents["tme-tutor"].system)[1];
+process.stdout.write(JSON.stringify({
+  cwd: process.cwd(),
+  argv: process.argv.slice(2),
+  prompt: require("fs").readFileSync(file, "utf8"),
+  projectConfigOff: process.env.OPENCODE_DISABLE_PROJECT_CONFIG,
+}) + "\n");
+"#);
+    let workspace = tempfile::tempdir().unwrap();
+    let prompt = r"Tutor {env:HOME} {file:/etc/passwd} \frac{a}{b}";
+    let mut options = fixture_options("live-opencode", &script, None, false);
+    options.cli = "opencode".into();
+    options.args = vec!["acp".into()];
+    options.system_prompt = Some(prompt.into());
+    options.workspace = Some(workspace.path().to_path_buf());
+    let sessions: SessionMap = Arc::default();
+    let (channel, rx) = capture_channel();
+    start_session(&sessions, options, channel).expect("start_session");
+    let (lines, errors, code) = drain_until_exit(&rx);
+    let _ = std::fs::remove_file(&script);
+
+    assert_eq!(code, Some(0), "errors: {errors:?}");
+    let out: serde_json::Value = serde_json::from_str(lines.first().expect("fixture output")).unwrap();
+    let cwd = std::fs::canonicalize(out["cwd"].as_str().unwrap()).unwrap();
+    assert_eq!(cwd, std::fs::canonicalize(workspace.path()).unwrap());
+    assert_eq!(out["argv"], serde_json::json!(["acp"]), "no --system-prompt-file for opencode");
+    assert_eq!(out["prompt"], prompt);
+    assert_eq!(out["projectConfigOff"], "1");
+  }
+
+  #[test]
+  fn opencode_session_without_a_workspace_is_refused() {
+    let mut options = fixture_options("no-workspace", Path::new("opencode.exe"), None, false);
+    options.cli = "opencode".into();
+    options.path = Some(std::env::current_exe().unwrap().display().to_string());
+    options.args = vec!["acp".into()];
+    let err = start_session(&Arc::default(), options, capture_channel().0).expect_err("must refuse");
+    assert!(err.contains("workspace"), "unexpected message: {err}");
+  }
+
+  /// Verifies the installed OpenCode ACP server sees TME's agent profile. No
+  /// inference: the session is created, inspected and deleted.
+  #[test]
+  #[ignore = "requires an installed OpenCode CLI"]
+  fn smoke_opencode_acp_handshake() {
+    struct Cleanup(AgentCliState);
+    impl Drop for Cleanup { fn drop(&mut self) { self.0.shutdown(); } }
+    let state = Cleanup(AgentCliState::default());
+    let found = detect_cli("opencode").expect("OpenCode not installed");
+    let workspace = tempfile::tempdir().unwrap();
+    let cwd = workspace.path().display().to_string();
+    let (channel, rx) = capture_channel();
+    let mut options = fixture_options("opencode-smoke", &found, Some(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1,\"clientCapabilities\":{}}}\n".into()
+    ), false);
+    options.cli = "opencode".into();
+    options.args = vec!["acp".into()];
+    options.workspace = Some(workspace.path().to_path_buf());
+    validate_options(&options).unwrap();
+    let key = start_session(&state.0.sessions, options, channel).expect("start OpenCode");
+    let response = |id: i64| -> serde_json::Value {
+      let deadline = std::time::Instant::now() + Duration::from_secs(30);
+      loop {
+        let event: serde_json::Value = serde_json::from_str(&rx.recv_timeout(
+          deadline.saturating_duration_since(std::time::Instant::now())
+        ).expect("ACP response timeout")).unwrap();
+        assert!(!matches!(event["type"].as_str(), Some("exit" | "error")), "OpenCode terminated before responding");
+        if event["type"] != "line" { continue; }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(event["data"].as_str().unwrap_or("")) else { continue; };
+        if value["id"].as_i64() != Some(id) || value.get("method").is_some() { continue; }
+        assert!(value.get("error").is_none(), "OpenCode rejected request {id}: {}", value["error"]);
+        return value["result"].clone();
+      }
+    };
+    println!("agent     : {}", response(1)["agentInfo"]);
+    let new_session = serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": cwd, "mcpServers": []}});
+    write_session(&state.0.sessions, &key, &format!("{new_session}\n")).unwrap();
+    let created = response(2);
+    let session_id = created["sessionId"].as_str().expect("session id").to_string();
+    let options = created["configOptions"].as_array().cloned().unwrap_or_default();
+    let modes = options.iter().find(|o| o["id"] == "mode").expect("mode option");
+    assert!(modes["options"].as_array().unwrap().iter().any(|m| m["value"] == OPENCODE_AGENT), "TME agent missing: {modes}");
+    let models = options.iter().find(|o| o["id"] == "model").map(|m| m["options"].as_array().map_or(0, Vec::len));
+    println!("models    : {models:?}");
+    let delete = serde_json::json!({"jsonrpc": "2.0", "id": 3, "method": "session/delete", "params": {"sessionId": session_id}});
+    write_session(&state.0.sessions, &key, &format!("{delete}\n")).unwrap();
+    response(3);
+    stop_session(&state.0.sessions, &key).unwrap();
+    drain_until_exit(&rx);
   }
 
   /// Verifies the installed app-server through Tauri's Channel/stdin transport.

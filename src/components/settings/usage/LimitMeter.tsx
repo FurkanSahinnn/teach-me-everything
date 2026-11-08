@@ -11,6 +11,8 @@ import { formatDurationShort, limitLabel, percentLeft } from "./limit-format";
 export const CLI_SERIES_COLOR: Readonly<Record<AgentCliId, string>> = {
   codex: "var(--color-series-1)",
   claude: "var(--color-series-2)",
+  // OpenCode reports no limit windows, so this neutral ink is never charted.
+  opencode: "var(--color-ink-3)",
 };
 
 const LOW_LEFT_PERCENT = 10;

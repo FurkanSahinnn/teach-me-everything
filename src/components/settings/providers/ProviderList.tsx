@@ -38,6 +38,8 @@ export function formatProviderStatus(status: ProviderStatus, pick: LocalePick): 
       return pick(`Oturum açık · ${status.values?.plan ?? ""}`, `Authenticated · ${status.values?.plan ?? ""}`);
     case "cli_authenticated_no_plan":
       return pick("Oturum açık", "Authenticated");
+    case "cli_ready":
+      return pick(`Hazır · ${status.values?.count ?? "0"} model`, `Ready · ${status.values?.count ?? "0"} models`);
     case "local_server":
       return pick("Yerel · anahtar gerekmez", "Local · no key needed");
     case "key_saved":

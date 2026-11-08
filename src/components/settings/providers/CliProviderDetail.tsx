@@ -13,49 +13,70 @@ import { useAgentStatus } from "@/lib/ai/agent-status/store";
 import type { AgentAccountStatus, AgentCliId } from "@/lib/ai/agent-status/types";
 import { CLAUDE_CLI_BINARY } from "@/lib/ai/providers/claude-cli";
 import { CODEX_CLI_BINARY } from "@/lib/ai/providers/codex-cli";
+import { OPENCODE_CLI_BINARY } from "@/lib/ai/providers/opencode-cli";
 import { probeAgentCli, type AgentCliProbe } from "@/lib/tauri/agent-cli";
 import { isTauriEnvWithOverride } from "@/lib/tauri/env";
 import { usePrefs, type AgentCliPrefs } from "@/stores/prefs";
 
 type LocalePick = (tr: string, en: string) => string;
 
+const SUBSCRIPTION_DESCRIPTION: [string, string] = [
+  "Kendi aboneliğinle çalışan yerel komut satırı aracı; uygulamada anahtar saklanmaz.",
+  "Local command-line tool running on your own subscription; no key is stored in the app.",
+];
+
 type CliSpec = {
   binary: string;
-  pathKey: "claudePath" | "codexPath";
-  homeKey: "claudeHome" | "codexHome";
-  homeEnv: string;
-  homeDefault: string;
+  pathKey: "claudePath" | "codexPath" | "opencodePath";
+  /** Config-home variable, for CLIs that have one. */
+  home?: { key: "claudeHome" | "codexHome"; env: string; fallback: string };
   pathPlaceholder: string;
   installHint: [string, string];
   signInHint: [string, string];
+  description: [string, string];
 };
 
 const SPECS: Readonly<Record<AgentCliId, CliSpec>> = {
   claude: {
     binary: CLAUDE_CLI_BINARY,
     pathKey: "claudePath",
-    homeKey: "claudeHome",
-    homeEnv: "CLAUDE_CONFIG_DIR",
-    homeDefault: "~/.claude",
+    home: { key: "claudeHome", env: "CLAUDE_CONFIG_DIR", fallback: "~/.claude" },
     pathPlaceholder: "C:/Users/you/.local/bin/claude.exe",
     installHint: [
       "Windows'ta .cmd yerine claude.exe yolunu kullan; eski JavaScript kurulumlarında cli.js de desteklenir.",
       "On Windows, use claude.exe instead of the .cmd shim; legacy JavaScript installs can also use cli.js.",
     ],
     signInHint: ["Terminalde `claude` çalıştır ve `/login` ile giriş yap.", "Run `claude` in a terminal and sign in with `/login`."],
+    description: SUBSCRIPTION_DESCRIPTION,
   },
   codex: {
     binary: CODEX_CLI_BINARY,
     pathKey: "codexPath",
-    homeKey: "codexHome",
-    homeEnv: "CODEX_HOME",
-    homeDefault: "~/.codex",
+    home: { key: "codexHome", env: "CODEX_HOME", fallback: "~/.codex" },
     pathPlaceholder: "C:/Users/you/AppData/Roaming/npm/node_modules/@openai/codex/.../codex.exe",
     installHint: [
       "npm ile kurduysan paketin içindeki codex.exe dosyasını göster; .cmd sarmalayıcısı çalıştırılamaz.",
       "If you installed via npm, point at the codex.exe inside the package; the .cmd wrapper cannot be launched.",
     ],
     signInHint: ["Terminalde `codex login` çalıştır.", "Run `codex login` in a terminal."],
+    description: SUBSCRIPTION_DESCRIPTION,
+  },
+  opencode: {
+    binary: OPENCODE_CLI_BINARY,
+    pathKey: "opencodePath",
+    pathPlaceholder: "C:/Users/you/AppData/Roaming/ai.opencode.desktop/cli/2.2.6-x64/opencode-cli.exe",
+    installHint: [
+      "OpenCode 2 gerekir. Masaüstü uygulamasının CLI'ı, npm (@opencode/cli) ve kurulum betiği otomatik bulunur; .cmd sarmalayıcısı çalıştırılamaz.",
+      "Requires OpenCode 2. The desktop app's CLI, npm (@opencode/cli) and the install script are found automatically; the .cmd wrapper cannot be launched.",
+    ],
+    signInHint: [
+      "Terminalde `opencode auth login` çalıştır ya da OpenCode uygulamasında bir sağlayıcı bağla.",
+      "Run `opencode auth login` in a terminal, or connect a provider in the OpenCode app.",
+    ],
+    description: [
+      "Yerel OpenCode; OpenCode'da bağladığın sağlayıcıların modellerini kullanır. Uygulamada anahtar saklanmaz.",
+      "Local OpenCode; uses the models of the providers you connected in OpenCode. No key is stored in the app.",
+    ],
   },
 };
 
@@ -66,6 +87,14 @@ function statusLine(status: AgentAccountStatus | undefined, spec: CliSpec, pick:
   if (!status) return { title: pick("Kontrol ediliyor…", "Checking…") };
   switch (status.state) {
     case "authenticated": {
+      if (status.cli === "opencode") {
+        const count = status.modelCount ?? 0;
+        const providers = status.providers?.join(", ") ?? "";
+        return {
+          title: pick("Hazır", "Ready"),
+          detail: pick(`${count} model · ${providers}`, `${count} models · ${providers}`),
+        };
+      }
       const who = [status.email, status.planLabel].filter(Boolean).join(" · ");
       return { title: pick("Oturum açık", "Authenticated"), ...(who ? { detail: who } : {}) };
     }
@@ -116,9 +145,7 @@ export function CliProviderDetail({ cli, label }: Props) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{label}</h2>
-          <p className="mt-0.5 text-[12.5px] text-ink-3">
-            {pick("Kendi aboneliğinle çalışan yerel komut satırı aracı; uygulamada anahtar saklanmaz.", "Local command-line tool running on your own subscription; no key is stored in the app.")}
-          </p>
+          <p className="mt-0.5 text-[12.5px] text-ink-3">{pick(...spec.description)}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {status?.version ? <span className="font-mono text-[12px] text-ink-3">v{status.version}</span> : null}
@@ -154,24 +181,13 @@ export function CliProviderDetail({ cli, label }: Props) {
       <SettingsSection title={pick("Çalışma ortamı", "Runtime")}>
         <SettingsGroup>
           <BinaryPathRow spec={spec} agentCli={agentCli} onSave={savePrefs} pick={pick} />
-          <PrefTextRow
-            id={`cli-home-${cli}`}
-            title={pick(`${spec.homeEnv} klasörü`, `${spec.homeEnv} folder`)}
-            description={pick(
-              `Yapılandırma ve oturum klasörü. Boş bırakırsan ${spec.homeDefault} kullanılır; tam yol olmalı ve var olmalı.`,
-              `Config and session folder. Empty means ${spec.homeDefault}; must be an absolute path that exists.`,
-            )}
-            saved={agentCli?.[spec.homeKey] ?? ""}
-            placeholder={spec.homeDefault}
-            onSave={(value) => savePrefs(withField(agentCli, spec.homeKey, value))}
-            pick={pick}
-          />
+          {spec.home ? <HomeRow cli={cli} home={spec.home} agentCli={agentCli} onSave={savePrefs} pick={pick} /> : null}
         </SettingsGroup>
       </SettingsSection>
 
       <SettingsSection
         title={pick("Ortam değişkenleri", "Environment variables")}
-        description={pick("Vekil sunucu ayarları; iki CLI için ortaktır.", "Proxy settings, shared by both CLIs.")}
+        description={pick("Vekil sunucu ayarları; tüm yerel CLI'lar için ortaktır.", "Proxy settings, shared by all local CLIs.")}
       >
         <SettingsGroup>
           {PROXY_ENV_KEYS.map((key) => (
@@ -188,6 +204,31 @@ export function CliProviderDetail({ cli, label }: Props) {
         </SettingsGroup>
       </SettingsSection>
     </div>
+  );
+}
+
+type HomeRowProps = {
+  cli: AgentCliId;
+  home: NonNullable<CliSpec["home"]>;
+  agentCli: AgentCliPrefs | undefined;
+  onSave: (next: AgentCliPrefs) => void;
+  pick: LocalePick;
+};
+
+function HomeRow({ cli, home, agentCli, onSave, pick }: HomeRowProps) {
+  return (
+    <PrefTextRow
+      id={`cli-home-${cli}`}
+      title={pick(`${home.env} klasörü`, `${home.env} folder`)}
+      description={pick(
+        `Yapılandırma ve oturum klasörü. Boş bırakırsan ${home.fallback} kullanılır; tam yol olmalı ve var olmalı.`,
+        `Config and session folder. Empty means ${home.fallback}; must be an absolute path that exists.`,
+      )}
+      saved={agentCli?.[home.key] ?? ""}
+      placeholder={home.fallback}
+      onSave={(value) => onSave(withField(agentCli, home.key, value))}
+      pick={pick}
+    />
   );
 }
 

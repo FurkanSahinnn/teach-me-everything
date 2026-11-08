@@ -18,6 +18,7 @@ import { LLAMA_CPP_MODEL_FETCH_ADAPTER } from "./llama-cpp";
 import { LM_STUDIO_MODEL_FETCH_ADAPTER } from "./lm-studio";
 import { MISTRAL_MODEL_FETCH_ADAPTER } from "./mistral";
 import { OLLAMA_MODEL_FETCH_ADAPTER } from "./ollama";
+import { OPENCODE_CLI_MODEL_FETCH_ADAPTER } from "./opencode-cli";
 import {
   OPENAI_MODEL_FETCH_ADAPTER,
   OPENAI_RESPONSES_MODEL_FETCH_ADAPTER,
@@ -46,6 +47,8 @@ const ADAPTERS = {
   // Not HTTP: asks the local `codex app-server` what the signed-in account
   // may use. claude-cli has no entry — the CLI takes bare aliases.
   "codex-cli": CODEX_CLI_MODEL_FETCH_ADAPTER,
+  // Not HTTP: reads the model option of a throwaway `opencode acp` session.
+  "opencode-cli": OPENCODE_CLI_MODEL_FETCH_ADAPTER,
   // perplexity intentionally omitted — no /models catalog endpoint
 } as const satisfies Partial<Record<ProviderId, ModelFetchAdapter>>;
 

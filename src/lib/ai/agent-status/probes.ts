@@ -1,7 +1,9 @@
-// Status probes for the user's own `claude` / `codex` CLIs. Everything goes
-// through the CLI's public control channel; credential files are never read.
+// Status probes for the user's own `claude` / `codex` / `opencode` CLIs.
+// Everything goes through the CLI's public control channel; credential files
+// are never read.
 import { probeAgentCli } from "@/lib/tauri/agent-cli";
 import { buildClaudeCliArgs } from "@/lib/ai/providers/claude-cli";
+import { readOpencodeCatalog } from "@/lib/ai/providers/opencode-cli";
 import {
   parseClaudeInitialize,
   parseClaudeUsage,
@@ -17,6 +19,8 @@ import type { AgentAccountStatus, AgentCliId, AgentProbeOptions } from "./types"
 export const PROBE_BUDGET_MS = 20_000;
 /** Cheapest alias; the session never sends a user message, so no inference runs. */
 const CLAUDE_PROBE_MODEL = "haiku";
+/** The ACP agent profile TME relies on arrived in OpenCode 2. */
+const OPENCODE_MIN_MAJOR = 2;
 
 const rec = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -195,5 +199,39 @@ export async function probeCodexStatus(opts: AgentProbeOptions = {}): Promise<Ag
     return { ...base("codex"), error: shortError(err), ...(located.version ? { version: located.version } : {}) };
   } finally {
     if (session) await session.close();
+  }
+}
+
+/**
+ * OpenCode has no single account: every provider is connected inside it, and
+ * its free models work without any sign-in. "Authenticated" therefore means
+ * "ACP answers with TME's agent loaded and at least one model reachable".
+ */
+export async function probeOpencodeStatus(opts: AgentProbeOptions = {}): Promise<AgentAccountStatus> {
+  const located = await locate("opencode", opts.path);
+  if ("status" in located) return located.status;
+  const withVersion = (version: string | undefined) => (version ? { version } : {});
+  const major = Number(located.version?.split(".")[0]);
+  if (Number.isFinite(major) && major < OPENCODE_MIN_MAJOR) {
+    return { ...base("opencode"), ...withVersion(located.version), error: `OpenCode ${OPENCODE_MIN_MAJOR} or newer is required` };
+  }
+  try {
+    const catalog = await readOpencodeCatalog({ path: opts.path, env: opts.env, timeoutMs: PROBE_BUDGET_MS });
+    if (catalog === null) {
+      return { ...base("opencode"), state: "not_installed", error: "Desktop app only" };
+    }
+    const version = catalog.version ?? located.version;
+    if (!catalog.profileLoaded) {
+      return { ...base("opencode"), ...withVersion(version), error: "This OpenCode version did not load TME's agent profile" };
+    }
+    return {
+      ...base("opencode"),
+      state: catalog.models.length > 0 ? "authenticated" : "unauthenticated",
+      ...withVersion(version),
+      modelCount: catalog.models.length,
+      providers: catalog.providers,
+    };
+  } catch (err) {
+    return { ...base("opencode"), error: shortError(err), ...withVersion(located.version) };
   }
 }

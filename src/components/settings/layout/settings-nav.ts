@@ -50,7 +50,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: "general", group: "app", href: "/settings", icon: SlidersHorizontal, keywords: ["genel", "general", "dil", "language", "locale", "başlangıç", "startup", "autostart"] },
   { id: "appearance", group: "app", href: "/settings/appearance", icon: Palette, keywords: ["görünüm", "appearance", "tema", "theme", "yoğunluk", "density", "genişlik", "width"] },
   { id: "learning", group: "app", href: "/settings/learning", icon: GraduationCap, keywords: ["öğrenme", "learning", "srs", "kart", "cards", "müfredat", "curriculum"] },
-  { id: "providers", group: "ai", href: "/settings/providers", icon: Plug, keywords: ["sağlayıcı", "providers", "anahtar", "api key", "claude", "codex", "openai", "anthropic", "gemini", "ollama", "cli", "oauth", "endpoint"] },
+  { id: "providers", group: "ai", href: "/settings/providers", icon: Plug, keywords: ["sağlayıcı", "providers", "anahtar", "api key", "claude", "codex", "opencode", "openai", "anthropic", "gemini", "ollama", "cli", "oauth", "endpoint"] },
   { id: "models", group: "ai", href: "/settings/models", icon: Boxes, keywords: ["model", "modeller", "models", "varsayılan", "default", "binding"] },
   { id: "usage", group: "ai", href: "/settings/usage", icon: Gauge, keywords: ["kullanım", "usage", "limit", "limits", "token", "maliyet", "cost", "bütçe", "budget"] },
   { id: "embedding", group: "ai", href: "/settings/embedding", icon: Binary, keywords: ["embedding", "gömme", "vektör", "vector", "parçalama", "rechunk", "reembed"] },

@@ -55,6 +55,7 @@ pub fn run() {
       agent_cli::agent_cli_start,
       agent_cli::agent_cli_write,
       agent_cli::agent_cli_stop,
+      agent_cli::agent_cli_workspace,
       keychain::keychain_get,
       keychain::keychain_set,
       keychain::keychain_delete,

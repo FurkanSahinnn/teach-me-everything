@@ -43,6 +43,8 @@ export type AgentCliPrefs = {
   claudePath?: string;
   /** Explicit `codex` binary path. Absent or empty means auto-detect. */
   codexPath?: string;
+  /** Explicit `opencode` binary path. Absent or empty means auto-detect. */
+  opencodePath?: string;
   /** Extra environment variables handed to the spawned process. */
   env?: Record<string, string>;
   /** Claude config directory (`CLAUDE_CONFIG_DIR`). Absolute path; empty means default. */

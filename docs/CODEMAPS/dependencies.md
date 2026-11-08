@@ -48,7 +48,7 @@ Piper TTS binaries are bundled as Tauri resources (`tauri.conf.json` `bundle.res
 
 All calls are user-initiated with the user's own keys (BYOK), except free metadata endpoints. Hosts come from the files below; egress control is described in [architecture](architecture.md).
 
-- **Chat** (`src/lib/ai/providers/presets.ts`, `PROVIDER_PRESETS`): Anthropic, OpenAI, Google Gemini, OpenRouter, Groq, DeepSeek, GLM (open.bigmodel.cn), xAI, Mistral, Together, Cerebras, Perplexity; loopback Ollama, LM Studio, llama.cpp; no host for `claude-cli` / `codex-cli` (local binaries). User-defined endpoints via `customEndpoints` in prefs.
+- **Chat** (`src/lib/ai/providers/presets.ts`, `PROVIDER_PRESETS`): Anthropic, OpenAI, Google Gemini, OpenRouter, Groq, DeepSeek, GLM (open.bigmodel.cn), xAI, Mistral, Together, Cerebras, Perplexity; loopback Ollama, LM Studio, llama.cpp; no host for `claude-cli` / `codex-cli` / `opencode-cli` (local binaries). User-defined endpoints via `customEndpoints` in prefs.
 - **Embeddings** (`src/lib/ai/providers/embed-presets.ts`, `EMBED_PRESETS`): OpenAI, OpenRouter, Voyage, Gemini, Cohere, Jina, Mistral, Hugging Face router, local Ollama.
 - **Research extractors** (`src/lib/research/providers/presets.ts`): readability (local), Firecrawl, Exa, Jina Reader, Tavily, Diffbot, Bright Data. Search: Brave, Exa, Tavily (`src/lib/research/search/`).
 - **Seed origins** (`src/lib/ai/csp-origins.ts`, `SEED_ORIGINS`): `'self'`, api.anthropic.com, huggingface.co (Piper voice download), api.crossref.org and api.openalex.org (DOI), export.arxiv.org, api.search.brave.com.

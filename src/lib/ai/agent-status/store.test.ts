@@ -1,20 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentAccountStatus } from "./types";
 
-vi.mock("./probes", () => ({ probeClaudeStatus: vi.fn(), probeCodexStatus: vi.fn() }));
+vi.mock("./probes", () => ({ probeClaudeStatus: vi.fn(), probeCodexStatus: vi.fn(), probeOpencodeStatus: vi.fn() }));
 vi.mock("@/stores/prefs", () => ({
   usePrefs: {
     getState: () => ({
-      agentCli: { claudePath: " /bin/claude ", claudeHome: "/ch", codexHome: "", env: { A: "1" } },
+      agentCli: { claudePath: " /bin/claude ", claudeHome: "/ch", codexHome: "", opencodePath: "/bin/opencode", env: { A: "1" } },
     }),
   },
 }));
-import { probeClaudeStatus, probeCodexStatus } from "./probes";
+import { probeClaudeStatus, probeCodexStatus, probeOpencodeStatus } from "./probes";
 import { AGENT_STATUS_TTL_MS, useAgentStatus } from "./store";
 
 const claude = vi.mocked(probeClaudeStatus);
 const codex = vi.mocked(probeCodexStatus);
-const ok = (cli: "claude" | "codex"): AgentAccountStatus => ({
+const opencode = vi.mocked(probeOpencodeStatus);
+const ok = (cli: AgentAccountStatus["cli"]): AgentAccountStatus => ({
   cli,
   state: "authenticated",
   limits: [],
@@ -27,6 +28,7 @@ beforeEach(() => {
   useAgentStatus.setState({ statuses: {}, loading: false });
   claude.mockImplementation(async () => ok("claude"));
   codex.mockImplementation(async () => ok("codex"));
+  opencode.mockImplementation(async () => ok("opencode"));
 });
 
 describe("useAgentStatus", () => {
@@ -35,6 +37,11 @@ describe("useAgentStatus", () => {
     expect(claude).toHaveBeenCalledWith({ path: "/bin/claude", env: { A: "1", CLAUDE_CONFIG_DIR: "/ch" } });
     await useAgentStatus.getState().refresh("codex");
     expect(codex).toHaveBeenCalledWith({ env: { A: "1" } });
+  });
+
+  it("passes only path and env to OpenCode, which has no config-home setting", async () => {
+    await useAgentStatus.getState().refresh("opencode");
+    expect(opencode).toHaveBeenCalledWith({ path: "/bin/opencode", env: { A: "1" } });
   });
 
   it("de-duplicates concurrent refreshes", async () => {
@@ -50,6 +57,7 @@ describe("useAgentStatus", () => {
     await refresh();
     expect(claude).toHaveBeenCalledTimes(1);
     expect(codex).toHaveBeenCalledTimes(1);
+    expect(opencode).toHaveBeenCalledTimes(1);
     await refresh("claude");
     expect(claude).toHaveBeenCalledTimes(1);
     await refresh("claude", { force: true });

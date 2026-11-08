@@ -16,7 +16,7 @@ The app has no server database. "Backend" here is (1) the `src/app/api/ai/*` rou
 
 ## `src/lib/ai/`
 
-- **Providers** (`providers/`): `types.ts` (`ProviderId`, `ProviderFamily` = anthropic | openai-compat | gemini | agent-cli, `ChatProvider`, `EmbedProvider`, `StreamEvent`); `presets.ts` (`PROVIDER_PRESETS`, `getPreset`); `registry.ts` (`getChatProvider`, `getEmbedProvider`, `listChatProviderIds`); implementations `anthropic.ts`, `anthropic-oauth.ts`, `openai-compat.ts`, `openai-responses.ts`, `gemini.ts` (+ `gemini-retry.ts`), `claude-cli.ts`, `codex-cli.ts`, `codex-app-server.ts`; `tool-translator.ts`; `local-bypass.ts` (`isLocalUrl`).
+- **Providers** (`providers/`): `types.ts` (`ProviderId`, `ProviderFamily` = anthropic | openai-compat | gemini | agent-cli, `ChatProvider`, `EmbedProvider`, `StreamEvent`); `presets.ts` (`PROVIDER_PRESETS`, `getPreset`); `registry.ts` (`getChatProvider`, `getEmbedProvider`, `listChatProviderIds`); implementations `anthropic.ts`, `anthropic-oauth.ts`, `openai-compat.ts`, `openai-responses.ts`, `gemini.ts` (+ `gemini-retry.ts`), `claude-cli.ts`, `codex-cli.ts`, `codex-app-server.ts`, `opencode-cli.ts` (provider, ACP catalog), `opencode-acp.ts` (ACP streaming); `tool-translator.ts`; `local-bypass.ts` (`isLocalUrl`).
 - **Embeddings:** `providers/embed-presets.ts` (`EMBED_PRESETS`) and `embed-{openai,openai-compat,gemini,cohere,jina,voyage,hf}.ts`.
 - **Model lists:** `providers/model-fetch/` (`getModelFetchAdapter`, per-provider adapters, `tier-infer.ts`); cached in Dexie `providerModelsCache`. `model-options.ts`, `quick-start-presets.ts`, `context-window.ts`, `pricing.ts` (`computeCostUsd`).
 - **Web search:** `providers/web-search/` per-provider request/parse adapters (claude, gemini, glm, mistral, openai-responses, openrouter, perplexity, xai) selected via `web-search/adapter.ts` (`getWebSearchAdapter`, `supportsWebSearch`).
@@ -34,7 +34,7 @@ The app has no server database. "Backend" here is (1) the `src/app/api/ai/*` rou
 - `ingest/`: `pdf.ts` + `pdf-worker.ts`, `docx.ts` + `docx-worker.ts` + `docx-html.ts`, `chunker.ts` (`chunkPages`), `embed.ts` (`embedSourceChunks`), `reembed.ts`, `rechunk.ts`, `ingest-pdf-source.ts`.
 - `usage/`: `aggregateUsage` (totals, provider/model shares, daily token and cost series, cost by type, unpriced models), `rangeToSinceMs`, `lookupPricing`/`costFor`; bridge `src/lib/tauri/usage.ts` (`scanUsage`).
 - `podcast/`: `adapter.ts` (`TtsAdapter`, `registerAdapter`), `adapters/{piper,web-speech,experimental-local}.ts`, `synthesize.ts` (`synthesizePodcastAudio`), `audio-assembly.ts`, `compatibility.ts`, `install.ts`, `voices.ts`.
-- `tauri/`: `env.ts` (`isTauriEnvWithOverride`), `fetch.ts` (`tauriFetch`, `smartFetch`), `agent-cli.ts` (`probeAgentCli`, `startAgentCli`, `writeAgentCli`, `stopAgentCli`), `sysinfo.ts`. `crypto/keychain.ts` wraps the `keychain_*` commands.
+- `tauri/`: `env.ts` (`isTauriEnvWithOverride`), `fetch.ts` (`tauriFetch`, `smartFetch`), `agent-cli.ts` (`probeAgentCli`, `startAgentCli`, `writeAgentCli`, `stopAgentCli`, `getAgentWorkspace`), `sysinfo.ts`. `crypto/keychain.ts` wraps the `keychain_*` commands.
 
 ## Rust: `src-tauri/src/`
 
@@ -42,7 +42,7 @@ The app has no server database. "Backend" here is (1) the `src/app/api/ai/*` rou
 |---|---|
 | `main.rs` | Entry; calls `tme_lib::run` |
 | `lib.rs` | `run()`: registers plugins (http, fs, dialog, notification, autostart, updater, process, opener, shell), `generate_handler!` for 15 commands, tray and app menu, file-open events; `serve_export_asset` + `export_shell_fallback` with `DYN_PARENTS` (audio, read, study, roadmap, analysis) for the static-export shell |
-| `agent_cli.rs` | `agent_cli_probe`, `agent_cli_start`, `agent_cli_write`, `agent_cli_stop`; `AgentCliState` session map; stdout lines pushed over a `tauri::ipc::Channel` |
+| `agent_cli.rs` | `agent_cli_probe`, `agent_cli_start`, `agent_cli_write`, `agent_cli_stop`, `agent_cli_workspace`; `AgentCliState` session map; stdout lines pushed over a `tauri::ipc::Channel` |
 | `agent_process.rs` | `ProcessTree`: Windows job object / Unix process-group ownership so the whole CLI tree is killed |
 | `keychain.rs` | `keychain_get/set/delete/list` over the `keyring` crate |
 | `tts.rs` | `tts_piper_check_readiness`, `tts_piper_synthesize`, `tts_list_installed_voices`, `tts_install_voice`, `tts_delete_voice` (Piper via shell plugin; model download via reqwest) |

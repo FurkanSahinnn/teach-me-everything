@@ -40,7 +40,7 @@ Static export pre-renders only `/w/_/...`; pages read the real id from the URL w
 - **Generation features** (quiz, flashcards, roadmap, curriculum, podcast script, concepts): `src/lib/ai/<feature>-gen|generation.ts` + `prompts/` + `stage-runner.ts`; results stored through `src/lib/db/*` repos.
 - **Article analysis:** `src/lib/ai/article-analysis.ts` driven by `runners/article-analysis-runner.ts`; helpers in `src/lib/article-analysis/`.
 - **Ingest:** `SourceUploader` / `AddUrlModal` -> `src/lib/ingest/` (pdf/docx workers, `chunker.ts`) or `src/lib/research/` (URL, arXiv, DOI, YouTube) -> `sources` + `chunks` -> `ingest/embed.ts` -> `topKChunks`.
-- **Local agent CLI:** `providers/claude-cli.ts` / `codex-cli.ts` / `codex-app-server.ts` -> `src/lib/tauri/agent-cli.ts` -> Rust `agent_cli_*` commands (`src-tauri/src/agent_cli.rs`) streaming over a Tauri `Channel`.
+- **Local agent CLI:** `providers/claude-cli.ts` / `codex-cli.ts` / `codex-app-server.ts` / `opencode-cli.ts` / `opencode-acp.ts` -> `src/lib/tauri/agent-cli.ts` -> Rust `agent_cli_*` commands (`src-tauri/src/agent_cli.rs`) streaming over a Tauri `Channel`.
 - **Podcast audio:** `src/lib/podcast/synthesize.ts` -> adapters (`piper`, `web-speech`, `experimental-local`) -> Rust `tts_*` commands for Piper; blobs in `podcastBlobs`.
 - **Vault sync:** `WorkspaceVaultMount` -> `VaultReconcilerProvider` -> `src/lib/vault/` (watcher, reconcile, serialize) <-> `notes` / `noteFolders`.
 - **Backup:** `src/lib/backup/export.ts` / `import.ts` over Dexie tables (see [data](data.md)).

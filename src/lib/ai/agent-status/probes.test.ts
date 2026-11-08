@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentCliEvent } from "@/lib/tauri/agent-cli";
 
 vi.mock("@/lib/tauri/agent-cli", () => ({
+  getAgentWorkspace: vi.fn(async () => "/app/agent-workspace"),
   probeAgentCli: vi.fn(),
   startAgentCli: vi.fn(),
   writeAgentCli: vi.fn(),
   stopAgentCli: vi.fn(async () => {}),
 }));
 import { probeAgentCli, startAgentCli, stopAgentCli, writeAgentCli } from "@/lib/tauri/agent-cli";
-import { probeClaudeStatus, probeCodexStatus } from "./probes";
+import { probeClaudeStatus, probeCodexStatus, probeOpencodeStatus } from "./probes";
 
 const probe = vi.mocked(probeAgentCli);
 const start = vi.mocked(startAgentCli);
@@ -152,5 +153,59 @@ describe("probeCodexStatus", () => {
     start.mockRejectedValue(new Error("Could not launch codex"));
     const s = await probeCodexStatus();
     expect(s).toMatchObject({ state: "error", error: "Could not launch codex" });
+  });
+});
+
+describe("probeOpencodeStatus", () => {
+  const session = (models: string[], modes = ["build", "tme-tutor"]) => ({
+    sessionId: "ses_1",
+    configOptions: [
+      { id: "model", currentValue: models[0], options: models.map((value) => ({ value, name: value })) },
+      { id: "mode", options: modes.map((value) => ({ value, name: value })) },
+    ],
+  });
+  function opencodeWith(result: unknown): void {
+    startWith((msg) => {
+      if (msg.method === "initialize") line({ jsonrpc: "2.0", id: msg.id, result: { agentInfo: { version: "2.2.6" } } });
+      else if (msg.method === "session/new") line({ jsonrpc: "2.0", id: msg.id, result });
+      else line({ jsonrpc: "2.0", id: msg.id, result: {} });
+    });
+  }
+
+  it("reports ready with the model count and connected providers", async () => {
+    opencodeWith(session(["opencode/big-pickle", "opencode-go/kimi-k3", "anthropic/claude-sonnet-5-5"]));
+
+    const s = await probeOpencodeStatus({ path: "/bin/opencode", env: { HTTPS_PROXY: "http://p" } });
+
+    expect(s).toMatchObject({
+      cli: "opencode", state: "authenticated", version: "2.2.6", modelCount: 3,
+      providers: ["opencode", "opencode-go", "anthropic"],
+    });
+    expect(start.mock.calls[0]?.[0]).toMatchObject({ cli: "opencode", args: ["acp"], path: "/bin/opencode", env: { HTTPS_PROXY: "http://p" } });
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports signed out when no provider exposes a model", async () => {
+    opencodeWith(session([]));
+
+    expect((await probeOpencodeStatus()).state).toBe("unauthenticated");
+  });
+
+  it("flags an OpenCode that ignored TME's agent profile", async () => {
+    opencodeWith(session(["opencode/big-pickle"], ["build", "plan"]));
+
+    const s = await probeOpencodeStatus();
+
+    expect(s.state).toBe("error");
+    expect(s.error).toContain("agent profile");
+  });
+
+  it("refuses OpenCode 1.x without starting it", async () => {
+    probe.mockResolvedValue({ ...found, version: "1.19.5" });
+
+    const s = await probeOpencodeStatus();
+
+    expect(s).toMatchObject({ state: "error", version: "1.19.5", error: "OpenCode 2 or newer is required" });
+    expect(start).not.toHaveBeenCalled();
   });
 });

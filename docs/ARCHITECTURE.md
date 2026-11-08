@@ -16,7 +16,7 @@ It runs in two modes:
 | Server | Next dev server; `src/app/api/ai/*` route handlers act as LLM proxies | none — static files served by the Tauri asset resolver |
 | Upstream HTTP | browser `fetch` → same-origin `/api/ai/*` → provider | `tauriFetch` (`@tauri-apps/plugin-http`) → provider directly |
 | API keys | Dexie, plaintext (dev convenience) | OS keychain through Rust (`src-tauri/src/keychain.rs`) |
-| Local CLIs | not available | `claude` / `codex` spawned by Rust (`src-tauri/src/agent_cli.rs`) |
+| Local CLIs | not available | `claude` / `codex` / `opencode` spawned by Rust (`src-tauri/src/agent_cli.rs`) |
 
 The switch is `isTauriEnvWithOverride()` in `src/lib/tauri/env.ts` (the override is a test seam; use it, not
 `isTauriEnv()`, for production gating). There is no cloud deployment: releases are Tauri installers on GitHub
@@ -92,11 +92,13 @@ Provider setup: [PROVIDERS.md](PROVIDERS.md), [PROVIDERS_LOCAL.md](PROVIDERS_LOC
 - Providers without native tools use the JSON tool protocol in `tool-translator.ts`
   (`buildJsonToolPrompt`, `parseJsonToolUseFromText`, `withJsonToolFallback`).
 - Model lists are fetched live where the provider allows (`providers/model-fetch/`); the preset's list is the
-  offline fallback. Codex lists models through `codex app-server`.
-- Local agent CLIs (`claude-cli`, `codex-cli`) are processes, not HTTP: see [PROVIDERS_LOCAL.md](PROVIDERS_LOCAL.md).
+  offline fallback. Codex lists models through `codex app-server`, OpenCode through the model option of a
+  throwaway `opencode acp` session.
+- Local agent CLIs (`claude-cli`, `codex-cli`, `opencode-cli`) are processes, not HTTP: see
+  [PROVIDERS_LOCAL.md](PROVIDERS_LOCAL.md).
 - Account and limit status for those CLIs comes from the CLIs themselves (`src/lib/ai/agent-status`: Claude
-  `initialize` / `get_usage` control requests, Codex app-server `account/read` / `account/rateLimits/read`), cached
-  in the `useAgentStatus` store. No credential file is read.
+  `initialize` / `get_usage` control requests, Codex app-server `account/read` / `account/rateLimits/read`, OpenCode
+  ACP `session/new` models), cached in the `useAgentStatus` store. No credential file is read.
 - Settings → Providers is built from `buildProviderCatalog` (`src/lib/ai/provider-catalog.ts`): chat presets grouped
   as CLI / local / cloud / custom with a status per entry. `prefs.disabledProviders` hides a provider from model
   pickers via `filterEnabledChatOptions`, except where a saved binding still uses it.

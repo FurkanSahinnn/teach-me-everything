@@ -70,7 +70,7 @@ HTTP sağlayıcıları ortama göre dallanır (`isTauriEnvWithOverride()`, `src/
 - `cacheCreation` 5 dakikalık (OpenAI'de 30 dakikalık) önbellek yazma ücretidir. Claude Code çoğunlukla 1 saatlik önbellek yazar; Kullanım ekranındaki maliyet bu yüzden biraz düşük tahmin edilir.
 - Önbellek okuma oranı her modelde 0.1× değildir: Fable 5.1 0.025×, Opus 5.5 ve Sonnet 5.5 0.05×.
 - `PRICING` içinde olmayan model 0 USD sayılır ve tek seferlik `console.warn` düşer; hata fırlatılmaz.
-- **Abonelik CLI takma adları kasten yoktur.** `claude-cli` takma adları (`opus`, `sonnet`, `haiku`) `PRICING`'e girmez; böylece uygulama içi maliyet çipi gizlenir. Abone token başına ödemez; yanlış bir dolar tutarı ya da "Free" yazmak yanıltıcı olurdu. Kullanım ekranı ise CLI günlüklerindeki gerçek model id'lerini (`claude-opus-5-5`, `gpt-6-astra` …) fiyatlandırır ve bunu açıkça "API tahmini" olarak etiketler.
+- **Abonelik CLI takma adları kasten yoktur.** `claude-cli` takma adları (`opus`, `sonnet`, `haiku`) ve `opencode-cli` model id'leri (`opencode/…`, `opencode-go/…`) `PRICING`'e girmez; böylece uygulama içi maliyet çipi gizlenir. Abone token başına ödemez; yanlış bir dolar tutarı ya da "Free" yazmak yanıltıcı olurdu. Kullanım ekranı ise CLI günlüklerindeki gerçek model id'lerini (`claude-opus-5-5`, `gpt-6-astra` …) fiyatlandırır ve bunu açıkça "API tahmini" olarak etiketler.
 - Web arama maliyeti ayrı hesaplanır: `computeWebSearchCostUsd`.
 
 ## 6. Dinamik model listeleri

@@ -1,6 +1,6 @@
 /** Status model for the user's locally installed agent CLIs (UI-agnostic). */
 
-export type AgentCliId = "claude" | "codex";
+export type AgentCliId = "claude" | "codex" | "opencode";
 
 export type LimitKind = "session" | "weekly" | "weekly_model" | "monthly";
 
@@ -36,6 +36,10 @@ export type AgentAccountStatus = {
   limitsError?: string;
   /** Short, secret-free reason for `not_installed` / `error`. */
   error?: string;
+  /** Models the CLI can reach (OpenCode, whose providers are configured inside it). */
+  modelCount?: number;
+  /** Providers contributing those models, e.g. "opencode", "anthropic". */
+  providers?: string[];
   /** Epoch milliseconds. */
   checkedAt: number;
 };

@@ -13,12 +13,13 @@ const VALID_TOOL_USE: ToolUseStrategy[] = ["native", "json", "none"];
 const LOCAL_IDS: CloudProviderId[] = ["ollama", "lm-studio", "llama-cpp"];
 
 describe("PROVIDER_PRESETS", () => {
-  it("contains exactly 17 presets (12 cloud + 3 local + 2 agent CLI)", () => {
-    expect(Object.keys(PROVIDER_PRESETS).length).toBe(17);
+  it("contains exactly 18 presets (12 cloud + 3 local + 3 agent CLI)", () => {
+    expect(Object.keys(PROVIDER_PRESETS).length).toBe(18);
     const expected: CloudProviderId[] = [
       "anthropic",
       "claude-cli",
       "codex-cli",
+      "opencode-cli",
       "openai",
       "google-gemini",
       "openrouter",
