@@ -29,12 +29,7 @@
  */
 
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import {
-  bracketMatching,
-  defaultHighlightStyle,
-  indentOnInput,
-  syntaxHighlighting,
-} from "@codemirror/language";
+import { bracketMatching, indentOnInput } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import {
@@ -63,6 +58,7 @@ import {
   toggleInlineCode,
   toggleItalic,
 } from "@/lib/notes/toolbar-commands";
+import { notesSyntaxHighlighting } from "@/lib/notes/live-preview/highlight-style";
 import { wikilinkAutocomplete } from "@/lib/notes/wikilink-autocomplete";
 import type { WikilinkLookups } from "@/lib/notes/wikilink-resolver";
 import { cn } from "@/lib/utils/cn";
@@ -198,7 +194,7 @@ export function NoteEditor({
         EditorView.lineWrapping,
         EditorState.tabSize.of(2),
         markdownGfm(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        notesSyntaxHighlighting(),
         editorBaseTheme,
         livePreviewExtension({ onSourceModeChange: setSourceMode }),
         wikilinkAutocomplete({
@@ -312,7 +308,7 @@ export function NoteEditor({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col rounded-[12px] border border-rule bg-paper",
+        "tme-note-editor flex h-full min-h-0 flex-col rounded-[12px] border border-rule bg-paper",
         className,
       )}
       data-testid="note-editor"

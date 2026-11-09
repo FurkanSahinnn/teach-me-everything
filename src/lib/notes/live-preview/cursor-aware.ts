@@ -22,8 +22,14 @@ import { type EditorView, ViewPlugin, type ViewUpdate, keymap } from "@codemirro
  * spanning multiple lines marks each one. Empty selections (the common case)
  * yield a single-line set.
  */
-export function computeActiveLineNumbers(state: EditorState): Set<number> {
+export function computeActiveLineNumbers(
+  state: EditorState,
+  opts: { focused?: boolean } = {},
+): Set<number> {
   const out = new Set<number>();
+  // An unfocused editor has no line "being edited": render everything, the
+  // way Obsidian does when focus moves to the sidebar or a toolbar menu.
+  if (opts.focused === false) return out;
   for (const range of state.selection.ranges) {
     const fromLine = state.doc.lineAt(range.from).number;
     const toLine = state.doc.lineAt(range.to).number;

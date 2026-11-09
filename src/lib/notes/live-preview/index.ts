@@ -16,7 +16,9 @@
  */
 
 import { markdown } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
 import { GFM } from "@lezer/markdown";
+import { syntaxTree } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import {
   Decoration,
@@ -34,6 +36,7 @@ import {
   sourceModeNotifier,
 } from "./cursor-aware";
 import { buildHeadingDecorations } from "./heading-widget";
+import { HighlightSyntax } from "./highlight-syntax";
 import { buildInlineMarkDecorations } from "./inline-marks";
 import { buildListDecorations } from "./list-widgets";
 import { buildTagDecorations } from "./tag-widget";
@@ -67,7 +70,9 @@ export type LivePreviewOptions = {
  * Use this in place of the bare `markdown()` call from Phase 6.2.
  */
 export function markdownGfm(): Extension {
-  return markdown({ extensions: GFM });
+  // `codeLanguages` lazy-loads a grammar the first time a fence names it, so
+  // fenced code gets real syntax colours without bundling every parser.
+  return markdown({ extensions: [GFM, HighlightSyntax], codeLanguages: languages });
 }
 
 const livePreviewPlugin = ViewPlugin.fromClass(
@@ -87,7 +92,9 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
-        sourceModeChanged
+        update.focusChanged ||
+        sourceModeChanged ||
+        syntaxTree(update.startState) !== syntaxTree(update.state)
       ) {
         this.decorations = buildDecorations(update.view);
       }
@@ -101,7 +108,7 @@ const livePreviewPlugin = ViewPlugin.fromClass(
 function buildDecorations(view: EditorView): DecorationSet {
   if (isSourceModeActive(view.state)) return Decoration.none;
 
-  const activeLines = computeActiveLineNumbers(view.state);
+  const activeLines = computeActiveLineNumbers(view.state, { focused: view.hasFocus });
   const specs: DecoSpec[] = [];
 
   for (const { from, to } of view.visibleRanges) {

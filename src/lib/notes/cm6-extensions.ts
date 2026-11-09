@@ -163,9 +163,8 @@ export const editorBaseTheme = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
     color: "var(--color-ink)",
-    fontFamily:
-      "var(--font-body, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif)",
-    fontSize: "15px",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--tme-editor-font-size, 16px)",
     height: "100%",
   },
   "&.cm-focused": {
@@ -173,23 +172,30 @@ export const editorBaseTheme = EditorView.theme({
   },
   ".cm-scroller": {
     fontFamily: "inherit",
-    lineHeight: "1.65",
-    padding: "8px 0",
+    lineHeight: "1.7",
+    padding: "0",
   },
+  // Readable line length: the width slider sets --tme-editor-width on the
+  // host; the content column centres inside whatever room the pane has.
   ".cm-content": {
     caretColor: "var(--color-accent)",
-    padding: "12px 16px",
+    boxSizing: "border-box",
+    width: "100%",
+    maxWidth: "var(--tme-editor-width, 760px)",
+    margin: "0 auto",
+    padding: "28px 40px 45vh",
   },
   ".cm-line": {
-    padding: "0 4px",
+    padding: "0 2px",
   },
-  ".cm-cursor": {
+  ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--color-accent)",
     borderLeftWidth: "2px",
   },
-  "&.cm-focused .cm-selectionBackground, ::selection, .cm-selectionBackground": {
-    backgroundColor: "var(--color-accent-wash, rgba(184, 106, 43, 0.18))",
-  },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+    {
+      backgroundColor: "color-mix(in srgb, var(--color-accent) 26%, transparent)",
+    },
   ".cm-activeLine": {
     backgroundColor: "transparent",
   },
@@ -202,5 +208,129 @@ export const editorBaseTheme = EditorView.theme({
   ".cm-placeholder": {
     color: "var(--color-ink-4)",
     fontStyle: "italic",
+  },
+
+  // ---- tooltips (wikilink autocomplete, hover) follow the active theme
+  ".cm-tooltip": {
+    backgroundColor: "var(--color-paper)",
+    color: "var(--color-ink)",
+    border: "1px solid var(--color-rule)",
+    borderRadius: "10px",
+    boxShadow: "var(--shadow-deep)",
+    overflow: "hidden",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+    fontFamily: "var(--font-sans)",
+    maxHeight: "18rem",
+    minWidth: "260px",
+    padding: "4px",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "8px",
+    padding: "6px 10px",
+    borderRadius: "6px",
+    lineHeight: "1.35",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    backgroundColor: "var(--color-accent-wash)",
+    color: "var(--color-ink)",
+  },
+  ".cm-completionLabel": {
+    fontSize: "13.5px",
+  },
+  ".cm-completionDetail": {
+    marginLeft: "auto",
+    fontStyle: "normal",
+    fontSize: "11px",
+    color: "var(--color-ink-4)",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  ".cm-completionMatchedText": {
+    textDecoration: "none",
+    color: "var(--color-accent)",
+    fontWeight: "600",
+  },
+
+  // ---- search / replace panel
+  ".cm-panels": {
+    backgroundColor: "var(--color-paper-2)",
+    color: "var(--color-ink)",
+  },
+  ".cm-panels.cm-panels-top": {
+    borderBottom: "1px solid var(--color-rule)",
+  },
+  ".cm-panels.cm-panels-bottom": {
+    borderTop: "1px solid var(--color-rule)",
+  },
+  ".cm-search": {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 12px",
+    fontFamily: "var(--font-sans)",
+    fontSize: "12.5px",
+  },
+  ".cm-search br": {
+    flexBasis: "100%",
+    height: "0",
+  },
+  ".cm-search label": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    color: "var(--color-ink-3)",
+  },
+  ".cm-textfield": {
+    backgroundColor: "var(--color-paper)",
+    color: "var(--color-ink)",
+    border: "1px solid var(--color-rule)",
+    borderRadius: "6px",
+    padding: "4px 8px",
+    fontSize: "13px",
+    outline: "none",
+  },
+  ".cm-textfield:focus": {
+    borderColor: "var(--color-accent)",
+  },
+  ".cm-button": {
+    backgroundImage: "none",
+    backgroundColor: "var(--color-paper-3)",
+    color: "var(--color-ink-2)",
+    border: "1px solid var(--color-rule)",
+    borderRadius: "6px",
+    padding: "3px 9px",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  ".cm-button:hover": {
+    color: "var(--color-ink)",
+    borderColor: "var(--color-rule-strong)",
+  },
+  ".cm-search button[name=close]": {
+    marginLeft: "auto",
+    background: "none",
+    border: "none",
+    color: "var(--color-ink-3)",
+    fontSize: "18px",
+    cursor: "pointer",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "color-mix(in srgb, var(--color-warn) 28%, transparent)",
+    borderRadius: "2px",
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "color-mix(in srgb, var(--color-warn) 55%, transparent)",
+  },
+  ".cm-selectionMatch": {
+    backgroundColor: "color-mix(in srgb, var(--color-accent) 14%, transparent)",
+  },
+  ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
+    backgroundColor: "transparent",
+    outline: "1px solid var(--color-rule-strong)",
+    borderRadius: "2px",
   },
 });

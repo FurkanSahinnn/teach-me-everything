@@ -680,12 +680,16 @@ html.theme-init-complete body {
   color: var(--color-ink-2);
 }
 .markdown-preview mark {
-  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  background: var(--tme-highlight-bg);
   color: inherit;
   padding: 0 0.15em;
   border-radius: 3px;
 }
-.markdown-preview {
+/* The notes editor (.tme-note-editor) shares the reading-view code palette so
+   a fenced block looks the same in live preview, source and reading modes. */
+.markdown-preview,
+.tme-note-editor {
+  --tme-highlight-bg: color-mix(in srgb, var(--color-warn) 30%, transparent);
   --md-code-bg: #f6f8fa;
   --md-code-border: #d0d7de;
   --md-code-fg: #24292f;
@@ -701,7 +705,10 @@ html.theme-init-complete body {
 }
 [data-theme="dark"] .markdown-preview,
 [data-theme="sepia"] .markdown-preview,
-[data-theme="github"] .markdown-preview {
+[data-theme="github"] .markdown-preview,
+[data-theme="dark"] .tme-note-editor,
+[data-theme="sepia"] .tme-note-editor,
+[data-theme="github"] .tme-note-editor {
   --md-code-bg: #0d1117;
   --md-code-border: #30363d;
   --md-code-fg: #e6edf3;
