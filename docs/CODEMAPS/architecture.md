@@ -35,7 +35,7 @@ Static export pre-renders only `/w/_/...`; pages read the real id from the URL w
 
 ## Main paths (file level)
 
-- **Boot:** `src/app/layout.tsx` wraps children in `IntlProvider` and `ToastProvider`, then mounts `VaultSetupBoot`, `TrayMount`, `DeepLinkMount`, `MenuMount`, `EventBridgeMount`, `UpdateCheckMount`. `AppShell` mounts `SeedBootstrap`. `src/app/w/[id]/layout.tsx` mounts `WorkspaceVaultMount`.
+- **Boot:** `src/app/layout.tsx` wraps children in `IntlProvider` and `ToastProvider`, then mounts `VaultSetupBoot`, `TrayMount`, `DeepLinkMount`, `MenuMount`, `EventBridgeMount`, `UpdateCheckMount`. Example data is written only by the setup wizard (`ExamplesStep` → `seedDevData`). `src/app/w/[id]/layout.tsx` mounts `WorkspaceVaultMount`.
 - **Chat:** page -> `useChatSession` / `ChatSession` (`src/lib/ai/runners/chat-session.ts`) -> `getChatProvider(id).streamChat()` (`src/lib/ai/providers/registry.ts`) -> stream events -> `createStreamWriter` (`runners/stream-writer.ts`) -> `chatMessages` in Dexie. Context blocks come from `src/lib/ai/context/` (`gatherContextBlocks`), RAG from `src/lib/ai/retrieval.ts` (`topKChunks`).
 - **Generation features** (quiz, flashcards, roadmap, curriculum, podcast script, concepts): `src/lib/ai/<feature>-gen|generation.ts` + `prompts/` + `stage-runner.ts`; results stored through `src/lib/db/*` repos.
 - **Article analysis:** `src/lib/ai/article-analysis.ts` driven by `runners/article-analysis-runner.ts`; helpers in `src/lib/article-analysis/`.

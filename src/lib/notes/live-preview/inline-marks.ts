@@ -35,6 +35,7 @@ const STRONG_STYLE = Decoration.mark({ class: "cm-tme-strong" });
 const EM_STYLE = Decoration.mark({ class: "cm-tme-em" });
 const STRIKE_STYLE = Decoration.mark({ class: "cm-tme-strike" });
 const CODE_STYLE = Decoration.mark({ class: "cm-tme-code" });
+const HIGHLIGHT_STYLE = Decoration.mark({ class: "cm-tme-highlight" });
 const LINK_STYLE = Decoration.mark({ class: "cm-tme-link" });
 
 type ChildSummary = { name: string; from: number; to: number };
@@ -76,6 +77,9 @@ export function buildInlineMarkDecorations(
           return;
         case "InlineCode":
           emitWrappedNode(state, node, activeLines, "CodeMark", CODE_STYLE, out);
+          return;
+        case "Highlight":
+          emitWrappedNode(state, node, activeLines, "HighlightMark", HIGHLIGHT_STYLE, out);
           return;
         case "Link":
           emitLink(state, node, activeLines, out);

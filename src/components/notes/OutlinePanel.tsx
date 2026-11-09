@@ -50,14 +50,14 @@ export function OutlinePanel({ content, getView, className }: OutlinePanelProps)
     <aside
       data-testid="note-outline-panel"
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-[12px] border border-rule bg-paper",
+        "flex h-full min-h-0 flex-col overflow-hidden",
         className,
       )}
     >
-      <header className="flex items-center justify-between gap-2 border-b border-rule px-3 py-2">
+      <header className="flex h-10 shrink-0 items-center gap-2 px-3 justify-between">
         <div className="flex items-center gap-2 text-ink-2">
           <Hash className="h-3.5 w-3.5" aria-hidden />
-          <span className="text-[11px] font-mono uppercase tracking-[0.08em]">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em]">
             {t("title")}
           </span>
         </div>

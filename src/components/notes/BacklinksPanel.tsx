@@ -61,13 +61,13 @@ export function BacklinksPanel({
     <aside
       data-testid="backlinks-panel"
       className={cn(
-        "flex h-full min-h-0 flex-col rounded-[12px] border border-rule bg-paper",
+        "flex h-full min-h-0 flex-col",
         className,
       )}
     >
-      <header className="flex items-center gap-2 border-b border-rule px-3 py-2">
-        <Link2 className="h-4 w-4 text-ink-4" aria-hidden />
-        <span className="flex-1 text-[13px] font-medium text-ink-2">
+      <header className="flex h-10 shrink-0 items-center gap-2 px-3">
+        <Link2 className="h-3.5 w-3.5 text-ink-2" aria-hidden />
+        <span className="flex-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-2">
           {t("title")}
         </span>
         <span

@@ -20,6 +20,11 @@ import {
   type ConflictPolicy,
 } from "@/lib/vault/conflict-policy";
 import type { TtsProviderId } from "@/lib/podcast/adapter";
+import {
+  type NoteEditorPrefs,
+  pushRecentColor,
+  sanitizeNoteEditorPrefs,
+} from "@/lib/notes/editor-prefs";
 
 export type Theme = "white" | "sepia" | "dark" | "github";
 export type Density = "compact" | "normal" | "comfy";
@@ -309,7 +314,7 @@ function isValidVaultPrefs(value: unknown): value is VaultPrefs {
   return true;
 }
 
-const PREFS_VERSION = 25;
+const PREFS_VERSION = 26;
 
 // Phase 11.A — Local-first TTS. `piper` is the default because it ships
 // as a Tauri sidecar with a ~63MB Turkish voice (lazy-installed on first
@@ -696,6 +701,11 @@ export function migratePrefs(
       next.agentCli = {};
     }
   }
+  if (version < 26) {
+    // Additive: notes editor layout, toolbar and palettes. The sanitiser keeps
+    // any valid field (none exist before v26) and fills the rest with defaults.
+    next.noteEditor = sanitizeNoteEditorPrefs(next.noteEditor);
+  }
   return next as PrefsState;
 }
 
@@ -746,6 +756,7 @@ type PrefsState = {
    * prefs rather than Dexie or the backup payload.
    */
   notesUi: NotesUiPrefs;
+  noteEditor: NoteEditorPrefs;
   /**
    * Phase 6.9.5 — Cost guard for note auto-sync. `autoEmbedCap` is the USD
    * ceiling per debounced sync — over the cap, the auto-sync timer skips
@@ -823,6 +834,10 @@ type PrefsState = {
   setNotesDailyFolderName: (name: string) => void;
   /** Phase 6.7 — clear template + folder name back to locale defaults. */
   resetNotesDailyDefaults: () => void;
+  /** Merge a patch into the notes editor prefs; invalid fields are repaired. */
+  setNoteEditorPrefs: (patch: Partial<NoteEditorPrefs>) => void;
+  resetNoteEditorPrefs: () => void;
+  pushNoteEditorRecentColor: (color: string) => void;
   /** Phase 6.9.5 — set the auto-embed USD cost cap (clamps to ≥ 0). */
   setAutoEmbedCap: (value: number) => void;
   /** Phase 7.3 — set the vault root directory (null = clear). */
@@ -872,6 +887,7 @@ export const usePrefs = create<PrefsState>()(
       webSearchPrefs: { ...DEFAULT_WEB_SEARCH_PREFS },
       searchProviders: DEFAULT_SEARCH_PROVIDERS.map((e) => ({ ...e })),
       notesUi: { ...DEFAULT_NOTES_UI_PREFS },
+      noteEditor: sanitizeNoteEditorPrefs(undefined),
       costPrefs: { ...DEFAULT_COST_PREFS },
       vault: { ...DEFAULT_VAULT_PREFS },
       ttsProvider: DEFAULT_TTS_PROVIDER,
@@ -1102,6 +1118,22 @@ export const usePrefs = create<PrefsState>()(
       resetNotesDailyDefaults: () => {
         set((s) => ({
           notesUi: { ...s.notesUi, dailyTemplate: "", dailyFolderName: "" },
+        }));
+      },
+      setNoteEditorPrefs: (patch) => {
+        set((s) => ({
+          noteEditor: sanitizeNoteEditorPrefs({ ...s.noteEditor, ...patch }),
+        }));
+      },
+      resetNoteEditorPrefs: () => {
+        set({ noteEditor: sanitizeNoteEditorPrefs(undefined) });
+      },
+      pushNoteEditorRecentColor: (color) => {
+        set((s) => ({
+          noteEditor: {
+            ...s.noteEditor,
+            recentColors: pushRecentColor(s.noteEditor.recentColors, color),
+          },
         }));
       },
       setAutoEmbedCap: (value) => {

@@ -116,9 +116,17 @@ Rendered by `MarkdownPreview` (`src/components/markdown/MarkdownPreview.tsx`) un
 - Code: `pre.markdown-code-block`, `code.markdown-inline-code`, highlight.js token classes `.hljs-*`. Code colors come from `--md-code-*` and `--md-inline-code-bg` variables: a light GitHub skin by default, and the dark GitHub skin under `dark`, `sepia` and `github` themes.
 - Callouts: `blockquote.callout` with `.callout-title`, and type modifiers `callout-warning`, `callout-caution`, `callout-danger`, `callout-bug`, `callout-failure`, `callout-error`, and `callout-tip`, `callout-hint`, `callout-success`, `callout-check`, `callout-done`. Default callouts use `accent` and `accent-wash`.
 - Wikilinks: `a.wikilink` and `.wikilink-embed`.
+- Coloured text (notes): `.md-color` and `mark.md-bg` carry an inline colour that passed the strict validator in `src/lib/notes/inline-html-tags.ts`; `.md-align-*` aligns a whole paragraph. `==mark==` and the editor's highlight share `--tme-highlight-bg` (derived from `warn`).
+- Code Styler blocks: `.md-codeblock` with `.md-codeblock-header`, `-lang`, `-title`, `md-code-line` and highlighted lines, all on the `--md-code-*` palette.
 - Math: KaTeX (`.katex`, `.katex-display`).
 - PDF text layer: `.textLayer` rules for `PdfViewer` selection and highlighting.
 - Citation chips: `CitationChip` and `WebCitationChip` (`src/components/notebook/`) are components styled with token utilities (no dedicated CSS class). `.citation-pulse` (keyframes `citation-pulse`, 1.2s, `accent-wash`) briefly highlights the target chunk after a chip jumps to it in the reader.
+
+## Notes editor
+
+The CodeMirror editor is themed in JS (`EditorView.theme` in `src/lib/notes/cm6-extensions.ts` and each live-preview module) and only references tokens; `.tme-note-editor` receives the same `--md-code-*` variables as `.markdown-preview`, so code looks identical in live preview and reading view. Token colours come from `src/lib/notes/live-preview/highlight-style.ts`, never CodeMirror's `defaultHighlightStyle` (light-only, underlines headings).
+
+User colour palettes (`DEFAULT_TEXT_COLORS`, `DEFAULT_BACKGROUND_COLORS` in `src/lib/notes/editor-prefs.ts`) are content, not UI tokens: they are written into the user's markdown and must stay legible on all four themes, so text colours are mid-tones and background colours carry ~35% alpha.
 
 ## Adding to the system
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   setHeadingLevel,
+  toggleHeadingLevel,
   toggleBlockquoteLine,
   toggleCheckboxLine,
   toggleInlineWrap,
@@ -134,5 +135,51 @@ describe("toggleInlineWrap", () => {
   it("returns the input unchanged when the range is invalid", () => {
     const r = toggleInlineWrap("x", "*", 5, 7);
     expect(r.text).toBe("x");
+  });
+});
+
+describe("toggleHeadingLevel", () => {
+  it("clears the heading when the line already has that level", () => {
+    expect(toggleHeadingLevel("## Title", 2)).toBe("Title");
+  });
+
+  it("switches level otherwise", () => {
+    expect(toggleHeadingLevel("# Title", 2)).toBe("## Title");
+    expect(toggleHeadingLevel("Title", 2)).toBe("## Title");
+  });
+});
+
+describe("toggleInlineWrap — selection that includes the markers", () => {
+  it("unwraps a selected **bold** instead of doubling the markers", () => {
+    const r = toggleInlineWrap("a **kalin** b", "**", 2, 11);
+    expect(r.text).toBe("a kalin b");
+    expect(r.text.slice(r.from, r.to)).toBe("kalin");
+  });
+
+  it.each([
+    ["*", "*kalin*"],
+    ["~~", "~~kalin~~"],
+    ["`", "`kalin`"],
+    ["==", "==kalin=="],
+  ])("unwraps a selected %s span", (marker, selected) => {
+    const r = toggleInlineWrap(selected, marker, 0, selected.length);
+    expect(r.text).toBe("kalin");
+  });
+
+  it("does not treat **bold** as already italic", () => {
+    const r = toggleInlineWrap("**x**", "*", 2, 3);
+    expect(r.text).toBe("***x***");
+    expect(toggleInlineWrap(r.text, "*", 3, 4).text).toBe("**x**");
+  });
+
+  it("toggles bold off from a bold+italic run", () => {
+    expect(toggleInlineWrap("***x***", "**", 3, 4).text).toBe("*x*");
+  });
+
+  it("wraps each line of a list selection and keeps the bullets outside", () => {
+    const text = "- a\n- b";
+    const r = toggleInlineWrap(text, "**", 0, text.length);
+    expect(r.text).toBe("- **a**\n- **b**");
+    expect(toggleInlineWrap(r.text, "**", r.from, r.to).text).toBe(text);
   });
 });

@@ -8,12 +8,14 @@ import { EditorSelection, type ChangeSpec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import {
   type HeadingLevel,
-  setHeadingLevel,
+  toggleHeadingLevel,
+  toggleInlineWrap,
   toggleBlockquoteLine,
   toggleCheckboxLine,
   toggleOrderedListLine,
   toggleUnorderedListLine,
 } from "./markdown-edits";
+import { dispatchRangeEdits } from "./format-commands";
 
 type LineTransform = (line: string, lineIdx: number) => string;
 
@@ -45,7 +47,7 @@ function dispatchLineTransform(
 }
 
 export function setHeading(view: EditorView, level: HeadingLevel): void {
-  dispatchLineTransform(view, (line) => setHeadingLevel(line, level), "input.markdown.heading");
+  dispatchLineTransform(view, (line) => toggleHeadingLevel(line, level), "input.markdown.heading");
 }
 
 export function toggleUnorderedList(view: EditorView): void {
@@ -70,40 +72,11 @@ export function toggleBlockquote(view: EditorView): void {
 }
 
 function dispatchInlineToggle(view: EditorView, marker: string): void {
-  const { state } = view;
-  const text = state.doc.toString();
-  const changes: ChangeSpec[] = [];
-  const newRanges = [];
-
-  for (const r of state.selection.ranges) {
-    const before = text.slice(Math.max(0, r.from - marker.length), r.from);
-    const after = text.slice(r.to, Math.min(text.length, r.to + marker.length));
-    if (before === marker && after === marker) {
-      changes.push({ from: r.from - marker.length, to: r.from, insert: "" });
-      changes.push({ from: r.to, to: r.to + marker.length, insert: "" });
-      newRanges.push(
-        EditorSelection.range(r.from - marker.length, r.to - marker.length),
-      );
-    } else {
-      changes.push({ from: r.from, insert: marker });
-      changes.push({ from: r.to, insert: marker });
-      newRanges.push(
-        EditorSelection.range(r.from + marker.length, r.to + marker.length),
-      );
-    }
-  }
-
-  if (changes.length === 0) {
-    view.focus();
-    return;
-  }
-
-  view.dispatch({
-    changes,
-    selection: EditorSelection.create(newRanges, state.selection.mainIndex),
-    userEvent: "input.markdown.inline",
-  });
-  view.focus();
+  dispatchRangeEdits(
+    view,
+    (text, from, to) => toggleInlineWrap(text, marker, from, to),
+    "input.markdown.inline",
+  );
 }
 
 export function toggleBold(view: EditorView): void {
@@ -111,7 +84,7 @@ export function toggleBold(view: EditorView): void {
 }
 
 export function toggleItalic(view: EditorView): void {
-  dispatchInlineToggle(view, "_");
+  dispatchInlineToggle(view, "*");
 }
 
 export function toggleStrike(view: EditorView): void {

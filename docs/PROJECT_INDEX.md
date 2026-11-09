@@ -24,7 +24,7 @@ Next.js 16 (App Router) + React 19 + TypeScript strict · Tailwind v4 (4 tema, `
 |---|---|---|
 | Uygulama | 1.0.0 | `package.json` `version`, `src-tauri/tauri.conf.json` `version` |
 | Dexie şeması | v30 | `src/lib/db/schema.ts`, en yüksek `this.version(30)` |
-| Tercihler (persist) | 25 | `PREFS_VERSION`, `src/stores/prefs.ts` |
+| Tercihler (persist) | 26 | `PREFS_VERSION`, `src/stores/prefs.ts` |
 | Yedek biçimi | 11 | `BACKUP_SCHEMA_VERSION`, `src/lib/backup/export.ts` |
 
 ## Sayfalar

@@ -1,191 +1,204 @@
 "use client";
 
 /**
- * Phase 6.2 + 6.3 + 6.5 — CodeMirror 6 markdown editor with live preview
- * and wikilink autocomplete.
+ * CodeMirror 6 markdown editor for notes: Obsidian-style live preview, the
+ * Editing Toolbar (docked ribbon and/or floating selection bar), a status bar
+ * with the Editor Width Slider, and autosave.
  *
- * Renders a single-pane CM6 markdown editor with:
- *   - GFM syntax (Tables, TaskList, Strikethrough, Autolink) via `markdownGfm`
- *   - Live-preview decorations: heading scale, inline mark hide, wikilink
- *     chips, blockquote rail, clickable task checkboxes. Active line (the
- *     one with the cursor) reverts to raw markdown so editing stays direct.
- *   - `Ctrl+E` toggles full source mode — drops all decorations until pressed
- *     again. Footer pill announces the mode.
- *   - Debounced autosave (~800 ms) flushed on unmount.
- *   - Save-state pill (idle / dirty / saving / saved) + live word count.
- *   - Toolbar with H2/H3, bold/italic/strike/code, list/ordered/checkbox/quote,
- *     link, wikilink. Keyboard shortcuts: ⌘B / ⌘I / ⌘` for inline marks,
- *     ⌘E to toggle source mode.
- *   - Wikilink chip click → fires `onWikilinkClick(detail)` so the parent
- *     route can navigate or open a "create" prompt.
- *   - `[[` triggers a wikilink autocomplete dropdown sourced from
- *     `wikilinkLookups` (Phase 6.5). The lookups are read via ref on every
- *     completion so live workspace changes propagate without remounting CM6.
- *
- * Controlled-once API: pass `initialContent` and use a route-stable `key`
- * (e.g. `key={noteId}`) to remount the editor when switching notes. The
- * editor doesn't sync `initialContent` after mount — autosave is the source
- * of truth and round-tripping props would clobber in-flight edits.
+ * Controlled-once API: pass `initialContent` and remount with `key={noteId}`
+ * to switch documents. The editor never re-reads `initialContent` after mount:
+ * autosave is the source of truth, and round-tripping props would clobber
+ * in-flight edits.
  */
 
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
-  bracketMatching,
-  defaultHighlightStyle,
-  indentOnInput,
-  syntaxHighlighting,
-} from "@codemirror/language";
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  redoDepth,
+  undoDepth,
+} from "@codemirror/commands";
+import { bracketMatching, indentOnInput } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
-import {
-  EditorView,
-  drawSelection,
-  keymap,
-  placeholder as cmPlaceholder,
-} from "@codemirror/view";
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { EditorView, drawSelection, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
 import { useTranslations } from "next-intl";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_AUTOSAVE_MS, autosaveExtension, countWords, editorBaseTheme } from "@/lib/notes/cm6-extensions";
 import {
-  DEFAULT_AUTOSAVE_MS,
-  autosaveExtension,
-  editorBaseTheme,
-  wordCountExtension,
-} from "@/lib/notes/cm6-extensions";
+  DEFAULT_NOTE_EDITOR_PREFS,
+  type NoteEditorPrefs,
+  type NoteViewMode,
+  readFrontmatterEditorWidth,
+} from "@/lib/notes/editor-prefs";
+import {
+  applyBackgroundColor,
+  applyTextColor,
+  getActiveFormats,
+  toggleHighlight,
+  toggleSubscript,
+  toggleSuperscript,
+  toggleUnderline,
+} from "@/lib/notes/format-commands";
+import type { FormatState } from "@/lib/notes/format-edits";
+import { listKeymap } from "@/lib/notes/list-keymap";
 import {
   TME_EVENT,
   type TagClickDetail,
   type WikilinkClickDetail,
   livePreviewExtension,
   markdownGfm,
+  setSourceMode,
 } from "@/lib/notes/live-preview";
+import { notesSyntaxHighlighting } from "@/lib/notes/live-preview/highlight-style";
+import { refreshWikilinkStatus, wikilinkStatusFacet } from "@/lib/notes/live-preview/wikilink-widget";
 import {
+  insertLink,
+  setHeading,
   toggleBold,
+  toggleCheckbox,
   toggleInlineCode,
   toggleItalic,
+  toggleStrike,
 } from "@/lib/notes/toolbar-commands";
 import { wikilinkAutocomplete } from "@/lib/notes/wikilink-autocomplete";
-import type { WikilinkLookups } from "@/lib/notes/wikilink-resolver";
+import { type WikilinkLookups, resolveWikilink } from "@/lib/notes/wikilink-resolver";
 import { cn } from "@/lib/utils/cn";
-import { EditorToolbar } from "./EditorToolbar";
-
-type SaveState = "idle" | "dirty" | "saving" | "saved";
+import { EditorStatusBar, type SaveState } from "./editor/EditorStatusBar";
+import { EditingToolbar } from "./toolbar/EditingToolbar";
 
 export type NoteEditorProps = {
   /** Initial document. Use `key={noteId}` to remount on note switch. */
   initialContent?: string;
   /** Called after the debounce window with the latest doc string. */
   onChange?: (doc: string) => void | Promise<void>;
-  /** Called on every doc change with the running word count. */
-  onWordCountChange?: (count: number) => void;
-  /**
-   * Fired when the user clicks (or activates via keyboard) a wikilink chip.
-   * The parent decides whether to navigate to the resolved entity or open
-   * a "create new" prompt for missing notes.
-   */
   onWikilinkClick?: (detail: WikilinkClickDetail) => void;
-  /**
-   * Fired when the user clicks (or activates via keyboard) a `#tag` chip
-   * (Phase 6.6). The parent typically routes this into the workspace tag
-   * filter so the sidebar `NoteTree` narrows down to matching notes.
-   */
   onTagClick?: (detail: TagClickDetail) => void;
-  /**
-   * Fired once with the live `EditorView` after CM6 mounts, and again with
-   * `null` on teardown. Used by external panels (e.g. the outline) that need
-   * to dispatch transactions like `selection: cursor(line); scrollIntoView`
-   * without owning the editor lifecycle. The callback is stored via ref so
-   * a re-renders-with-new-handler doesn't tear the extension down.
-   */
+  /** Receives the live view after mount and `null` on teardown. */
   onEditorReady?: (view: EditorView | null) => void;
-  /**
-   * Workspace entity index that drives the `[[` autocomplete dropdown. Pass
-   * the latest snapshot from `useLiveQuery` — the editor reads it through
-   * a ref so updates are immediate without re-mounting CM6. Pass `null`
-   * (or omit) to disable autocomplete entirely.
-   */
+  /** Workspace entity index for `[[` autocomplete and unresolved-link styling. */
   wikilinkLookups?: WikilinkLookups | null;
-  /** Override the localized placeholder. */
+  /** Live preview or raw markdown. Reading mode is rendered by the page. */
+  mode?: Exclude<NoteViewMode, "reading">;
+  /** `Mod-E` asks the page to switch to reading view (Obsidian's binding). */
+  onToggleReading?: () => void;
+  prefs: NoteEditorPrefs;
+  onPrefsChange: (patch: Partial<NoteEditorPrefs>) => void;
+  onColorUsed: (color: string) => void;
+  /** Focus on mount and select the H1 text of a freshly created note. */
+  autoFocus?: boolean;
   placeholder?: string;
-  /** Debounce delay before `onChange` fires. */
   autosaveMs?: number;
-  /** Hide the toolbar (e.g. for embedded preview). */
-  showToolbar?: boolean;
-  /**
-   * Right-aligned actions threaded into the toolbar slot. Phase 6.9.4 wires
-   * the "Embed as source" button here; kept generic so other consumers can
-   * attach mode switches or export buttons without forking the editor.
-   */
-  toolbarTrailingActions?: ReactNode;
-  /** Hide the word-count + save-state footer. */
-  showFooter?: boolean;
-  /** When false, the editor renders read-only. */
   editable?: boolean;
   className?: string;
 };
 
+type FloatingPos = { top: number; left: number };
+
+const FLOATING_ITEMS = [
+  "bold",
+  "italic",
+  "underline",
+  "strike",
+  "highlight",
+  "textColor",
+  "inlineCode",
+  "link",
+  "wikilink",
+  "clearFormatting",
+] as const;
+
+const FRESH_TITLE_RE = /^# (.+)$/;
+const FLOATING_OFFSET_Y = 46;
+const FLOATING_MAX_WIDTH = 360;
+
 export function NoteEditor({
   initialContent = "",
   onChange,
-  onWordCountChange,
   onWikilinkClick,
   onTagClick,
   onEditorReady,
   wikilinkLookups,
+  mode = "live",
+  onToggleReading,
+  prefs,
+  onPrefsChange,
+  onColorUsed,
+  autoFocus = false,
   placeholder: placeholderProp,
   autosaveMs = DEFAULT_AUTOSAVE_MS,
-  showToolbar = true,
-  toolbarTrailingActions,
-  showFooter = true,
   editable = true,
   className,
 }: NoteEditorProps) {
   const tEditor = useTranslations("notes.editor");
-  const tFooter = useTranslations("notes.editor.footer");
 
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const [spellcheckCompartment] = useState(() => new Compartment());
 
-  const [wordCount, setWordCount] = useState(0);
+  const [counts, setCounts] = useState(() => ({
+    words: countWords(initialContent),
+    characters: initialContent.length,
+  }));
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [sourceMode, setSourceMode] = useState(false);
+  const [formats, setFormats] = useState<FormatState | null>(null);
+  const [historyDepth, setHistoryDepth] = useState({ undo: false, redo: false });
+  const [floating, setFloating] = useState<FloatingPos | null>(null);
+  const [noteWidth, setNoteWidth] = useState<number | null>(() => readFrontmatterEditorWidth(initialContent));
+  const [painter, setPainter] = useState<FormatState | null>(null);
+  const [lastColors, setLastColors] = useState(() => ({
+    text: prefs.textColors[0] ?? DEFAULT_NOTE_EDITOR_PREFS.textColors[0] ?? "#e5484d",
+    background: prefs.backgroundColors[0] ?? DEFAULT_NOTE_EDITOR_PREFS.backgroundColors[0] ?? "#ffe06659",
+  }));
 
-  // Stabilize callbacks so the CM6 setup effect runs exactly once per mount —
-  // the `onCloseRef`-style pattern from Phase 5.5.G prevents extension teardown
-  // when the parent re-renders with a new inline handler.
+  // Callbacks and inputs read by long-lived CM extensions go through refs so
+  // the editor is built once per mount.
   const onChangeRef = useRef(onChange);
-  const onWordCountRef = useRef(onWordCountChange);
   const onWikilinkClickRef = useRef(onWikilinkClick);
   const onTagClickRef = useRef(onTagClick);
   const onEditorReadyRef = useRef(onEditorReady);
-  // Lookups updated via ref so the autocomplete source always sees the
-  // latest workspace snapshot without re-creating the extension.
+  const onToggleReadingRef = useRef(onToggleReading);
   const wikilinkLookupsRef = useRef<WikilinkLookups | null>(wikilinkLookups ?? null);
+  const painterRef = useRef<FormatState | null>(null);
+  const toolbarModeRef = useRef(prefs.toolbarMode);
   useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
-  useEffect(() => {
-    onWordCountRef.current = onWordCountChange;
-  }, [onWordCountChange]);
-  useEffect(() => {
     onWikilinkClickRef.current = onWikilinkClick;
-  }, [onWikilinkClick]);
-  useEffect(() => {
     onTagClickRef.current = onTagClick;
-  }, [onTagClick]);
-  useEffect(() => {
     onEditorReadyRef.current = onEditorReady;
-  }, [onEditorReady]);
-  useEffect(() => {
-    wikilinkLookupsRef.current = wikilinkLookups ?? null;
-  }, [wikilinkLookups]);
+    onToggleReadingRef.current = onToggleReading;
+    painterRef.current = painter;
+    toolbarModeRef.current = prefs.toolbarMode;
+  });
 
-  // Mount CM6 once per editor lifecycle. `key={noteId}` from the parent is
-  // the seam for swapping documents — that triggers an unmount/remount and a
-  // fresh `EditorState.create` with the new initial doc.
+  // Batch per-update UI state into one React update per animation frame.
+  const frameRef = useRef<number | null>(null);
+  const docDirtyRef = useRef(false);
+  const scheduleUiSync = useCallback((view: EditorView, docChanged: boolean) => {
+    if (docChanged) docDirtyRef.current = true;
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      const { state } = view;
+      if (docDirtyRef.current) {
+        docDirtyRef.current = false;
+        const doc = state.doc.toString();
+        setCounts({ words: countWords(doc), characters: doc.length });
+        setNoteWidth(readFrontmatterEditorWidth(doc));
+      }
+      setFormats(getActiveFormats(view));
+      setHistoryDepth({ undo: undoDepth(state) > 0, redo: redoDepth(state) > 0 });
+      setFloating(computeFloatingPos(view, shellRef.current, toolbarModeRef.current));
+    });
+  }, []);
+
   useEffect(() => {
     if (!hostRef.current) return;
-
     const placeholderText = placeholderProp ?? tEditor("placeholder");
+    const phrases = tEditor.raw("cm_phrases") as Record<string, string>;
 
     const state = EditorState.create({
       doc: initialContent,
@@ -194,24 +207,46 @@ export function NoteEditor({
         drawSelection(),
         indentOnInput(),
         bracketMatching(),
+        closeBrackets(),
         EditorState.allowMultipleSelections.of(true),
         EditorView.lineWrapping,
         EditorState.tabSize.of(2),
+        EditorState.phrases.of(phrases),
+        spellcheckCompartment.of(
+          EditorView.contentAttributes.of({ spellcheck: prefs.spellcheck ? "true" : "false" }),
+        ),
         markdownGfm(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        notesSyntaxHighlighting(),
         editorBaseTheme,
-        livePreviewExtension({ onSourceModeChange: setSourceMode }),
-        wikilinkAutocomplete({
-          getLookups: () => wikilinkLookupsRef.current,
+        livePreviewExtension(),
+        wikilinkStatusFacet.of((target, kind) => {
+          const lookups = wikilinkLookupsRef.current;
+          if (!lookups) return true;
+          return resolveWikilink({ target, kind }, lookups).exists;
         }),
+        wikilinkAutocomplete({ getLookups: () => wikilinkLookupsRef.current }),
         cmPlaceholder(placeholderText),
         EditorView.editable.of(editable),
         EditorState.readOnly.of(!editable),
-        // Mark the editor "dirty" on every keystroke; the autosave plugin
-        // flips it to "saving" → "saved" once the debounce window expires.
+        listKeymap,
         EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          setSaveState((prev) => (prev === "saving" ? prev : "dirty"));
+          if (update.docChanged) setSaveState((prev) => (prev === "saving" ? prev : "dirty"));
+          if (update.docChanged || update.selectionSet || update.focusChanged) {
+            scheduleUiSync(update.view, update.docChanged);
+          }
+        }),
+        EditorView.domEventHandlers({
+          mouseup: (_event, view) => {
+            const snapshot = painterRef.current;
+            if (!snapshot) return false;
+            // Let CodeMirror commit the drag selection before painting it.
+            requestAnimationFrame(() => {
+              if (view.state.selection.main.empty) return;
+              applyFormatSnapshot(view, snapshot);
+              setPainter(null);
+            });
+            return false;
+          },
         }),
         autosaveExtension({
           delayMs: autosaveMs,
@@ -222,46 +257,42 @@ export function NoteEditor({
               if (cb) await Promise.resolve(cb(doc));
               setSaveState("saved");
             } catch {
-              // If the parent threw, stay in `dirty` so the indicator
-              // re-arms on the next keystroke and the user knows the save
-              // didn't land. Throwing here would crash the CM plugin.
+              // Stay dirty so the indicator re-arms and the next keystroke retries.
               setSaveState("dirty");
             }
           },
         }),
-        wordCountExtension({
-          onUpdate: (n) => {
-            setWordCount(n);
-            onWordCountRef.current?.(n);
-          },
-        }),
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          ...searchKeymap,
-          indentWithTab,
-          {
-            key: "Mod-b",
-            run: (view) => {
-              toggleBold(view);
-              return true;
+        Prec.high(
+          keymap.of([
+            { key: "Mod-e", preventDefault: true, run: () => (onToggleReadingRef.current?.(), true) },
+            { key: "Mod-b", run: (v) => (toggleBold(v), true) },
+            { key: "Mod-i", run: (v) => (toggleItalic(v), true) },
+            { key: "Mod-u", preventDefault: true, run: (v) => toggleUnderline(v) || true },
+            { key: "Mod-Shift-x", run: (v) => (toggleStrike(v), true) },
+            { key: "Mod-Shift-h", preventDefault: true, run: (v) => toggleHighlight(v) || true },
+            { key: "Mod-`", run: (v) => (toggleInlineCode(v), true) },
+            { key: "Mod-.", run: (v) => toggleSuperscript(v) || true },
+            { key: "Mod-,", run: (v) => toggleSubscript(v) || true },
+            { key: "Mod-Enter", run: (v) => (toggleCheckbox(v), true) },
+            {
+              key: "Mod-k",
+              preventDefault: true,
+              run: (v) => {
+                insertLink(v, {
+                  placeholderUrl: tEditor("link_placeholder_url"),
+                  placeholderLabel: tEditor("link_placeholder_label"),
+                });
+                return true;
+              },
             },
-          },
-          {
-            key: "Mod-i",
-            run: (view) => {
-              toggleItalic(view);
-              return true;
-            },
-          },
-          {
-            key: "Mod-`",
-            run: (view) => {
-              toggleInlineCode(view);
-              return true;
-            },
-          },
-        ]),
+            ...([1, 2, 3, 4, 5, 6] as const).map((level) => ({
+              key: `Mod-Alt-${level}`,
+              preventDefault: true,
+              run: (v: EditorView) => (setHeading(v, level), true),
+            })),
+          ]),
+        ),
+        keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       ],
     });
 
@@ -271,161 +302,173 @@ export function NoteEditor({
 
     const handleWikilink = (event: Event) => {
       const ce = event as CustomEvent<WikilinkClickDetail>;
-      if (!ce.detail) return;
-      onWikilinkClickRef.current?.(ce.detail);
+      if (ce.detail) onWikilinkClickRef.current?.(ce.detail);
     };
     const handleTag = (event: Event) => {
       const ce = event as CustomEvent<TagClickDetail>;
-      if (!ce.detail) return;
-      onTagClickRef.current?.(ce.detail);
+      if (ce.detail) onTagClickRef.current?.(ce.detail);
     };
     host.addEventListener(TME_EVENT.wikilinkClick, handleWikilink);
     host.addEventListener(TME_EVENT.tagClick, handleTag);
 
     onEditorReadyRef.current?.(view);
 
+    if (autoFocus) {
+      const first = view.state.doc.line(1);
+      const match = FRESH_TITLE_RE.exec(first.text);
+      view.focus();
+      view.dispatch({
+        selection: match ? { anchor: first.from + 2, head: first.to } : { anchor: view.state.doc.length },
+        scrollIntoView: true,
+      });
+    }
+
     return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       host.removeEventListener(TME_EVENT.wikilinkClick, handleWikilink);
       host.removeEventListener(TME_EVENT.tagClick, handleTag);
       onEditorReadyRef.current?.(null);
       view.destroy();
       viewRef.current = null;
     };
-    // Intentionally empty deps — see comment above.
+    // Built once per mount; inputs that change later are read through refs or
+    // pushed in by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-clear the "saved" badge after a short window so it acts as a
-  // transient confirmation rather than a permanent label.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view) setSourceMode(view, mode === "source");
+  }, [mode]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: spellcheckCompartment.reconfigure(
+        EditorView.contentAttributes.of({ spellcheck: prefs.spellcheck ? "true" : "false" }),
+      ),
+    });
+  }, [prefs.spellcheck, spellcheckCompartment]);
+
+  // New notes / sources / concepts change which links resolve.
+  useEffect(() => {
+    wikilinkLookupsRef.current = wikilinkLookups ?? null;
+    viewRef.current?.dispatch({ effects: refreshWikilinkStatus.of(null) });
+  }, [wikilinkLookups]);
+
   useEffect(() => {
     if (saveState !== "saved") return;
-    const id = setTimeout(() => {
-      setSaveState((prev) => (prev === "saved" ? "idle" : prev));
-    }, 1800);
+    const id = setTimeout(() => setSaveState((prev) => (prev === "saved" ? "idle" : prev)), 1800);
     return () => clearTimeout(id);
   }, [saveState]);
 
-  // Provide a stable view accessor for the toolbar — passing a closure that
-  // reads from a ref avoids re-rendering the toolbar on every CM6 update.
-  const getView = () => viewRef.current;
+  const getView = useCallback(() => viewRef.current, []);
+
+  const handleColorUsed = useCallback(
+    (kind: "text" | "background", color: string) => {
+      setLastColors((prev) => (kind === "text" ? { ...prev, text: color } : { ...prev, background: color }));
+      onColorUsed(color);
+    },
+    [onColorUsed],
+  );
+
+  const togglePainter = useCallback(() => {
+    const view = viewRef.current;
+    setPainter((current) => (current || !view ? null : getActiveFormats(view)));
+  }, []);
+
+  const showTopToolbar = prefs.toolbarMode === "top" || prefs.toolbarMode === "both";
+  const toolbarShared = {
+    getView,
+    formats,
+    canUndo: historyDepth.undo,
+    canRedo: historyDepth.redo,
+    painterActive: painter !== null,
+    onTogglePainter: togglePainter,
+    textColors: prefs.textColors,
+    backgroundColors: prefs.backgroundColors,
+    recentColors: prefs.recentColors,
+    lastTextColor: lastColors.text,
+    lastBackgroundColor: lastColors.background,
+    onColorUsed: handleColorUsed,
+  };
+
+  const editorStyle = {
+    "--tme-editor-width": `${noteWidth ?? prefs.editorWidth}px`,
+    "--tme-editor-font-size": `${prefs.fontSize}px`,
+  } as CSSProperties;
 
   return (
     <div
-      className={cn(
-        "flex h-full min-h-0 flex-col rounded-[12px] border border-rule bg-paper",
-        className,
-      )}
+      ref={shellRef}
+      className={cn("tme-note-editor relative flex h-full min-h-0 flex-col", className)}
       data-testid="note-editor"
+      data-painter={painter ? "true" : "false"}
     >
-      {showToolbar ? (
-        <EditorToolbar
-          getView={getView}
-          trailingActions={toolbarTrailingActions}
-        />
+      {showTopToolbar ? (
+        <div className="shrink-0 border-b border-rule px-3 py-1.5">
+          <EditingToolbar {...toolbarShared} items={prefs.toolbarItems} />
+        </div>
       ) : null}
       <div
         ref={hostRef}
-        className="flex-1 min-h-0 overflow-auto"
+        style={editorStyle}
+        className={cn("min-h-0 flex-1 overflow-auto", painter && "cursor-copy")}
         data-testid="note-editor-host"
       />
-      {showFooter ? (
-        <NoteEditorFooter
-          wordCount={wordCount}
-          saveState={saveState}
-          sourceMode={sourceMode}
-          labels={{
-            zero: tFooter("word_count_zero"),
-            one: tFooter("word_count_one"),
-            many: (count: number) => tFooter("word_count_many", { count }),
-            saving: tFooter("saving"),
-            saved: tFooter("saved"),
-            sourceMode: tFooter("source_mode"),
-          }}
-        />
+      {floating ? (
+        <div
+          className="absolute z-30 rounded-[10px] border border-rule bg-paper p-1 shadow-[var(--shadow-deep)]"
+          style={{ top: floating.top, left: floating.left }}
+          data-testid="floating-toolbar"
+        >
+          <EditingToolbar {...toolbarShared} items={FLOATING_ITEMS} variant="compact" />
+        </div>
       ) : null}
+      <EditorStatusBar
+        words={counts.words}
+        characters={counts.characters}
+        saveState={saveState}
+        width={prefs.editorWidth}
+        noteWidth={noteWidth}
+        onWidthChange={(px) => onPrefsChange({ editorWidth: px })}
+        onWidthReset={() => onPrefsChange({ editorWidth: DEFAULT_NOTE_EDITOR_PREFS.editorWidth })}
+      />
     </div>
   );
 }
 
-type FooterLabels = {
-  zero: string;
-  one: string;
-  many: (count: number) => string;
-  saving: string;
-  saved: string;
-  sourceMode: string;
-};
-
-function NoteEditorFooter({
-  wordCount,
-  saveState,
-  sourceMode,
-  labels,
-}: {
-  wordCount: number;
-  saveState: SaveState;
-  sourceMode: boolean;
-  labels: FooterLabels;
-}) {
-  let label: string;
-  if (wordCount === 0) label = labels.zero;
-  else if (wordCount === 1) label = labels.one;
-  else label = labels.many(wordCount);
-
-  return (
-    <div className="flex items-center justify-between gap-3 border-t border-rule px-3 py-1.5 text-[12px] text-ink-4">
-      <span data-testid="note-editor-word-count" className="tabular-nums">
-        {label}
-      </span>
-      <div className="flex items-center gap-3">
-        {sourceMode ? (
-          <span
-            data-testid="note-editor-source-mode"
-            data-active="true"
-            className="inline-flex items-center gap-1.5 rounded-full border border-rule-strong/60 bg-paper-3 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ink-3"
-          >
-            <span aria-hidden className="font-mono text-[10px]">{"<>"}</span>
-            {labels.sourceMode}
-          </span>
-        ) : null}
-        <SaveStateBadge state={saveState} savingLabel={labels.saving} savedLabel={labels.saved} />
-      </div>
-    </div>
-  );
+/** Where the floating selection toolbar sits, or null when it should hide. */
+function computeFloatingPos(
+  view: EditorView,
+  shell: HTMLElement | null,
+  toolbarMode: NoteEditorPrefs["toolbarMode"],
+): FloatingPos | null {
+  if (toolbarMode !== "floating" && toolbarMode !== "both") return null;
+  const sel = view.state.selection.main;
+  if (!shell || !view.hasFocus || sel.empty) return null;
+  const start = view.coordsAtPos(sel.from);
+  if (!start) return null;
+  const shellRect = shell.getBoundingClientRect();
+  return {
+    top: Math.max(4, start.top - shellRect.top - FLOATING_OFFSET_Y),
+    left: Math.min(
+      Math.max(8, start.left - shellRect.left - 24),
+      Math.max(8, shellRect.width - FLOATING_MAX_WIDTH),
+    ),
+  };
 }
 
-function SaveStateBadge({
-  state,
-  savingLabel,
-  savedLabel,
-}: {
-  state: SaveState;
-  savingLabel: string;
-  savedLabel: string;
-}) {
-  if (state === "idle") return null;
-
-  if (state === "saved") {
-    return (
-      <span
-        data-testid="note-editor-save-state"
-        data-state={state}
-        className="inline-flex items-center gap-1.5 text-moss"
-      >
-        <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-moss" />
-        {savedLabel}
-      </span>
-    );
+/** Format painter: re-apply the captured formats to the new selection. */
+function applyFormatSnapshot(view: EditorView, snapshot: FormatState): void {
+  const current = getActiveFormats(view);
+  if (snapshot.bold && !current.bold) toggleBold(view);
+  if (snapshot.italic && !current.italic) toggleItalic(view);
+  if (snapshot.strike && !current.strike) toggleStrike(view);
+  if (snapshot.underline && !current.underline) toggleUnderline(view);
+  if (snapshot.highlight && !current.highlight) toggleHighlight(view);
+  if (snapshot.code && !current.code) toggleInlineCode(view);
+  if (snapshot.color && snapshot.color !== current.color) applyTextColor(view, snapshot.color);
+  if (snapshot.background && snapshot.background !== current.background) {
+    applyBackgroundColor(view, snapshot.background);
   }
-
-  return (
-    <span
-      data-testid="note-editor-save-state"
-      data-state={state}
-      className="inline-flex items-center gap-1.5 text-accent"
-    >
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
-      {savingLabel}
-    </span>
-  );
 }

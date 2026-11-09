@@ -6,7 +6,6 @@ import {
   useEffect,
   useState,
 } from "react";
-import { SeedBootstrap } from "@/components/mounts/SeedBootstrap";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
 import { BottomBar } from "@/components/shell/BottomBar";
@@ -163,8 +162,6 @@ export function AppShell({
           onSearchClick={() => setSearchOpen(true)}
         />
       ) : null}
-
-      <SeedBootstrap />
     </div>
   );
 }

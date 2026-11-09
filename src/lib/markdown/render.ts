@@ -1,14 +1,10 @@
 import katexPlugin from "@vscode/markdown-it-katex";
-// `highlight.js` (the bare entry) registers all 192 bundled languages — ~1.5MB
-// of grammars in every route that renders markdown. `lib/common` is the same
-// API with the 37 mainstream languages only. The `hljs.getLanguage(lang)` guard
-// below already renders unknown languages as plain monospace, so a fence in a
-// language outside the common set degrades exactly like a bare ``` fence.
-import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
 import { findChunkForRef } from "@/components/notebook/CitationChip";
 import type { ChunkRecord } from "@/lib/db/types";
 import { balanceCodeFences } from "./balance-code-fences";
+import { type CodeStylerLabels, renderStyledFence } from "./code-styler";
+import { inlineHtmlAllowlistPlugin } from "./inline-html-allowlist";
 import { obsidianPlugin } from "./obsidian-plugins";
 
 /**
@@ -38,28 +34,16 @@ const md: MarkdownIt = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: false,
-  highlight(str: string, lang: string): string {
-    // Only highlight when an explicit, known language is given — exactly like
-    // VS Code. Bare ``` blocks render as plain monospace (no auto-detect), so
-    // prose that slipped into an accidental fence is never syntax-coloured.
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        const inner = hljs.highlight(str, {
-          language: lang,
-          ignoreIllegals: true,
-        }).value;
-        return `<pre class="markdown-code-block"><code class="hljs language-${md.utils.escapeHtml(
-          lang,
-        )}">${inner}</code></pre>`;
-      } catch {
-        /* fall through to plain rendering */
-      }
-    }
-    return `<pre class="markdown-code-block"><code class="hljs">${md.utils.escapeHtml(
-      str,
-    )}</code></pre>`;
-  },
 });
+
+// Fences go through the Code Styler renderer: it needs the whole info string
+// (title, hl, fold...), which markdown-it's `highlight` hook does not receive.
+// Highlighting is highlight.js with the `common` language set; unknown or
+// missing languages render as plain monospace, never auto-detected.
+md.renderer.rules.fence = (tokens, idx, _options, env: MarkdownEnv) => {
+  const token = tokens[idx];
+  return renderStyledFence(token?.content ?? "", token?.info ?? "", env.codeLabels) + "\n";
+};
 
 // Disable CommonMark indented (4-space/tab) code blocks. In this app code is
 // always fenced, and ingested/chunked content routinely carries stray leading
@@ -74,10 +58,17 @@ md.use(useKatex, { throwOnError: false });
 // Task lists, callouts, wikilinks, footnotes, ==mark== — what an Obsidian note
 // needs beyond CommonMark to look like it did in Obsidian.
 md.use(obsidianPlugin);
+// Colour / background / underline / sup / sub / alignment tags from the editor
+// toolbar — exact shapes only, `html: false` still applies to everything else.
+md.use(inlineHtmlAllowlistPlugin);
 
 // Inline code: tag it so the existing .markdown-inline-code styling applies.
+// A Code Styler `{lang} ` prefix names the snippet's language; it is not shown.
+const INLINE_LANG_PREFIX = /^\{[A-Za-z0-9_+#.-]+\}[ \t]/;
 md.renderer.rules.code_inline = (tokens, idx) =>
-  `<code class="markdown-inline-code">${md.utils.escapeHtml(tokens[idx]?.content ?? "")}</code>`;
+  `<code class="markdown-inline-code">${md.utils.escapeHtml(
+    (tokens[idx]?.content ?? "").replace(INLINE_LANG_PREFIX, ""),
+  )}</code>`;
 
 // External links open in a new tab.
 const defaultLinkOpen =
@@ -121,13 +112,18 @@ md.renderer.rules.citation = (tokens, idx, _options, env: MarkdownEnv) => {
 
 interface MarkdownEnv {
   citationChunks?: ChunkRecord[];
+  codeLabels?: Partial<CodeStylerLabels>;
 }
 
 export function renderMarkdownToHtml(
   text: string,
   citationChunks?: ChunkRecord[],
+  options: { labels?: Partial<CodeStylerLabels> } = {},
 ): string {
   const normalized = balanceCodeFences(text.replace(/\r\n/g, "\n"));
-  const env: MarkdownEnv = { citationChunks: citationChunks ?? [] };
+  const env: MarkdownEnv = {
+    citationChunks: citationChunks ?? [],
+    ...(options.labels ? { codeLabels: options.labels } : {}),
+  };
   return md.render(normalized, env);
 }

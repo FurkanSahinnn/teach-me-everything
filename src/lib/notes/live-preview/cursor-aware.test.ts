@@ -42,4 +42,14 @@ describe("computeActiveLineNumbers", () => {
     const state = stateFor("", [0]);
     expect([...computeActiveLineNumbers(state)]).toEqual([1]);
   });
+
+  it("returns no active lines when the editor is not focused", () => {
+    const state = stateFor("# Title\nbody", [0]);
+    expect([...computeActiveLineNumbers(state, { focused: false })]).toEqual([]);
+  });
+
+  it("keeps the cursor line active when the editor is focused", () => {
+    const state = stateFor("# Title\nbody", [0]);
+    expect([...computeActiveLineNumbers(state, { focused: true })]).toEqual([1]);
+  });
 });

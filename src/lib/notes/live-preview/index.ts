@@ -16,7 +16,9 @@
  */
 
 import { markdown } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
 import { GFM } from "@lezer/markdown";
+import { syntaxTree } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import {
   Decoration,
@@ -26,6 +28,8 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
+import { blockPreviewExtensions, blockPreviewNeedsRebuild, buildBlockPreviewDecorations } from "./block-preview";
+import { codeBlockExtension } from "./code-block";
 import {
   computeActiveLineNumbers,
   isSourceModeActive,
@@ -34,8 +38,9 @@ import {
   sourceModeNotifier,
 } from "./cursor-aware";
 import { buildHeadingDecorations } from "./heading-widget";
+import { HighlightSyntax } from "./highlight-syntax";
+import { buildInlineHtmlDecorations, inlineHtmlTheme } from "./inline-html";
 import { buildInlineMarkDecorations } from "./inline-marks";
-import { buildListDecorations } from "./list-widgets";
 import { buildTagDecorations } from "./tag-widget";
 import type { DecoSpec } from "./types";
 import { buildWikilinkDecorations } from "./wikilink-widget";
@@ -67,7 +72,9 @@ export type LivePreviewOptions = {
  * Use this in place of the bare `markdown()` call from Phase 6.2.
  */
 export function markdownGfm(): Extension {
-  return markdown({ extensions: GFM });
+  // `codeLanguages` lazy-loads a grammar the first time a fence names it, so
+  // fenced code gets real syntax colours without bundling every parser.
+  return markdown({ extensions: [GFM, HighlightSyntax], codeLanguages: languages });
 }
 
 const livePreviewPlugin = ViewPlugin.fromClass(
@@ -87,7 +94,10 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
-        sourceModeChanged
+        update.focusChanged ||
+        sourceModeChanged ||
+        blockPreviewNeedsRebuild(update) ||
+        syntaxTree(update.startState) !== syntaxTree(update.state)
       ) {
         this.decorations = buildDecorations(update.view);
       }
@@ -101,15 +111,16 @@ const livePreviewPlugin = ViewPlugin.fromClass(
 function buildDecorations(view: EditorView): DecorationSet {
   if (isSourceModeActive(view.state)) return Decoration.none;
 
-  const activeLines = computeActiveLineNumbers(view.state);
+  const activeLines = computeActiveLineNumbers(view.state, { focused: view.hasFocus });
   const specs: DecoSpec[] = [];
 
   for (const { from, to } of view.visibleRanges) {
     buildHeadingDecorations(view.state, activeLines, from, to, specs);
     buildInlineMarkDecorations(view.state, activeLines, from, to, specs);
+    buildInlineHtmlDecorations(view.state, activeLines, from, to, specs);
     buildWikilinkDecorations(view.state, activeLines, from, to, specs);
     buildTagDecorations(view.state, activeLines, from, to, specs);
-    buildListDecorations(view.state, activeLines, from, to, specs);
+    buildBlockPreviewDecorations(view.state, activeLines, from, to, specs);
   }
 
   if (specs.length === 0) return Decoration.none;
@@ -132,13 +143,13 @@ const livePreviewTheme = EditorView.theme({
   ".cm-tme-h1": {
     fontSize: "1.85em",
     lineHeight: "1.25",
-    paddingTop: "0.35em",
+    paddingTop: "0.6em",
     paddingBottom: "0.15em",
   },
   ".cm-tme-h2": {
     fontSize: "1.5em",
     lineHeight: "1.3",
-    paddingTop: "0.3em",
+    paddingTop: "0.45em",
     paddingBottom: "0.1em",
   },
   ".cm-tme-h3": {
@@ -196,79 +207,6 @@ const livePreviewTheme = EditorView.theme({
     cursor: "pointer",
   },
 
-  // --- Wikilink chip ---
-  ".cm-tme-wikilink": {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "1px 9px 1px 7px",
-    backgroundColor: "var(--color-accent-wash)",
-    color: "var(--color-accent-ink)",
-    border: "1px solid var(--color-accent-soft)",
-    borderRadius: "999px",
-    fontSize: "0.93em",
-    fontWeight: "500",
-    cursor: "pointer",
-    lineHeight: "1.4",
-    transition: "background-color 150ms ease, border-color 150ms ease, transform 150ms ease",
-    verticalAlign: "baseline",
-    textDecoration: "none",
-    userSelect: "none",
-  },
-  ".cm-tme-wikilink:hover": {
-    backgroundColor: "var(--color-accent-soft)",
-    borderColor: "var(--color-accent)",
-  },
-  ".cm-tme-wikilink:active": {
-    transform: "translateY(0.5px)",
-  },
-  ".cm-tme-wikilink:focus-visible": {
-    outline: "2px solid var(--color-accent)",
-    outlineOffset: "2px",
-  },
-  ".cm-tme-wikilink--source": {
-    backgroundColor: "color-mix(in srgb, var(--color-slate) 10%, var(--color-paper))",
-    borderColor: "color-mix(in srgb, var(--color-slate) 35%, var(--color-rule-strong))",
-    color: "var(--color-slate)",
-  },
-  ".cm-tme-wikilink--source:hover": {
-    backgroundColor: "color-mix(in srgb, var(--color-slate) 18%, var(--color-paper))",
-    borderColor: "var(--color-slate)",
-  },
-  ".cm-tme-wikilink--concept": {
-    backgroundColor: "color-mix(in srgb, var(--color-moss) 12%, var(--color-paper))",
-    borderColor: "color-mix(in srgb, var(--color-moss) 35%, var(--color-rule-strong))",
-    color: "var(--color-moss)",
-  },
-  ".cm-tme-wikilink--concept:hover": {
-    backgroundColor: "color-mix(in srgb, var(--color-moss) 22%, var(--color-paper))",
-    borderColor: "var(--color-moss)",
-  },
-  ".cm-tme-wikilink__icon": {
-    fontSize: "0.85em",
-    opacity: "0.7",
-  },
-  ".cm-tme-wikilink__label": {
-    whiteSpace: "nowrap",
-    maxWidth: "240px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  ".cm-tme-wikilink-raw": {
-    color: "var(--color-accent-ink)",
-    backgroundColor: "color-mix(in srgb, var(--color-accent-wash) 70%, transparent)",
-    borderRadius: "3px",
-    padding: "0 2px",
-  },
-  ".cm-tme-wikilink-raw--source": {
-    color: "var(--color-slate)",
-    backgroundColor: "color-mix(in srgb, var(--color-slate) 8%, transparent)",
-  },
-  ".cm-tme-wikilink-raw--concept": {
-    color: "var(--color-moss)",
-    backgroundColor: "color-mix(in srgb, var(--color-moss) 10%, transparent)",
-  },
-
   // --- Inline #tag chip ---
   ".cm-tme-tag": {
     display: "inline-block",
@@ -301,34 +239,6 @@ const livePreviewTheme = EditorView.theme({
     padding: "0 2px",
     fontWeight: "500",
   },
-
-  // --- Blockquote ---
-  ".cm-tme-blockquote": {
-    borderLeft: "3px solid var(--color-rule-strong)",
-    paddingLeft: "12px",
-    color: "var(--color-ink-2)",
-    fontStyle: "italic",
-  },
-
-  // --- Task checkbox ---
-  ".cm-tme-task": {
-    display: "inline-flex",
-    alignItems: "center",
-    verticalAlign: "baseline",
-    marginRight: "6px",
-  },
-  ".cm-tme-task--checked + *, .cm-tme-task--checked ~ *": {
-    // Strike-through on completed task text is added via a separate
-    // line-level class in 6.6+ when we know the full task line — for
-    // 6.3 the box state alone is enough.
-  },
-  ".cm-tme-task__box": {
-    cursor: "pointer",
-    width: "15px",
-    height: "15px",
-    margin: "0",
-    accentColor: "var(--color-accent)",
-  },
 });
 
 /**
@@ -341,6 +251,9 @@ export function livePreviewExtension(opts: LivePreviewOptions = {}): Extension {
     sourceModeKeymap,
     livePreviewPlugin,
     livePreviewTheme,
+    inlineHtmlTheme,
+    blockPreviewExtensions,
+    codeBlockExtension(),
   ];
   if (opts.onSourceModeChange) {
     exts.push(sourceModeNotifier(opts.onSourceModeChange));

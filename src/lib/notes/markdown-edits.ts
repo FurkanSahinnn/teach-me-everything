@@ -25,6 +25,17 @@ export function setHeadingLevel(line: string, level: HeadingLevel): string {
   return "#".repeat(level) + " " + stripped;
 }
 
+/** Heading level of a line (0 when it is not an ATX heading). */
+export function headingLevelOf(line: string): HeadingLevel {
+  const m = HEADING_RE.exec(line);
+  return (m ? (m[1] ?? "").length : 0) as HeadingLevel;
+}
+
+/** Like `setHeadingLevel`, but asking for the level the line already has clears it. */
+export function toggleHeadingLevel(line: string, level: HeadingLevel): string {
+  return setHeadingLevel(line, headingLevelOf(line) === level ? 0 : level);
+}
+
 /**
  * Toggle a line between an unordered list item and a plain paragraph.
  * Ordered/checkbox items are converted to plain bullets first.
@@ -100,12 +111,115 @@ export type InlineWrapResult = {
   to: number;
 };
 
+export type Segment = { s: number; e: number };
+
+const NL = "\n";
+
+// Indentation, quote markers, list / task markers and ATX heading markers stay
+// outside any inline wrapper so wrapping a list or quote never breaks it.
+const BLOCK_PREFIX_RE =
+  /^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?|#{1,6}[ \t]+)?/;
+
+/** Length of the block marker prefix of a single line. */
+export function blockPrefixLength(line: string): number {
+  return BLOCK_PREFIX_RE.exec(line)?.[0].length ?? 0;
+}
+
 /**
- * Wrap (or unwrap) a substring of `text` with a symmetric inline marker.
+ * Split [from, to) into one segment per line, skipping block markers and
+ * surrounding whitespace. Blank segments are dropped.
+ */
+export function lineSegments(text: string, from: number, to: number): Segment[] {
+  const segs: Segment[] = [];
+  let pos = from;
+  for (;;) {
+    const ls = pos === 0 ? 0 : text.lastIndexOf(NL, pos - 1) + 1;
+    let le = text.indexOf(NL, pos);
+    if (le === -1) le = text.length;
+    let s = Math.max(from, ls);
+    let e = Math.min(to, le);
+    s = Math.max(s, ls + blockPrefixLength(text.slice(ls, le)));
+    while (s < e && /\s/.test(text.charAt(s))) s += 1;
+    while (e > s && /\s/.test(text.charAt(e - 1))) e -= 1;
+    if (s < e) segs.push({ s, e });
+    if (le >= to) break;
+    pos = le + 1;
+  }
+  return segs;
+}
+
+/**
+ * Rewrite each segment through `fn`; `a`/`b` are the inner selection offsets
+ * inside the replacement. The result selects from the first segment's inner
+ * start to the last segment's inner end.
+ */
+export function mapSegments(
+  text: string,
+  segs: Segment[],
+  fn: (seg: string) => { out: string; a: number; b: number },
+): InlineWrapResult {
+  let out = "";
+  let cursor = 0;
+  let from = 0;
+  let to = 0;
+  segs.forEach((seg, i) => {
+    out += text.slice(cursor, seg.s);
+    const r = fn(text.slice(seg.s, seg.e));
+    if (i === 0) from = out.length + r.a;
+    to = out.length + r.b;
+    out += r.out;
+    cursor = seg.e;
+  });
+  out += text.slice(cursor);
+  return { text: out, from, to };
+}
+
+// `*` and `_` can stack (`***x***` is bold+italic), so "is italic on" means an
+// ODD run of the character on both sides, never a plain prefix match.
+const isRunMarker = (marker: string): boolean => marker === "*" || marker === "_";
+
+function runBefore(text: string, pos: number, ch: string): number {
+  let n = 0;
+  while (pos - n - 1 >= 0 && text.charAt(pos - n - 1) === ch) n += 1;
+  return n;
+}
+
+function runAfter(text: string, pos: number, ch: string): number {
+  let n = 0;
+  while (pos + n < text.length && text.charAt(pos + n) === ch) n += 1;
+  return n;
+}
+
+/** True when `marker` sits directly outside [from, to). */
+export function isWrappedOutside(text: string, marker: string, from: number, to: number): boolean {
+  if (isRunMarker(marker)) {
+    return Math.min(runBefore(text, from, marker), runAfter(text, to, marker)) % 2 === 1;
+  }
+  return (
+    from >= marker.length &&
+    text.slice(from - marker.length, from) === marker &&
+    text.slice(to, to + marker.length) === marker
+  );
+}
+
+/** True when the selected text itself starts and ends with `marker`. */
+export function isWrappedInside(text: string, marker: string, from: number, to: number): boolean {
+  const sel = text.slice(from, to);
+  if (isRunMarker(marker)) {
+    const lead = runAfter(sel, 0, marker);
+    const trail = runBefore(sel, sel.length, marker);
+    return lead + trail < sel.length && Math.min(lead, trail) % 2 === 1;
+  }
+  return sel.length > 2 * marker.length && sel.startsWith(marker) && sel.endsWith(marker);
+}
+
+/**
+ * Toggle a symmetric inline marker around [from, to).
  *
- * If the marker is already present directly outside the [from, to) range, it is
- * stripped. Otherwise the marker is inserted on both sides. Returns the new
- * text and the new caret/anchor positions for the same logical selection.
+ * Unwraps when the marker is directly outside the range OR when the range
+ * itself includes both markers (the user selected `**word**`); otherwise
+ * wraps each line of the selection separately so list / quote markers stay
+ * outside the wrapper. A caret inserts an empty pair and sits between them.
  */
 export function toggleInlineWrap(
   text: string,
@@ -116,24 +230,50 @@ export function toggleInlineWrap(
   if (from < 0 || to > text.length || from > to) {
     return { text, from, to };
   }
-  const before = text.slice(Math.max(0, from - marker.length), from);
-  const after = text.slice(to, Math.min(text.length, to + marker.length));
-  const sel = text.slice(from, to);
+  const m = marker.length;
 
-  if (before === marker && after === marker) {
-    const newText =
-      text.slice(0, from - marker.length) + sel + text.slice(to + marker.length);
+  if (from === to) {
+    if (isWrappedOutside(text, marker, from, to)) {
+      return {
+        text: text.slice(0, from - m) + text.slice(to + m),
+        from: from - m,
+        to: to - m,
+      };
+    }
     return {
-      text: newText,
-      from: from - marker.length,
-      to: to - marker.length,
+      text: text.slice(0, from) + marker + marker + text.slice(to),
+      from: from + m,
+      to: to + m,
     };
   }
 
-  const newText = text.slice(0, from) + marker + sel + marker + text.slice(to);
-  return {
-    text: newText,
-    from: from + marker.length,
-    to: to + marker.length,
-  };
+  const segs = lineSegments(text, from, to);
+  if (segs.length === 0) return { text, from, to };
+
+  if (segs.length === 1) {
+    const { s, e } = segs[0]!;
+    if (isWrappedOutside(text, marker, s, e)) {
+      return {
+        text: text.slice(0, s - m) + text.slice(s, e) + text.slice(e + m),
+        from: s - m,
+        to: e - m,
+      };
+    }
+  }
+
+  const allInside = segs.every(({ s, e }) => isWrappedInside(text, marker, s, e));
+  if (allInside) {
+    return mapSegments(text, segs, (seg) => {
+      const inner = seg.slice(m, seg.length - m);
+      return { out: inner, a: 0, b: inner.length };
+    });
+  }
+  // With several lines the selection keeps the markers inside it, so pressing
+  // the same shortcut again takes the "selection includes the markers" path.
+  const multi = segs.length > 1;
+  return mapSegments(text, segs, (seg) => {
+    if (isWrappedInside(seg, marker, 0, seg.length)) return { out: seg, a: 0, b: seg.length };
+    const out = marker + seg + marker;
+    return multi ? { out, a: 0, b: out.length } : { out, a: m, b: m + seg.length };
+  });
 }

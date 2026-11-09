@@ -22,8 +22,8 @@
  */
 
 import { syntaxTree } from "@codemirror/language";
-import type { EditorState } from "@codemirror/state";
-import { Decoration, WidgetType } from "@codemirror/view";
+import { type EditorState, type Extension, Facet, StateEffect } from "@codemirror/state";
+import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecoSpec, WikilinkClickDetail } from "./types";
 import { TME_EVENT } from "./types";
 
@@ -111,15 +111,25 @@ export function parseWikilinkTarget(raw: string): {
   return { kind: "note", target: core, alias };
 }
 
-const ICON_FOR_KIND: Record<WikilinkKind, string> = {
-  note: "📝",
-  source: "📄",
-  concept: "💡",
-};
+export type WikilinkResolver = (target: string, kind: WikilinkKind) => boolean;
+
+/**
+ * Tells the preview whether a link target exists. Defaults to "everything
+ * exists"; the React layer supplies the real lookup (reconfigure the facet or
+ * dispatch `refreshWikilinkStatus` after the data changes).
+ */
+export const wikilinkStatusFacet = Facet.define<WikilinkResolver, WikilinkResolver>({
+  combine: (values) => (values.length === 0 ? () => true : (t, k) => values.some((v) => v(t, k))),
+});
+
+/** Forces a decoration rebuild, e.g. after the set of notes changed. */
+export const refreshWikilinkStatus = StateEffect.define<null>();
+
+type WidgetDetail = WikilinkClickDetail & { missing: boolean };
 
 class WikilinkWidget extends WidgetType {
   constructor(
-    private readonly detail: WikilinkClickDetail,
+    private readonly detail: WidgetDetail,
   ) {
     super();
   }
@@ -130,13 +140,14 @@ class WikilinkWidget extends WidgetType {
       other.detail.raw === this.detail.raw &&
       other.detail.target === this.detail.target &&
       other.detail.alias === this.detail.alias &&
-      other.detail.kind === this.detail.kind
+      other.detail.kind === this.detail.kind &&
+      other.detail.missing === this.detail.missing
     );
   }
 
-  override toDOM(): HTMLElement {
+  override toDOM(view: EditorView): HTMLElement {
     const root = document.createElement("span");
-    root.className = `cm-tme-wikilink cm-tme-wikilink--${this.detail.kind}`;
+    root.className = `cm-tme-wikilink cm-tme-wikilink--${this.detail.kind}${this.detail.missing ? " cm-tme-wikilink--missing" : ""}`;
     root.setAttribute("role", "link");
     root.setAttribute("tabindex", "0");
     root.setAttribute("data-target", this.detail.target);
@@ -148,16 +159,12 @@ class WikilinkWidget extends WidgetType {
       `${this.detail.kind}: ${this.detail.alias ?? this.detail.target}`,
     );
 
-    const icon = document.createElement("span");
-    icon.className = "cm-tme-wikilink__icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = ICON_FOR_KIND[this.detail.kind];
-
     const label = document.createElement("span");
     label.className = "cm-tme-wikilink__label";
     label.textContent = this.detail.alias ?? this.detail.target;
 
-    root.append(icon, label);
+    root.append(label);
+    if (this.detail.missing) root.title = view.state.phrase("Note not found");
 
     // Prevent caret-by-mousedown reset — CM6 normally moves the cursor to
     // the widget click position which fights the chip click semantics.
@@ -226,6 +233,7 @@ export function buildWikilinkDecorations(
     },
   });
 
+  const exists = state.facet(wikilinkStatusFacet);
   const viewportText = state.doc.sliceString(from, to);
   const matches = scanWikilinks(viewportText);
 
@@ -252,6 +260,7 @@ export function buildWikilinkDecorations(
       out.push({ from: absFrom, to: absTo, deco: RAW_STYLE[m.kind] });
     } else {
       const widget = new WikilinkWidget({
+        missing: !exists(m.target, m.kind),
         raw: m.raw,
         target: m.target,
         alias: m.alias,
@@ -261,3 +270,40 @@ export function buildWikilinkDecorations(
     }
   }
 }
+
+export const wikilinkTheme: Extension = EditorView.theme({
+  ".cm-tme-wikilink": {
+    color: "var(--color-accent)",
+    cursor: "pointer",
+    textDecoration: "none",
+    borderBottom: "1px solid transparent",
+    transition: "border-color 120ms ease",
+    userSelect: "none",
+  },
+  ".cm-tme-wikilink:hover": {
+    borderBottomColor: "var(--color-accent)",
+  },
+  ".cm-tme-wikilink:focus-visible": {
+    outline: "2px solid var(--color-accent)",
+    outlineOffset: "2px",
+    borderRadius: "2px",
+  },
+  ".cm-tme-wikilink--source::before, .cm-tme-wikilink--concept::before": {
+    fontSize: "0.7em",
+    opacity: "0.7",
+    marginRight: "3px",
+    verticalAlign: "0.1em",
+  },
+  ".cm-tme-wikilink--source::before": { content: '"\\2197"' },
+  ".cm-tme-wikilink--concept::before": { content: '"\\25C7"' },
+  ".cm-tme-wikilink--missing": {
+    color: "var(--color-ink-3)",
+    borderBottom: "1px dashed var(--color-ink-3)",
+  },
+  ".cm-tme-wikilink--missing:hover": { borderBottomColor: "var(--color-ink-3)" },
+  ".cm-tme-wikilink-raw": {
+    color: "var(--color-accent-ink)",
+  },
+  ".cm-tme-wikilink-raw--source": { color: "var(--color-slate)" },
+  ".cm-tme-wikilink-raw--concept": { color: "var(--color-moss)" },
+});

@@ -10,7 +10,6 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   useNoteFoldersByWorkspace,
@@ -629,14 +628,47 @@ export function NoteTree({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-paper-2"
+      className="flex h-full min-h-0 flex-col"
       data-testid="note-tree"
     >
-      {/* Header: search + create actions */}
-      <div className="flex flex-col gap-2 border-b border-rule px-3 py-2">
+      {/* Header: create actions (icon row, like Obsidian's explorer) + search */}
+      <div className="flex flex-col gap-2 px-2 pb-2 pt-2">
+        <div className="flex items-center gap-0.5">
+          <TreeIconButton
+            label={tActions("new_note")}
+            onClick={() => void handleCreateNote(null)}
+            testid="note-tree-new-note"
+          >
+            <FilePlus className="h-4 w-4" aria-hidden />
+          </TreeIconButton>
+          <TreeIconButton
+            label={tActions("new_folder")}
+            onClick={() => void handleCreateFolder(null)}
+            testid="note-tree-new-folder"
+          >
+            <FolderPlus className="h-4 w-4" aria-hidden />
+          </TreeIconButton>
+          <TreeIconButton
+            label={tActions("today_aria")}
+            onClick={() => void handleCreateDaily()}
+            testid="note-tree-today"
+          >
+            <CalendarDays className="h-4 w-4" aria-hidden />
+          </TreeIconButton>
+          {expandedIds.length > 0 ? (
+            <TreeIconButton
+              label={t("collapse_all")}
+              onClick={() => setExpandedFolders([])}
+              testid="note-tree-collapse-all"
+              className="ml-auto"
+            >
+              <ChevronsDownUp className="h-4 w-4" aria-hidden />
+            </TreeIconButton>
+          ) : null}
+        </div>
         <div className="relative">
           <Search
-            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3"
+            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-4"
             aria-hidden
           />
           <input
@@ -646,8 +678,8 @@ export function NoteTree({
             placeholder={t("search_placeholder")}
             data-testid="note-tree-search"
             className={cn(
-              "h-7 w-full rounded-[8px] border border-rule bg-paper pl-7 pr-7 text-[12.5px] text-ink",
-              "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent",
+              "h-7 w-full rounded-[7px] border border-transparent bg-paper-3/60 pl-7 pr-7 text-[12.5px] text-ink",
+              "focus:border-accent focus:bg-paper focus:outline-none",
               "placeholder:text-ink-4",
             )}
           />
@@ -659,52 +691,6 @@ export function NoteTree({
               className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-[4px] text-ink-3 hover:bg-paper-3 hover:text-ink"
             >
               <X className="h-3 w-3" aria-hidden />
-            </button>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleCreateDaily()}
-            data-testid="note-tree-today"
-            aria-label={tActions("today_aria")}
-            title={tActions("today_aria")}
-            className="h-7 px-2 text-[12px]"
-          >
-            <CalendarDays className="h-3.5 w-3.5" aria-hidden />
-            <span>{tActions("today")}</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleCreateFolder(null)}
-            data-testid="note-tree-new-folder"
-            className="h-7 px-2 text-[12px]"
-          >
-            <FolderPlus className="h-3.5 w-3.5" aria-hidden />
-            <span>{t("create_folder_top")}</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleCreateNote(null)}
-            data-testid="note-tree-new-note"
-            className="h-7 px-2 text-[12px]"
-          >
-            <FilePlus className="h-3.5 w-3.5" aria-hidden />
-            <span>{t("create_note_top")}</span>
-          </Button>
-          {expandedIds.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setExpandedFolders([])}
-              aria-label={t("collapse_all")}
-              title={t("collapse_all")}
-              className="ml-auto grid h-7 w-7 place-items-center rounded-[6px] text-ink-3 hover:bg-paper-3 hover:text-ink"
-              data-testid="note-tree-collapse-all"
-            >
-              <ChevronsDownUp className="h-3.5 w-3.5" aria-hidden />
             </button>
           ) : null}
         </div>
@@ -804,6 +790,37 @@ export function NoteTree({
         onConfirm={handleDeleteNote}
       />
     </div>
+  );
+}
+
+function TreeIconButton({
+  label,
+  onClick,
+  testid,
+  className,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  testid: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      data-testid={testid}
+      className={cn(
+        "grid h-7 w-7 place-items-center rounded-[6px] text-ink-3 transition-colors hover:bg-paper-3 hover:text-ink",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        className,
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
