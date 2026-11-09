@@ -68,11 +68,19 @@ describe("block inserts", () => {
     expect(view.state.doc.toString()).toBe("> [!warning]\n> alpha\n> beta\n");
   });
 
-  it("inserts an empty fence on an empty line with the caret on the info string", () => {
+  it("inserts an empty fence with the caret inside the block, so typed code is not taken as the language", () => {
     const view = viewWith("", 0);
     insertCodeBlock(view);
     expect(view.state.doc.toString()).toBe("```\n\n```\n");
-    expect(view.state.selection.main.head).toBe(3);
+    expect(view.state.selection.main.head).toBe(4);
+  });
+
+  it("keeps selected lines as the block body and selects them", () => {
+    const view = viewWith("x = 1", 0, 5);
+    insertCodeBlock(view);
+    expect(view.state.doc.toString()).toBe("```\nx = 1\n```\n");
+    const sel = view.state.selection.main;
+    expect(view.state.sliceDoc(sel.from, sel.to)).toBe("x = 1");
   });
 
   it("separates a block inserted on the empty line under a paragraph with a blank line", () => {

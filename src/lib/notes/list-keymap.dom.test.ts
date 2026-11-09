@@ -76,3 +76,21 @@ describe("listKeymap precedence", () => {
     view.destroy();
   });
 });
+
+describe("listKeymap Enter on a code fence", () => {
+  it("closes a freshly typed fence through the real keymap stack", async () => {
+    const { runScopeHandlers, EditorView } = await import("@codemirror/view");
+    const { listKeymap } = await import("./list-keymap");
+    const doc = "Notes\n\n```js";
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.cursor(doc.length),
+        extensions: [markdownGfm(), listKeymap],
+      }),
+    });
+    runScopeHandlers(view, new KeyboardEvent("keydown", { key: "Enter" }), "editor");
+    expect(view.state.doc.toString()).toBe("Notes\n\n```js\n\n```");
+    view.destroy();
+  });
+});

@@ -13,6 +13,7 @@ import { insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
 import { indentUnit } from "@codemirror/language";
 import { EditorSelection, Prec, type StateCommand } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
+import { fenceAwareEnter } from "./fence-enter";
 
 // indent, marker (bullet or ordered with . or )), optional task box, nothing else.
 const EMPTY_ITEM_RE = /^([ \t]*)([-*+]|(\d+)([.)]))[ \t]+(\[[ xX]\][ \t]*)?$/;
@@ -91,4 +92,6 @@ export const listAwareEnter: StateCommand = ({ state, dispatch }) => {
  * Enter binding that outranks the markdown language keymap. That keymap is
  * itself `Prec.high` and registered earlier, so `high` here would lose the tie.
  */
-export const listKeymap = Prec.highest(keymap.of([{ key: "Enter", run: listAwareEnter }]));
+export const listKeymap = Prec.highest(
+  keymap.of([{ key: "Enter", run: (view) => fenceAwareEnter(view) || listAwareEnter(view) }]),
+);

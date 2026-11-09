@@ -153,8 +153,10 @@ export function insertCallout(view: EditorView, type: CalloutType, title = ""): 
 export function insertCodeBlock(view: EditorView, language = ""): void {
   dispatchBlock(view, (selected) => {
     const text = wrapInFence(selected, language);
-    // Caret on the info string so the language can be typed right away.
-    return { text, cursor: 3 + language.length };
+    // Caret (or the wrapped selection) inside the body: code typed straight
+    // after inserting must not land on the fence line as the language.
+    const bodyStart = 4 + language.length;
+    return { text, cursor: bodyStart, selectTo: bodyStart + selected.length };
   });
 }
 
