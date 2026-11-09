@@ -164,11 +164,9 @@ function compute(state: EditorState, blocks: QuoteBlock[], overrides: Map<number
     if (!isCollapsed(state, overrides, b)) continue;
     const header = state.doc.line(b.fromLine);
     const last = state.doc.line(b.toLine);
-    if (last.to >= state.doc.length) {
-      builder.add(header.to, last.to, Decoration.replace({ block: true }));
-    } else {
-      builder.add(state.doc.line(b.fromLine + 1).from, last.to + 1, Decoration.replace({ block: true }));
-    }
+    // Cover "\n" + body up to the last body line's end. Extending past that
+    // newline swallowed the blank line after the callout.
+    builder.add(header.to, last.to, Decoration.replace({ block: true }));
   }
   return builder.finish();
 }

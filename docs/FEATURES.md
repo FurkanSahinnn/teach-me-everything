@@ -45,7 +45,7 @@ Solda gruplu menü (`SettingsSidebarNav`, arama kutulu), sağda başlık + kart 
 - `/settings/models` varsayılan model binding'leri: her görev tek satır; sağdaki seçici (`ChatModelPicker`) solda sağlayıcılar, sağda aranabilir model listesi, altta katalog durumu/yenile, özel model ID alanı ve eksik anahtar uyarısı olan bir panel açar. Embedding satırı aynı görünümde tek listeli `ListPicker` kullanır. · `/settings/embedding` `EmbedSection`, `RechunkSection`.
 - `/settings/usage` **Kullanım** (`UsageView`): Maliyet / Token / Limitler sekmeleri, 24 saat–90 gün aralığı. Bu bilgisayardaki Claude Code ve Codex günlüklerini yalnız okuyarak (`usage_scan`) toplam, sağlayıcı ve model dökümü, günlük grafik, türe göre dağılım ve önbellek tasarrufu gösterir; maliyet liste fiyatlarıyla API tahminidir. Limitler sekmesi oturum / haftalık / model bazlı pencereleri ve sıfırlanma süresini gösterir. Altında uygulama içi maliyet tercihleri (`CostSection`).
 - `/settings/research` araştırma anahtarları, `SearchProvidersSection`, `WebSearchSection` · `/settings/audio` `TtsProviderSection`, `PodcastFeatureSection`.
-- `/settings/concepts` `ConceptsSection` · `/settings/notes` `VaultSection`, `DailyNotesSection`.
+- `/settings/concepts` `ConceptsSection` · `/settings/notes` `NoteEditorSection`, `VaultSection`, `DailyNotesSection`.
 - `/settings/data` `BackupSection`, `QuotaSection` · `/settings/updates` `UpdatesSection` · `/settings/about`.
 
 ## Kurulum sihirbazı (`/setup/[step]`)
@@ -77,7 +77,16 @@ Kaynak okuyucu ve kaynağa bağlı sohbet. Masaüstünde yan yana, mobilde Kayna
 
 ## Notlar (`/w/[id]/notes`)
 
-Markdown not editörü (CodeMirror). `NoteTree` (klasörler, bağlam menüsü), `NoteEditor` + `EditorToolbar`, `OutlinePanel`, `BacklinksPanel`, `TagPanel`, `EmbedAsSourceButton` / `EmbedAsSourceMenu` (notu kaynak olarak gömme), `DeleteNoteModal`, `DeleteFolderModal`. Wikilink ve callout gösterimi `MarkdownPreview` üzerinden. Tablolar: `notes`, `noteFolders`, `sources`, `concepts`. Gömme `embedPresetId` ile; üretken AI çağrısı yok.
+Obsidian tarzı üç bölmeli çalışma alanı. Sol: `NoteTree` / `TagPanel` (yeniden boyutlanır, gizlenir; mobilde çekmece). Orta: `NoteHeader` (klasör yolu, Canlı / Kaynak / Okuma anahtarı, odak modu, `EmbedAsSourceButton` / `EmbedAsSourceMenu`) ve `NoteEditor` ya da `NoteReadingView`. Sağ: `OutlinePanel` üstte, `BacklinksPanel` altta. Bölme genişlikleri ve açık/kapalı durumu `prefs.noteEditor` içinde.
+
+- **Editör** (CodeMirror 6, `lib/notes/live-preview/`): canlı önizleme başlıkları, madde işaretlerini, işaretli görevleri, callout'ları (katlanır), tabloları, yatay çizgiyi, resimleri, KaTeX matematiği, dipnotları ve wikilink'leri (çözülmeyen bağlantı soluk) işler; imleç satırında ham markdown görünür, editör odakta değilken her şey işlenir. `==vurgu==` için Lezer uzantısı (`highlight-syntax.ts`); token renkleri `highlight-style.ts`.
+- **Code Styler** (`lib/notes/code-styler/`, `live-preview/code-block.ts`, okuma için `lib/markdown/code-styler.ts`): fence parametreleri `title:`, `ln:`, `hl:`, `fold`, `wrap`/`unwrap`, `ignore`; başlık, dil, satır numarası, kopyala, katla. Diller `@codemirror/language-data` ile tembel yüklenir.
+- **Renkli metin ve biçim** (`lib/notes/format-edits.ts`, `format-commands.ts`, `inline-html-tags.ts`): `<span style="color:…">`, `<mark style="background:…">`, `<u>`, `<sup>`, `<sub>`, `<p align>` / `<center>`; Obsidian eklentileriyle uyumlu. Okuma görünümü yalnız doğrulanmış etiketleri yeniden üretir (`inline-html-allowlist.ts`, `html: false` korunur).
+- **Araç çubuğu** (`components/notes/toolbar/`): tek satırlık şerit, sığmayanlar » menüsüne (`toolbar-layout.ts`); başlık, renk ve vurgu paletleri, hizalama, callout, tablo ızgarası, kod bloğu, matematik, dipnot, biçim boyacısı. Konum: üstte / seçimde / ikisi / gizli.
+- **Durum çubuğu** (`editor/EditorStatusBar.tsx`): kelime, karakter, okuma süresi, kayıt durumu, editör genişliği kaydırıcısı (not bazında `editor-width: 0-100` frontmatter'ı geçersiz kılar).
+- Kısayollar: Ctrl+B/I/U, Ctrl+Shift+X üstü çizili, Ctrl+Shift+H vurgu, Ctrl+. / Ctrl+, üst/alt simge, Ctrl+K bağlantı, Ctrl+Enter görev, Ctrl+Alt+1-6 başlık, Ctrl+E okuma görünümü (web'de tarayıcı kısayolu öne geçebilir). Boş liste maddesinde Enter Obsidian gibi girintiyi azaltır ya da listeyi bitirir (`list-keymap.ts`).
+
+Tablolar: `notes`, `noteFolders`, `sources`, `concepts`. Gömme `embedPresetId` ile; üretken AI çağrısı yok.
 
 ## Kartlar (`/w/[id]/cards`)
 
