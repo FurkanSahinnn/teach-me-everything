@@ -463,8 +463,14 @@ const codeBlockTheme = EditorView.theme({
     overflowX: "auto",
   },
 
+  // inline-flex, not flex: the header sits inside a .cm-line between CM's
+  // zero-width widget buffers; a block box pushes them onto their own rows
+  // and triples the header's height.
   ".cm-tme-codeblock-header": {
-    display: "flex",
+    display: "inline-flex",
+    width: "100%",
+    boxSizing: "border-box",
+    verticalAlign: "top",
     alignItems: "center",
     gap: "8px",
     minHeight: "28px",

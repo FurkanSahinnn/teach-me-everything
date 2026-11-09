@@ -62,7 +62,7 @@ export function TagPanel({
   return (
     <aside
       className={cn(
-        "flex w-full flex-col rounded-lg border border-rule-soft bg-paper",
+        "flex h-full w-full flex-col",
         className,
       )}
       aria-label={t("title")}

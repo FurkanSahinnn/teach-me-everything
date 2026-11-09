@@ -39,11 +39,12 @@ export const listAwareEnter: StateCommand = ({ state, dispatch }) => {
   const width = indentWidth(indent, tabSize);
 
   if (width === 0) {
-    // Empty top-level item: drop the marker, keep the (now empty) line.
+    // Empty top-level item: drop the marker and leave a blank line, otherwise
+    // the next paragraph is a lazy continuation of the last item in markdown.
     dispatch(
       state.update({
-        changes: { from: line.from, to: line.to, insert: "" },
-        selection: EditorSelection.cursor(line.from),
+        changes: { from: line.from, to: line.to, insert: "\n" },
+        selection: EditorSelection.cursor(line.from + 1),
         userEvent: "input",
         scrollIntoView: true,
       }),
@@ -86,5 +87,8 @@ export const listAwareEnter: StateCommand = ({ state, dispatch }) => {
   return true;
 };
 
-/** Enter binding that outranks the markdown language keymap. */
-export const listKeymap = Prec.high(keymap.of([{ key: "Enter", run: listAwareEnter }]));
+/**
+ * Enter binding that outranks the markdown language keymap. That keymap is
+ * itself `Prec.high` and registered earlier, so `high` here would lose the tie.
+ */
+export const listKeymap = Prec.highest(keymap.of([{ key: "Enter", run: listAwareEnter }]));

@@ -102,11 +102,20 @@ function dispatchBlock(view: EditorView, build: (selected: string) => BlockInser
     to = fromLine.to;
     prefix = "\n\n";
   }
-  const before = from > 0 ? state.sliceDoc(from - 1, from) : "";
-  if (!prefix && before && before !== "\n") prefix = "\n";
-  const after = state.sliceDoc(to, Math.min(state.doc.length, to + 1));
-  if (after && after !== "\n") suffix = "\n";
-  else if (!after) suffix = "\n";
+  // Blocks need a blank line on both sides: a table or callout glued to a
+  // paragraph is parsed as part of it.
+  if (!prefix && from > 0) {
+    const prevLine = state.doc.lineAt(from - 1);
+    if (prevLine.text.trim().length > 0) prefix = from === prevLine.to + 1 ? "\n" : "\n\n";
+  }
+  // `to` is always a line end, so the newline already there closes the block;
+  // only add the blank line when real text follows.
+  if (to < state.doc.length) {
+    const nextLine = state.doc.lineAt(to + 1);
+    suffix = nextLine.text.trim().length > 0 ? "\n" : "";
+  } else {
+    suffix = "\n";
+  }
 
   const insert = `${prefix}${block.text}${suffix}`;
   const base = from + prefix.length;

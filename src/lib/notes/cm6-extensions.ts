@@ -3,7 +3,6 @@
  *   - `countWords` (pure, exported for tests)
  *   - `createDebouncedSaver` (pure, exported for tests)
  *   - `autosaveExtension` — debounces doc changes and calls `onSave(doc)`
- *   - `wordCountExtension` — emits the running word count on every change
  *   - `editorBaseTheme` — bridges CM6 internals to TME design tokens
  *
  * Toolbar / formatting commands live in `toolbar-commands.ts`. Live-preview
@@ -122,32 +121,6 @@ export function autosaveExtension(opts: AutosaveOptions) {
       },
       destroy() {
         void saver.flush();
-      },
-    };
-  });
-}
-
-export type WordCountOptions = {
-  onUpdate: (count: number) => void;
-};
-
-/**
- * Builds a CM6 `ViewPlugin` that recomputes word count on every doc change
- * and reports the new value via `onUpdate`. Initial count is emitted once on
- * mount. Subsequent emits are suppressed if the count is unchanged.
- */
-export function wordCountExtension(opts: WordCountOptions) {
-  return ViewPlugin.define((view) => {
-    let lastCount = countWords(view.state.doc.toString());
-    opts.onUpdate(lastCount);
-    return {
-      update(update: ViewUpdate) {
-        if (!update.docChanged) return;
-        const next = countWords(update.state.doc.toString());
-        if (next !== lastCount) {
-          lastCount = next;
-          opts.onUpdate(next);
-        }
       },
     };
   });

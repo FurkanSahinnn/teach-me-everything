@@ -169,7 +169,7 @@ export function EmbedAsSourceButton({
       data-testid="note-embed-button"
       data-state={state}
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 text-[12px] font-medium",
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] border px-2 text-[12px] font-medium",
         "transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-paper",
         "disabled:cursor-not-allowed disabled:opacity-70",
@@ -178,7 +178,9 @@ export function EmbedAsSourceButton({
       )}
     >
       {visual.icon}
-      <span>{visual.label}</span>
+      {/* Icon-only in the note header until there is room; the label stays
+          available through aria-label and the tooltip. */}
+      <span className="hidden 2xl:inline">{visual.label}</span>
     </button>
   );
 }

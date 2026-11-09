@@ -83,14 +83,27 @@ class ImageWidget extends WidgetType {
       other.m.height === this.m.height
     );
   }
-  override toDOM(): HTMLElement {
+  override toDOM(view: EditorView): HTMLElement {
     const img = document.createElement("img");
     img.className = "cm-tme-image";
     img.loading = "lazy";
     img.alt = this.m.alt;
-    img.src = this.m.url;
     if (this.m.width !== null) img.style.width = `${this.m.width}px`;
     if (this.m.height !== null) img.style.height = `${this.m.height}px`;
+    // Remote hosts are blocked by the app's CSP (img-src 'self' data: blob:)
+    // and links rot; show a labelled placeholder instead of a broken icon.
+    img.addEventListener(
+      "error",
+      () => {
+        const fallback = document.createElement("span");
+        fallback.className = "cm-tme-image-fallback";
+        fallback.title = this.m.url;
+        fallback.textContent = `${view.state.phrase("Image could not be loaded")}${this.m.alt ? ` · ${this.m.alt}` : ""}`;
+        img.replaceWith(fallback);
+      },
+      { once: true },
+    );
+    img.src = this.m.url;
     return img;
   }
 }
@@ -179,6 +192,16 @@ export const inlineBlocksTheme: Extension = EditorView.theme({
     maxWidth: "100%",
     borderRadius: "6px",
     verticalAlign: "middle",
+  },
+  ".cm-tme-image-fallback": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 10px",
+    border: "1px dashed var(--color-rule-strong)",
+    borderRadius: "6px",
+    color: "var(--color-ink-3)",
+    fontSize: "0.88em",
   },
   ".cm-tme-fnref": {
     fontSize: "0.72em",

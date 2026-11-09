@@ -35,12 +35,12 @@ describe("listAwareEnter", () => {
     expect(pressEnter("- parent\n\t- ")).toBe("- parent\n- ");
   });
 
-  it("ends the list on an empty top-level item, leaving an empty line", () => {
-    expect(pressEnter("- one\n- ")).toBe("- one\n");
+  it("ends the list with a blank line so the next paragraph is not swallowed by the last item", () => {
+    expect(pressEnter("- one\n- ")).toBe("- one\n\n");
   });
 
-  it("ends an empty top-level task item", () => {
-    expect(pressEnter("- [ ] a\n- [ ] ")).toBe("- [ ] a\n");
+  it("ends an empty top-level task item the same way", () => {
+    expect(pressEnter("- [ ] a\n- [ ] ")).toBe("- [ ] a\n\n");
   });
 
   it("outdents an empty nested ordered item and renumbers it after its parent", () => {
@@ -54,5 +54,25 @@ describe("listAwareEnter", () => {
       extensions: [markdownGfm()],
     });
     expect(listAwareEnter({ state, dispatch: () => {} })).toBe(false);
+  });
+});
+
+describe("listKeymap precedence", () => {
+  it("wins over the markdown language's own Enter binding in a real keymap stack", async () => {
+    const { runScopeHandlers } = await import("@codemirror/view");
+    const { EditorView } = await import("@codemirror/view");
+    const { listKeymap } = await import("./list-keymap");
+    const doc = "- parent\n  - child\n  - ";
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.cursor(doc.length),
+        // Same order as NoteEditor: the language comes before the list keymap.
+        extensions: [markdownGfm(), EditorState.tabSize.of(2), listKeymap],
+      }),
+    });
+    runScopeHandlers(view, new KeyboardEvent("keydown", { key: "Enter" }), "editor");
+    expect(view.state.doc.toString()).toBe("- parent\n  - child\n- ");
+    view.destroy();
   });
 });

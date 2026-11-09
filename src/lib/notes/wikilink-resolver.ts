@@ -239,7 +239,7 @@ export function buildWikilinkSuggestions(
         kind: "source",
         insertText: `source:${s.id}`,
         label: s.title,
-        detail: `source · ${s.id.slice(0, 8)}`,
+        detail: "source",
         score: best,
       });
     }
@@ -256,7 +256,7 @@ export function buildWikilinkSuggestions(
         kind: "concept",
         insertText: `concept:${c.id}`,
         label: c.name,
-        detail: `concept · ${c.id.slice(0, 8)}`,
+        detail: "concept",
         score: best,
       });
     }

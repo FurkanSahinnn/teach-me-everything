@@ -75,10 +75,16 @@ describe("block inserts", () => {
     expect(view.state.selection.main.head).toBe(3);
   });
 
-  it("inserts a rule on its own line", () => {
+  it("separates a block inserted on the empty line under a paragraph with a blank line", () => {
     const view = viewWith("a\n", 2);
     insertHorizontalRule(view);
-    expect(view.state.doc.toString()).toBe("a\n---\n\n");
+    expect(view.state.doc.toString()).toBe("a\n\n---\n\n");
+  });
+
+  it("keeps a blank line before the following paragraph", () => {
+    const view = viewWith("\nnext", 0);
+    insertCodeBlock(view);
+    expect(view.state.doc.toString()).toBe("```\n\n```\n\nnext");
   });
 
   it("adds a footnote reference and its definition at the end", () => {
