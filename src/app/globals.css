@@ -685,6 +685,27 @@ html.theme-init-complete body {
   padding: 0 0.15em;
   border-radius: 3px;
 }
+/* Editor-toolbar inline formatting (see lib/markdown/inline-html-allowlist.ts).
+   Colours arrive via a validated inline style; these rules only add shape. */
+.markdown-preview mark.md-bg {
+  color: inherit;
+}
+.markdown-preview u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.markdown-preview .md-align-left {
+  text-align: left;
+}
+.markdown-preview .md-align-center {
+  text-align: center;
+}
+.markdown-preview .md-align-right {
+  text-align: right;
+}
+.markdown-preview .md-align-justify {
+  text-align: justify;
+}
 /* The notes editor (.tme-note-editor) shares the reading-view code palette so
    a fenced block looks the same in live preview, source and reading modes. */
 .markdown-preview,
@@ -823,6 +844,116 @@ html.theme-init-complete body {
 }
 .chat-bubble-markdown .katex-display > .katex {
   white-space: nowrap;
+}
+
+/* Code Styler blocks in the reading view (lib/markdown/code-styler). */
+.markdown-preview .md-codeblock {
+  margin: 1.5rem 0;
+  border: 1px solid var(--md-code-border);
+  border-radius: 8px;
+  background: var(--md-code-bg);
+  overflow: hidden;
+}
+.markdown-preview .md-codeblock > pre.markdown-code-block,
+.markdown-preview .md-codeblock pre.markdown-code-block {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.75rem 0;
+}
+.markdown-preview .md-codeblock-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--md-code-border);
+  color: var(--md-code-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+  list-style: none;
+}
+.markdown-preview summary.md-codeblock-header {
+  cursor: pointer;
+}
+.markdown-preview summary.md-codeblock-header::-webkit-details-marker {
+  display: none;
+}
+.markdown-preview summary.md-codeblock-header::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 150ms ease;
+}
+.markdown-preview details[open] > summary.md-codeblock-header::before {
+  transform: rotate(45deg);
+}
+.markdown-preview details.md-codeblock:not([open]) > summary.md-codeblock-header {
+  border-bottom: 0;
+}
+.markdown-preview .md-codeblock-lang {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.markdown-preview .md-codeblock-title {
+  color: var(--md-code-fg);
+}
+.markdown-preview .md-codeblock-placeholder {
+  display: none;
+  font-style: italic;
+}
+.markdown-preview details.md-codeblock:not([open]) .md-codeblock-placeholder {
+  display: inline;
+}
+.markdown-preview .md-codeblock-spacer {
+  flex: 1 1 auto;
+}
+.markdown-preview .md-codeblock-copy {
+  border: 1px solid var(--md-code-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--md-code-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.5rem;
+  cursor: pointer;
+}
+.markdown-preview .md-codeblock-copy:hover {
+  color: var(--md-code-fg);
+  border-color: var(--color-accent);
+}
+.markdown-preview .md-code-line {
+  display: block;
+  min-height: 1.5em;
+  padding: 0 1rem;
+}
+.markdown-preview .md-codeblock--numbered .md-code-line {
+  padding-left: 0.5rem;
+}
+.markdown-preview .md-codeblock--numbered .md-code-line::before {
+  content: attr(data-ln);
+  display: inline-block;
+  width: 2.5em;
+  margin-right: 0.9em;
+  text-align: right;
+  color: var(--md-code-muted);
+  user-select: none;
+}
+.markdown-preview .md-code-line--hl {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--color-accent) 14%, transparent),
+    color-mix(in srgb, var(--color-accent) 14%, transparent)
+  );
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+.markdown-preview .md-codeblock--wrap .md-code-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* =========================================================================

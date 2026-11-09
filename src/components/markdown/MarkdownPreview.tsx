@@ -3,8 +3,26 @@
 import { type MouseEvent, useCallback, useMemo } from "react";
 import { findChunkForRef } from "@/components/notebook/CitationChip";
 import type { ChunkRecord } from "@/lib/db/types";
+import { type CodeStylerLabels, readCodeForCopy } from "@/lib/markdown/code-styler";
 import { renderMarkdownToHtml } from "@/lib/markdown/render";
 import { cn } from "@/lib/utils/cn";
+
+const COPIED_RESET_MS = 1500;
+
+function copyCode(button: HTMLElement): void {
+  const idle = button.dataset.label ?? button.textContent ?? "";
+  void navigator.clipboard
+    ?.writeText(readCodeForCopy(button))
+    .then(() => {
+      button.textContent = button.dataset.copiedLabel ?? idle;
+      setTimeout(() => {
+        button.textContent = idle;
+      }, COPIED_RESET_MS);
+    })
+    .catch(() => {
+      /* Clipboard access can be denied; the button just stays idle. */
+    });
+}
 
 /**
  * Standalone markdown reading surface (study lessons, journal, the reader).
@@ -19,19 +37,31 @@ export function MarkdownPreview({
   className,
   citationChunks,
   onCitationClick,
+  labels,
 }: {
   text: string;
   className?: string;
   citationChunks?: ChunkRecord[] | undefined;
   onCitationClick?: ((chunk: ChunkRecord) => void) | undefined;
+  /** Overrides for the code block header strings (copy / copied / collapsed). */
+  labels?: Partial<CodeStylerLabels> | undefined;
 }) {
   const html = useMemo(
-    () => renderMarkdownToHtml(text, citationChunks),
-    [text, citationChunks],
+    () => renderMarkdownToHtml(text, citationChunks, labels ? { labels } : {}),
+    [text, citationChunks, labels],
   );
 
   const handleClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      const copyButton = target?.closest<HTMLElement>("[data-code-copy]");
+      if (copyButton) {
+        // The button may sit inside a <summary>: keep the click from toggling it.
+        event.preventDefault();
+        event.stopPropagation();
+        copyCode(copyButton);
+        return;
+      }
       if (!onCitationClick || !citationChunks) return;
       const el = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         "[data-citation-ref]",

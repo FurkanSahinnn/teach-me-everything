@@ -1,5 +1,6 @@
+import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { parseWikilinkTarget, scanWikilinks } from "./wikilink-widget";
+import { parseWikilinkTarget, scanWikilinks, wikilinkStatusFacet } from "./wikilink-widget";
 
 describe("parseWikilinkTarget", () => {
   it("treats bare text as a note target", () => {
@@ -128,5 +129,20 @@ describe("scanWikilinks", () => {
     // `[[Note]]]` — the `]` immediately after should disqualify per parser
     // semantics so unfinished syntax doesn't render mid-edit.
     expect(scanWikilinks("[[Note]]]")).toEqual([]);
+  });
+});
+
+describe("wikilinkStatusFacet", () => {
+  it("treats every target as existing by default", () => {
+    const state = EditorState.create({});
+    expect(state.facet(wikilinkStatusFacet)("Anything", "note")).toBe(true);
+  });
+  it("uses a provided resolver", () => {
+    const state = EditorState.create({
+      extensions: [wikilinkStatusFacet.of((t) => t === "Known")],
+    });
+    const exists = state.facet(wikilinkStatusFacet);
+    expect(exists("Known", "note")).toBe(true);
+    expect(exists("Missing note", "note")).toBe(false);
   });
 });

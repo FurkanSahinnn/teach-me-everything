@@ -1,99 +1,141 @@
 /**
- * Phase 6.3 — Blockquote + task-checkbox decorations.
+ * Lists and task checkboxes.
  *
- * We iterate every line inside the viewport (cheaper than walking the Lezer
- * tree for line-anchored rules) and emit:
- *
- *   • Blockquote: a line class `cm-tme-blockquote` plus a `replace({})` over
- *     the leading `>` marker(s) on inactive lines so the prose reads
- *     indented. Nested `>>` collapses uniformly.
- *
- *   • Task checkbox: when a list item begins with `- [ ]`, `- [x]`, `* [ ]`,
- *     `+ [x]`, or any whitespace-prefixed variant, the entire `- [x] `
- *     prefix is replaced (on inactive lines) with a clickable checkbox
- *     widget. Click writes the toggled token back via a CM6 transaction so
- *     autosave + undo flow keep working.
- *
- * Plain bullet/numbered lists are intentionally left to the default Markdown
- * highlighting in `@codemirror/lang-markdown` for Phase 6.3 — they already
- * render fine and styling them requires per-list context (indent level) we
- * don't track here.
+ * Every list item's marker (plus its leading indent) on an inactive line is
+ * replaced by one fixed-width widget: a bullet, an ordered number or a task
+ * checkbox, preceded by faint guide cells for each outer nesting level. The
+ * line gets `padding-left` / negative `text-indent` of the same width in `em`,
+ * so wrapped lines hang under the text instead of under the marker. Using the
+ * tree (ListMark nodes) rather than line regexes keeps list-like text inside
+ * fenced code untouched.
  */
 
-import type { EditorState } from "@codemirror/state";
-import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
+import { syntaxTree } from "@codemirror/language";
+import type { EditorState, Extension } from "@codemirror/state";
+import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { quotePrefixLength } from "./callout";
 import type { DecoSpec } from "./types";
 
-const HIDE = Decoration.replace({});
+export type ListMarkerKind = "bullet" | "ordered" | "task";
 
-const BLOCKQUOTE_LINE = Decoration.line({
-  attributes: { class: "cm-tme-blockquote" },
-});
+const INDENT_EM = 1.5;
+const ORDERED_EM = 2;
+const BULLETS = ["•", "◦", "▪"] as const;
 
-const BLOCKQUOTE_PREFIX_RE = /^(\s*)((?:>\s*)+)/;
-const TASK_PREFIX_RE = /^(\s*)([-*+]\s+)(\[)([ xX])(\])(\s+)/;
+const TASK_RE = /^[ \t]+\[([ xX])\](?=[ \t]|$)/;
 
-class TaskCheckboxWidget extends WidgetType {
-  constructor(private readonly checked: boolean) {
+/** Bullet glyph for a 1-based nesting depth (cycles through three shapes). */
+export function bulletForDepth(depth: number): string {
+  return BULLETS[(Math.max(depth, 1) - 1) % BULLETS.length] ?? "•";
+}
+
+/** Width in em of the marker widget (guides + marker cell). */
+export function markerWidthEm(depth: number, kind: ListMarkerKind): number {
+  return (depth - 1) * INDENT_EM + (kind === "ordered" ? ORDERED_EM : INDENT_EM);
+}
+
+/**
+ * Read a task box right after a list marker. `after` is the text following
+ * the marker; returns the box length (including the leading space) or null.
+ */
+export function matchTaskBox(after: string): { checked: boolean; length: number } | null {
+  const m = TASK_RE.exec(after);
+  if (!m) return null;
+  return { checked: m[1] !== " ", length: m[0].length };
+}
+
+class ListMarkerWidget extends WidgetType {
+  constructor(
+    private readonly depth: number,
+    private readonly kind: ListMarkerKind,
+    private readonly text: string,
+    private readonly checked: boolean,
+  ) {
     super();
   }
 
   override eq(other: WidgetType): boolean {
-    return other instanceof TaskCheckboxWidget && other.checked === this.checked;
+    return (
+      other instanceof ListMarkerWidget &&
+      other.depth === this.depth &&
+      other.kind === this.kind &&
+      other.text === this.text &&
+      other.checked === this.checked
+    );
   }
 
   override toDOM(view: EditorView): HTMLElement {
     const root = document.createElement("span");
-    root.className = `cm-tme-task ${
-      this.checked ? "cm-tme-task--checked" : "cm-tme-task--unchecked"
-    }`;
-    root.setAttribute("data-checked", this.checked ? "true" : "false");
+    root.className = "cm-tme-listmark";
+    root.style.width = `${markerWidthEm(this.depth, this.kind)}em`;
+    for (let i = 1; i < this.depth; i++) {
+      const guide = document.createElement("span");
+      guide.className = "cm-tme-listmark__guide";
+      root.append(guide);
+    }
+    const cell = document.createElement("span");
+    cell.className = `cm-tme-listmark__cell cm-tme-listmark__cell--${this.kind}`;
+    if (this.kind === "task") cell.append(this.buildCheckbox(view, root));
+    else cell.textContent = this.text;
+    root.append(cell);
+    return root;
+  }
+
+  private buildCheckbox(view: EditorView, root: HTMLElement): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = `cm-tme-task ${this.checked ? "cm-tme-task--checked" : "cm-tme-task--unchecked"}`;
+    wrap.setAttribute("data-checked", this.checked ? "true" : "false");
 
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = this.checked;
     box.className = "cm-tme-task__box";
     box.tabIndex = 0;
-    box.setAttribute("aria-label", "Task");
-
-    // Stop CM6 from moving the caret on widget mousedown.
-    box.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-    });
-
+    box.setAttribute("aria-label", view.state.phrase("Task"));
+    box.addEventListener("mousedown", (event) => event.preventDefault());
     box.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const pos = view.posAtDOM(root);
       if (pos < 0) return;
       const line = view.state.doc.lineAt(pos);
-      // Find `[ ]` / `[x]` on the line — we search the line text rather
-      // than relying on a captured offset because CM6 keeps the widget
-      // alive across edits and a captured offset could drift.
-      const taskMatch = /(\[)([ xX])(\])/.exec(line.text);
-      if (!taskMatch) return;
-      const tokenFrom = line.from + (taskMatch.index ?? 0);
-      const tokenTo = tokenFrom + taskMatch[0].length;
-      const currentlyChecked = (taskMatch[2] ?? " ").toLowerCase() === "x";
+      // Search the line instead of trusting a captured offset: CM keeps the
+      // widget alive across edits, so a stored offset could drift.
+      const m = /\[([ xX])\]/.exec(line.text);
+      if (!m) return;
+      const from = line.from + m.index;
       view.dispatch({
-        changes: {
-          from: tokenFrom,
-          to: tokenTo,
-          insert: currentlyChecked ? "[ ]" : "[x]",
-        },
+        changes: { from, to: from + 3, insert: (m[1] ?? " ") === " " ? "[x]" : "[ ]" },
         userEvent: "input.markdown.task",
       });
       view.focus();
     });
-
-    root.append(box);
-    return root;
+    wrap.append(box);
+    return wrap;
   }
 
   override ignoreEvent(): boolean {
     return false;
   }
 }
+
+const hangCache = new Map<string, Decoration>();
+function hangLine(widthEm: number): Decoration {
+  const key = String(widthEm);
+  let d = hangCache.get(key);
+  if (!d) {
+    d = Decoration.line({
+      attributes: {
+        class: "cm-tme-listline",
+        style: `padding-left: calc(${widthEm}em + 6px) !important; text-indent: -${widthEm}em;`,
+      },
+    });
+    hangCache.set(key, d);
+  }
+  return d;
+}
+
+const DONE_TEXT = Decoration.mark({ class: "cm-tme-task-done" });
 
 export function buildListDecorations(
   state: EditorState,
@@ -102,53 +144,95 @@ export function buildListDecorations(
   to: number,
   out: DecoSpec[],
 ): void {
-  const firstLine = state.doc.lineAt(from).number;
-  const lastLine = state.doc.lineAt(to).number;
-
-  for (let n = firstLine; n <= lastLine; n++) {
-    const line = state.doc.line(n);
-    const active = activeLines.has(n);
-
-    // ---- Task checkbox ----
-    const taskMatch = TASK_PREFIX_RE.exec(line.text);
-    if (taskMatch) {
-      const leading = taskMatch[1] ?? "";
-      const bullet = taskMatch[2] ?? "";
-      const bracketChar = (taskMatch[4] ?? " ").toLowerCase();
-      const trailing = taskMatch[6] ?? "";
-      const checked = bracketChar === "x";
-      const prefixStart = line.from + leading.length;
-      const prefixEnd =
-        prefixStart + bullet.length + 1 /* [ */ + 1 /* x/space */ + 1 /* ] */ + trailing.length;
-
-      if (!active) {
-        out.push({
-          from: prefixStart,
-          to: prefixEnd,
-          deco: Decoration.replace({ widget: new TaskCheckboxWidget(checked) }),
-        });
-      }
-      // Active task lines render raw — user can edit the bullet markup.
-      // Skip the blockquote check on this line since `- [ ]` lines aren't
-      // also blockquotes.
-      continue;
-    }
-
-    // ---- Blockquote ----
-    const quoteMatch = BLOCKQUOTE_PREFIX_RE.exec(line.text);
-    if (quoteMatch) {
-      out.push({ from: line.from, to: line.from, deco: BLOCKQUOTE_LINE });
-      if (!active) {
-        const leading = quoteMatch[1] ?? "";
-        const marker = quoteMatch[2] ?? "";
-        if (marker.length > 0) {
-          out.push({
-            from: line.from + leading.length,
-            to: line.from + leading.length + marker.length,
-            deco: HIDE,
-          });
+  syntaxTree(state).iterate({
+    from,
+    to,
+    enter(node) {
+      if (node.name !== "ListMark") return;
+      let depth = 0;
+      let ordered = false;
+      for (let p = node.node.parent; p; p = p.parent) {
+        if (p.name === "BulletList" || p.name === "OrderedList") {
+          if (depth === 0) ordered = p.name === "OrderedList";
+          depth++;
         }
       }
-    }
-  }
+      if (depth === 0) return;
+
+      const line = state.doc.lineAt(node.from);
+      const afterMark = state.doc.sliceString(node.to, line.to);
+      const task = ordered ? null : matchTaskBox(afterMark);
+      const kind: ListMarkerKind = task ? "task" : ordered ? "ordered" : "bullet";
+
+      let end = node.to;
+      if (task) end = node.to + task.length;
+      // Swallow the spaces after the marker/box so the widget owns the gap.
+      const trailing = /^[ \t]+/.exec(state.doc.sliceString(end, line.to));
+      if (trailing) end += trailing[0].length;
+      if (task?.checked && end < line.to) {
+        out.push({ from: end, to: line.to, deco: DONE_TEXT });
+      }
+
+      if (activeLines.has(line.number)) return;
+      const start = line.from + quotePrefixLength(line.text);
+      if (start > node.from) return;
+      const text = state.doc.sliceString(node.from, node.to);
+      const width = markerWidthEm(depth, kind);
+      out.push({ from: line.from, to: line.from, deco: hangLine(width) });
+      out.push({
+        from: start,
+        to: end,
+        deco: Decoration.replace({
+          widget: new ListMarkerWidget(
+            depth,
+            kind,
+            kind === "bullet" ? bulletForDepth(depth) : text,
+            task?.checked ?? false,
+          ),
+        }),
+      });
+    },
+  });
 }
+
+export const listTheme: Extension = EditorView.theme({
+  ".cm-tme-listmark": {
+    display: "inline-flex",
+    verticalAlign: "bottom",
+    height: "1.7em",
+    boxSizing: "border-box",
+    textIndent: "0",
+  },
+  ".cm-tme-listmark__guide": {
+    flex: "0 0 1.5em",
+    background:
+      "linear-gradient(var(--color-rule), var(--color-rule)) 0.75em 0 / 1px 100% no-repeat",
+  },
+  ".cm-tme-listmark__cell": {
+    flex: "1 1 auto",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--color-ink-3)",
+  },
+  ".cm-tme-listmark__cell--ordered": {
+    justifyContent: "flex-end",
+    paddingRight: "0.45em",
+    fontVariantNumeric: "tabular-nums",
+  },
+  ".cm-tme-task": {
+    display: "inline-flex",
+    alignItems: "center",
+  },
+  ".cm-tme-task__box": {
+    cursor: "pointer",
+    width: "15px",
+    height: "15px",
+    margin: "0",
+    accentColor: "var(--color-accent)",
+  },
+  ".cm-tme-task-done": {
+    color: "var(--color-ink-3)",
+    textDecoration: "line-through",
+  },
+});
