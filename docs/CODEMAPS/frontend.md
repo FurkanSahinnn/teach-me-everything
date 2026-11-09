@@ -52,7 +52,7 @@ Rules for dynamic routes: pages under `/w/[id]/...` read params with `useRoutePa
 
 ### `mounts/` (headless, render `null`, mounted once)
 
-`TrayMount`, `DeepLinkMount`, `MenuMount`, `EventBridgeMount`, `UpdateCheckMount` are mounted in `src/app/layout.tsx`; `SeedBootstrap` in `AppShell`. `TrayMount`, `MenuMount` and `DeepLinkMount` subscribe to native Tauri events and re-dispatch them as window CustomEvents; `EventBridgeMount` routes those to app actions (navigation, create note, daily note, sidebar toggle via `SIDEBAR_TOGGLE_EVENT`). They no-op outside Tauri (`isTauriEnv`).
+`TrayMount`, `DeepLinkMount`, `MenuMount`, `EventBridgeMount`, `UpdateCheckMount` are mounted in `src/app/layout.tsx`. Example data is seeded only by the setup wizard (`ExamplesStep`). `TrayMount`, `MenuMount` and `DeepLinkMount` subscribe to native Tauri events and re-dispatch them as window CustomEvents; `EventBridgeMount` routes those to app actions (navigation, create note, daily note, sidebar toggle via `SIDEBAR_TOGGLE_EVENT`). They no-op outside Tauri (`isTauriEnv`).
 
 ## State, hooks, i18n
 

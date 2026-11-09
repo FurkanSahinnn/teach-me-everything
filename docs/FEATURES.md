@@ -50,7 +50,7 @@ Solda gruplu menü (`SettingsSidebarNav`, arama kutulu), sağda başlık + kart 
 
 ## Kurulum sihirbazı (`/setup/[step]`)
 
-Dört adım: Hoş geldiniz, API anahtarları, Örnekler, Hazırsın. `WelcomeStep`, `PresetChooser`, `ExamplesStep`, `DoneStep`. Yazar: `apiKeys`, tercihler, örnek veri (`SeedBootstrap`, `src/lib/db/seed.ts`). AI yalnızca anahtar testi (`lib/ai/upstream/test-key`).
+Dört adım: Hoş geldiniz, API anahtarları, Örnekler, Hazırsın. `WelcomeStep`, `PresetChooser`, `ExamplesStep`, `DoneStep`. Yazar: `apiKeys`, tercihler, örnek veri (yalnız Örnekler adımında açıksa, `src/lib/db/seed.ts`). AI yalnızca anahtar testi (`lib/ai/upstream/test-key`).
 
 ## Çalışma alanı özeti (`/w/[id]`)
 
