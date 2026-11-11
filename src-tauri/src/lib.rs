@@ -52,6 +52,7 @@ pub fn run() {
     .plugin(tauri_plugin_shell::init())
     .invoke_handler(tauri::generate_handler![
       agent_cli::agent_cli_probe,
+      agent_cli::agent_cli_opencode_stats,
       agent_cli::agent_cli_start,
       agent_cli::agent_cli_write,
       agent_cli::agent_cli_stop,

@@ -1,7 +1,7 @@
 // Status probes for the user's own `claude` / `codex` / `opencode` CLIs.
 // Everything goes through the CLI's public control channel; credential files
 // are never read.
-import { probeAgentCli } from "@/lib/tauri/agent-cli";
+import { probeAgentCli, readOpencodeCliStats } from "@/lib/tauri/agent-cli";
 import { buildClaudeCliArgs } from "@/lib/ai/providers/claude-cli";
 import { readOpencodeCatalog } from "@/lib/ai/providers/opencode-cli";
 import {
@@ -11,6 +11,7 @@ import {
   parseCodexAccount,
   parseCodexRateLimits,
   parseCodexUserAgent,
+  parseOpencodeStats,
 } from "./parsers";
 import { openLineSession, type JsonLine, type LineSession } from "./session";
 import type { AgentAccountStatus, AgentCliId, AgentProbeOptions } from "./types";
@@ -122,6 +123,7 @@ export async function probeClaudeStatus(opts: AgentProbeOptions = {}): Promise<A
         status.limitsError = shortError(err);
       }
     }
+    status.checkedAt = Date.now();
     return status;
   } catch (err) {
     return { ...base("claude"), error: shortError(err), ...(located.version ? { version: located.version } : {}) };
@@ -194,6 +196,7 @@ export async function probeCodexStatus(opts: AgentProbeOptions = {}): Promise<Ag
         status.limitsError = shortError(err);
       }
     }
+    status.checkedAt = Date.now();
     return status;
   } catch (err) {
     return { ...base("codex"), error: shortError(err), ...(located.version ? { version: located.version } : {}) };
@@ -216,7 +219,10 @@ export async function probeOpencodeStatus(opts: AgentProbeOptions = {}): Promise
     return { ...base("opencode"), ...withVersion(located.version), error: `OpenCode ${OPENCODE_MIN_MAJOR} or newer is required` };
   }
   try {
-    const catalog = await readOpencodeCatalog({ path: opts.path, env: opts.env, timeoutMs: PROBE_BUDGET_MS });
+    const [catalog, rawStats] = await Promise.all([
+      readOpencodeCatalog({ path: opts.path, env: opts.env, timeoutMs: PROBE_BUDGET_MS }),
+      readOpencodeCliStats(opts.path, 7),
+    ]);
     if (catalog === null) {
       return { ...base("opencode"), state: "not_installed", error: "Desktop app only" };
     }
@@ -224,12 +230,15 @@ export async function probeOpencodeStatus(opts: AgentProbeOptions = {}): Promise
     if (!catalog.profileLoaded) {
       return { ...base("opencode"), ...withVersion(version), error: "This OpenCode version did not load TME's agent profile" };
     }
+    const opencodeStats = parseOpencodeStats(rawStats, 7);
     return {
       ...base("opencode"),
       state: catalog.models.length > 0 ? "authenticated" : "unauthenticated",
       ...withVersion(version),
       modelCount: catalog.models.length,
       providers: catalog.providers,
+      ...(opencodeStats ? { opencodeStats } : {}),
+      checkedAt: Date.now(),
     };
   } catch (err) {
     return { ...base("opencode"), error: shortError(err), ...withVersion(located.version) };

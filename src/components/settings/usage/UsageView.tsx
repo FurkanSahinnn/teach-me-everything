@@ -9,6 +9,7 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { useAgentStatus } from "@/lib/ai/agent-status/store";
 import { scanUsage } from "@/lib/tauri/usage";
 import { aggregateUsage, rangeToSinceMs, type UsageRange, type UsageSummary } from "@/lib/usage";
+import { cn } from "@/lib/utils/cn";
 import { usePrefs } from "@/stores/prefs";
 
 import { UsageLimitsPanel } from "./UsageLimitsPanel";
@@ -33,10 +34,12 @@ export function UsageView() {
   const claudeHome = usePrefs((s) => s.agentCli?.claudeHome);
   const codexHome = usePrefs((s) => s.agentCli?.codexHome);
   const refreshLimits = useAgentStatus((s) => s.refresh);
+  const limitsLoading = useAgentStatus((s) => s.loading);
 
   // A result is only shown for the request that produced it; anything else reads as loading.
   const requestKey = `${range}|${nonce}|${claudeHome ?? ""}|${codexHome ?? ""}`;
   const scan: ScanState = scanResult?.key === requestKey ? scanResult.state : { kind: "loading" };
+  const isRefreshing = metric === "limits" ? limitsLoading : scan.kind === "loading";
 
   useEffect(() => {
     if (metric === "limits") return;
@@ -90,8 +93,8 @@ export function UsageView() {
               ]}
             />
           ) : null}
-          <Button size="icon-sm" variant="ghost" onClick={handleRefresh} aria-label={pick("Yenile", "Refresh")}>
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          <Button size="icon-sm" variant="ghost" onClick={handleRefresh} disabled={isRefreshing} aria-label={pick("Yenile", "Refresh")}>
+            <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} aria-hidden />
           </Button>
         </div>
       </div>

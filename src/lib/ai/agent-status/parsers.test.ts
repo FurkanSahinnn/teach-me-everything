@@ -7,6 +7,7 @@ import {
   parseCodexAccount,
   parseCodexRateLimits,
   parseCodexUserAgent,
+  parseOpencodeStats,
 } from "./parsers";
 
 describe("versions", () => {
@@ -153,5 +154,69 @@ describe("parseCodexRateLimits", () => {
     expect(out.limits[0]?.usedPercent).toBe(100);
     expect(out.planLabel).toBeUndefined();
     expect(parseCodexRateLimits(null).limits).toEqual([]);
+  });
+});
+
+describe("parseOpencodeStats", () => {
+  it("parses opencode stats --json output including model breakdown", () => {
+    const parsed = parseOpencodeStats(
+      {
+        sessions: 2,
+        prompts: 8,
+        steps: 61,
+        tokens: {
+          input: 607101,
+          output: 32949,
+          reasoning: 32633,
+          cache: { read: 8168258, write: 0 },
+        },
+        cost: 0,
+        models: [
+          {
+            model: { id: "gemini-4-argon", providerID: "opencode-go", variant: "high" },
+            steps: 61,
+            tokens: {
+              input: 607101,
+              output: 32949,
+              reasoning: 32633,
+              cache: { read: 8168258, write: 0 },
+            },
+            cost: 0,
+          },
+        ],
+      },
+      7,
+    );
+
+    expect(parsed).toEqual({
+      days: 7,
+      sessions: 2,
+      prompts: 8,
+      steps: 61,
+      inputTokens: 607101,
+      outputTokens: 32949,
+      reasoningTokens: 32633,
+      cacheReadTokens: 8168258,
+      cacheWriteTokens: 0,
+      costUsd: 0,
+      models: [
+        {
+          modelId: "gemini-4-argon",
+          providerId: "opencode-go",
+          steps: 61,
+          inputTokens: 607101,
+          outputTokens: 32949,
+          reasoningTokens: 32633,
+          cacheReadTokens: 8168258,
+          cacheWriteTokens: 0,
+          costUsd: 0,
+        },
+      ],
+    });
+  });
+
+  it("returns undefined for non-object or unrelated payloads", () => {
+    expect(parseOpencodeStats(null)).toBeUndefined();
+    expect(parseOpencodeStats({})).toBeUndefined();
   });
 });

@@ -10,6 +10,7 @@ import { useLocalePick } from "@/i18n/IntlProvider";
 import { useAgentStatus } from "@/lib/ai/agent-status/store";
 import { buildProviderCatalog } from "@/lib/ai/provider-catalog";
 import type { Provider } from "@/lib/db/schema";
+import { cn } from "@/lib/utils/cn";
 import { usePrefs } from "@/stores/prefs";
 
 import { ApiProviderDetail } from "./ApiProviderDetail";
@@ -40,6 +41,7 @@ export function ProvidersManager() {
   const pick = useLocalePick();
   const keys = useApiKeyManager(KEY_PROVIDERS);
   const statuses = useAgentStatus((s) => s.statuses);
+  const refreshing = useAgentStatus((s) => s.refreshing);
   const loading = useAgentStatus((s) => s.loading);
   const refresh = useAgentStatus((s) => s.refresh);
   const customEndpoints = usePrefs((s) => s.customEndpoints);
@@ -58,10 +60,11 @@ export function ProvidersManager() {
       buildProviderCatalog({
         storedKeys: new Set(storedKeySignature ? storedKeySignature.split(",") : []),
         agentStatuses: statuses,
+        refreshingClis: refreshing,
         customEndpoints,
         disabledProviders: new Set(disabledProviders),
       }),
-    [storedKeySignature, statuses, customEndpoints, disabledProviders],
+    [storedKeySignature, statuses, refreshing, customEndpoints, disabledProviders],
   );
 
   const selected = entries.find((e) => e.id === selectedId) ?? entries[0] ?? null;
@@ -78,7 +81,7 @@ export function ProvidersManager() {
               : null}
         </span>
         <Button size="sm" variant="ghost" onClick={() => void refresh(undefined, { force: true })} disabled={loading}>
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} aria-hidden />
           {pick("Yeniden kontrol et", "Check again")}
         </Button>
       </div>

@@ -26,6 +26,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useApiKeyManager } from "@/hooks/useApiKeyManager";
 import {
   getQuickStartPreset,
+  type QuickStartPreset,
   type QuickStartPresetId,
 } from "@/lib/ai/quick-start-presets";
 import { type Provider } from "@/lib/db/schema";
@@ -368,6 +369,17 @@ function ProviderRow({
   );
 }
 
+function isWizardPresetKeyStored(
+  preset: QuickStartPreset,
+  keys: ReturnType<typeof useApiKeyManager>,
+): boolean {
+  if (!keys.storedLoaded || !preset.requiresKey) return false;
+  if (preset.providerId === "anthropic") {
+    return keys.isStored("anthropic") || keys.isStored("claude-code-oauth");
+  }
+  return keys.isStored(preset.providerId);
+}
+
 function QuickStartSection({
   keys,
   pick,
@@ -377,6 +389,7 @@ function QuickStartSection({
 }) {
   const { toast } = useToast();
   const setModelBinding = usePrefs((s) => s.setModelBinding);
+  const setProviderEnabled = usePrefs((s) => s.setProviderEnabled);
   const [selectedId, setSelectedId] = useState<QuickStartPresetId | null>(null);
   const [keyValue, setKeyValue] = useState("");
   const [applying, setApplying] = useState(false);
@@ -386,8 +399,10 @@ function QuickStartSection({
     [selectedId],
   );
 
+  const hasStoredKey = preset ? isWizardPresetKeyStored(preset, keys) : false;
+
   const canApply = preset
-    ? !preset.requiresKey || keyValue.trim().length > 0
+    ? !preset.requiresKey || hasStoredKey || keyValue.trim().length > 0
     : false;
 
   function handleSelect(id: QuickStartPresetId): void {
@@ -399,9 +414,11 @@ function QuickStartSection({
     if (!preset) return;
     setApplying(true);
     try {
-      if (preset.requiresKey) {
-        keys.setDraft(preset.providerId, keyValue.trim());
+      const trimmedKey = keyValue.trim();
+      if (preset.requiresKey && trimmedKey.length > 0) {
+        await keys.save(preset.providerId, trimmedKey);
       }
+      setProviderEnabled(preset.providerId, true);
       // Bindings update before saveAll so the toast can fire after both
       // operations land. setModelBinding is synchronous (Zustand persist
       // writes to localStorage on the same tick).
@@ -414,16 +431,22 @@ function QuickStartSection({
       // Applying a quick-start preset is a complete setup — mark it so
       // FirstRunGate stops redirecting to /setup on the next launch.
       markSetupComplete();
+      const updatedEmbed = Boolean(preset.defaultBindings.embedPresetId);
       toast({
         variant: "success",
         title: pick(
           `${preset.label} hızlı başlangıç uygulandı`,
           `${preset.label} quick-start applied`,
         ),
-        description: pick(
-          "Sohbet, özet ve gömme modelleri güncellendi.",
-          "Chat, summary, and embed models updated.",
-        ),
+        description: updatedEmbed
+          ? pick(
+              "Tüm görev ve gömme (embedding) modelleri güncellendi.",
+              "All task and embedding models updated.",
+            )
+          : pick(
+              "Tüm sohbet ve analiz görev modelleri güncellendi (embedding modeli korundu).",
+              "All chat and analysis task models updated (embedding model kept).",
+            ),
       });
       setKeyValue("");
     } finally {
@@ -441,12 +464,16 @@ function QuickStartSection({
       </div>
       <p className="mt-1.5 max-w-[60ch] text-[13px] text-ink-3">
         {pick(
-          "Tek tıkla bir sağlayıcı seç — sohbet / özet / gömme modelleri otomatik bağlanır.",
-          "Pick one provider — chat / summary / embed models get wired automatically.",
+          "Tek tıkla bir sağlayıcı seç — sohbet / özet / analiz / gömme modelleri otomatik bağlanır.",
+          "Pick one provider — chat / summary / analysis / embed models get wired automatically.",
         )}
       </p>
       <div className="mt-4">
-        <PresetChooser selectedId={selectedId} onSelect={handleSelect} />
+        <PresetChooser
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          isPresetConfigured={(p) => isWizardPresetKeyStored(p, keys)}
+        />
       </div>
       <div className="mt-4">
         <DynamicKeyField
@@ -454,6 +481,7 @@ function QuickStartSection({
           value={keyValue}
           onChange={setKeyValue}
           inputId="quickstart-key"
+          hasStoredKey={hasStoredKey}
         />
       </div>
       <div className="mt-4 flex items-center justify-end">

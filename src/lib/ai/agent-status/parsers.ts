@@ -1,4 +1,4 @@
-import type { LimitWindow } from "./types";
+import type { LimitWindow, OpencodeModelUsage, OpencodeUsageStats } from "./types";
 
 type Rec = Record<string, unknown>;
 const rec = (v: unknown): Rec =>
@@ -202,4 +202,58 @@ export function parseCodexRateLimits(result: unknown): CodexLimitsInfo {
   }
   const planLabel = codexPlanLabel(snapshot.planType);
   return { limits, ...(planLabel ? { planLabel } : {}) };
+}
+
+function nonNeg(v: unknown): number {
+  const n = num(v);
+  return n !== undefined && n >= 0 ? n : 0;
+}
+
+/** Parses the JSON output of `opencode stats --days <N> --models --cost --json`. */
+export function parseOpencodeStats(raw: unknown, days = 7): OpencodeUsageStats | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = rec(raw);
+  const tokens = rec(r.tokens);
+  const cache = rec(tokens.cache);
+  if (r.sessions === undefined && r.tokens === undefined && r.models === undefined) {
+    return undefined;
+  }
+
+  const models: OpencodeModelUsage[] = [];
+  if (Array.isArray(r.models)) {
+    for (const item of r.models) {
+      const m = rec(item);
+      const modelObj = rec(m.model);
+      const modelId = str(modelObj.id);
+      if (!modelId) continue;
+      const providerId = str(modelObj.providerID) ?? "opencode";
+      const mt = rec(m.tokens);
+      const mc = rec(mt.cache);
+      models.push({
+        modelId,
+        providerId,
+        steps: Math.round(nonNeg(m.steps)),
+        inputTokens: Math.round(nonNeg(mt.input)),
+        outputTokens: Math.round(nonNeg(mt.output)),
+        reasoningTokens: Math.round(nonNeg(mt.reasoning)),
+        cacheReadTokens: Math.round(nonNeg(mc.read)),
+        cacheWriteTokens: Math.round(nonNeg(mc.write)),
+        costUsd: nonNeg(m.cost),
+      });
+    }
+  }
+
+  return {
+    days,
+    sessions: Math.round(nonNeg(r.sessions)),
+    prompts: Math.round(nonNeg(r.prompts)),
+    steps: Math.round(nonNeg(r.steps)),
+    inputTokens: Math.round(nonNeg(tokens.input)),
+    outputTokens: Math.round(nonNeg(tokens.output)),
+    reasoningTokens: Math.round(nonNeg(tokens.reasoning)),
+    cacheReadTokens: Math.round(nonNeg(cache.read)),
+    cacheWriteTokens: Math.round(nonNeg(cache.write)),
+    costUsd: nonNeg(r.cost),
+    models,
+  };
 }

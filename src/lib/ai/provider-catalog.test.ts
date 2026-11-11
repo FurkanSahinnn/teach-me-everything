@@ -66,6 +66,18 @@ describe("buildProviderCatalog", () => {
     expect(toneFor(status({ cli: "codex", state: "authenticated" }))).toBe("cli_authenticated_no_plan");
   });
 
+  it("surfaces cli_checking while a previously authenticated CLI is refreshing", () => {
+    const entry = buildProviderCatalog(
+      input({
+        agentStatuses: { claude: status({ planLabel: "Claude Team", version: "2.1.322" }) },
+        refreshingClis: { claude: true },
+      }),
+    ).find((e) => e.id === "claude-cli");
+
+    expect(entry?.status).toEqual({ tone: "muted", key: "cli_checking" });
+    expect(entry?.version).toBe("2.1.322");
+  });
+
   it("marks cloud providers by whether a key is stored, counting the Claude OAuth token for Anthropic", () => {
     const byId = (keys: string[]) =>
       new Map(buildProviderCatalog(input({ storedKeys: new Set(keys) })).map((e) => [e.id, e.status.key]));

@@ -33,6 +33,8 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
   const [initial, setInitial] = useState<Drafts>(emptyDrafts);
   const [stored, setStored] = useState<Provider[]>([]);
   const [storedLoaded, setStoredLoaded] = useState(false);
+  const draftsRef = useRef<Drafts>({});
+  const initialRef = useRef<Drafts>({});
   const providersRef = useRef(providers);
   useEffect(() => { providersRef.current = providers; }, [providers]);
 
@@ -67,12 +69,16 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
       if (cancelled) return;
       setDrafts((prev) => {
         const next = { ...prev };
-        for (const [provider, value] of entries) next[provider] = value;
+        for (const [provider, value] of entries) {
+          if (next[provider] === undefined) next[provider] = value;
+        }
+        draftsRef.current = next;
         return next;
       });
       setInitial((prev) => {
         const next = { ...prev };
         for (const [provider, value] of entries) next[provider] = value;
+        initialRef.current = next;
         return next;
       });
     });
@@ -82,13 +88,26 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
   }, [providers]);
 
   const setDraft = useCallback((provider: Provider, value: string) => {
-    setDrafts((prev) => ({ ...prev, [provider]: value }));
+    draftsRef.current = { ...draftsRef.current, [provider]: value };
+    setDrafts((prev) => {
+      const next = { ...prev, [provider]: value };
+      draftsRef.current = next;
+      return next;
+    });
   }, []);
 
   const save = useCallback(
-    async (provider: Provider) => {
-      const value = drafts[provider] ?? "";
+    async (provider: Provider, overrideValue?: string) => {
+      const value =
+        overrideValue !== undefined
+          ? overrideValue
+          : (draftsRef.current[provider] ?? drafts[provider] ?? "");
       await setApiKey(provider, value);
+      if (overrideValue !== undefined) {
+        draftsRef.current = { ...draftsRef.current, [provider]: value };
+        setDrafts((prev) => ({ ...prev, [provider]: value }));
+      }
+      initialRef.current = { ...initialRef.current, [provider]: value };
       setInitial((prev) => ({ ...prev, [provider]: value }));
       await refreshStored();
     },
@@ -96,19 +115,25 @@ export function useApiKeyManager(providers: Provider[] = DEFAULT_PROVIDERS) {
   );
 
   const saveAll = useCallback(async () => {
-    for (const provider of providers) {
-      const next = drafts[provider] ?? "";
-      if (next !== (initial[provider] ?? "")) {
+    const currentDrafts = draftsRef.current;
+    const currentInitial = initialRef.current;
+    for (const provider of providersRef.current) {
+      const next = currentDrafts[provider] ?? "";
+      if (next !== (currentInitial[provider] ?? "")) {
         await setApiKey(provider, next);
       }
     }
-    setInitial((prev) => ({ ...prev, ...drafts }));
+    const nextInitial = { ...currentInitial, ...currentDrafts };
+    initialRef.current = nextInitial;
+    setInitial(nextInitial);
     await refreshStored();
-  }, [drafts, initial, providers, refreshStored]);
+  }, [refreshStored]);
 
   const remove = useCallback(
     async (provider: Provider) => {
       await deleteApiKey(provider);
+      draftsRef.current = { ...draftsRef.current, [provider]: "" };
+      initialRef.current = { ...initialRef.current, [provider]: "" };
       setDrafts((prev) => ({ ...prev, [provider]: "" }));
       setInitial((prev) => ({ ...prev, [provider]: "" }));
       await refreshStored();

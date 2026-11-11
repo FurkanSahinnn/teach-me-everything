@@ -22,6 +22,32 @@ export type LimitWindow = {
 
 export type AgentAccountState = "not_installed" | "unauthenticated" | "authenticated" | "error";
 
+export type OpencodeModelUsage = {
+  modelId: string;
+  providerId: string;
+  steps: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+};
+
+export type OpencodeUsageStats = {
+  days: number;
+  sessions: number;
+  prompts: number;
+  steps: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+  models: OpencodeModelUsage[];
+};
+
 export type AgentAccountStatus = {
   cli: AgentCliId;
   state: AgentAccountState;
@@ -40,6 +66,8 @@ export type AgentAccountStatus = {
   modelCount?: number;
   /** Providers contributing those models, e.g. "opencode", "anthropic". */
   providers?: string[];
+  /** Local token/session/model usage reported by `opencode stats --json`. */
+  opencodeStats?: OpencodeUsageStats;
   /** Epoch milliseconds. */
   checkedAt: number;
 };

@@ -6,16 +6,18 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { RefreshCw } from "@/components/icons";
 import { SettingsGroup, SettingsRow, SettingsSection } from "@/components/settings/layout/SettingsPrimitives";
 import { LimitMeter } from "@/components/settings/usage/LimitMeter";
+import { formatCompactNumber, formatUsd } from "@/components/settings/usage/usage-format";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { useAgentStatus } from "@/lib/ai/agent-status/store";
-import type { AgentAccountStatus, AgentCliId } from "@/lib/ai/agent-status/types";
+import type { AgentAccountStatus, AgentCliId, OpencodeUsageStats } from "@/lib/ai/agent-status/types";
 import { CLAUDE_CLI_BINARY } from "@/lib/ai/providers/claude-cli";
 import { CODEX_CLI_BINARY } from "@/lib/ai/providers/codex-cli";
 import { OPENCODE_CLI_BINARY } from "@/lib/ai/providers/opencode-cli";
 import { probeAgentCli, type AgentCliProbe } from "@/lib/tauri/agent-cli";
 import { isTauriEnvWithOverride } from "@/lib/tauri/env";
+import { cn } from "@/lib/utils/cn";
 import { usePrefs, type AgentCliPrefs } from "@/stores/prefs";
 
 type LocalePick = (tr: string, en: string) => string;
@@ -119,26 +121,36 @@ export function CliProviderDetail({ cli, label }: Props) {
   const pick = useLocalePick();
   const spec = SPECS[cli];
   const status = useAgentStatus((s) => s.statuses[cli]);
-  const loading = useAgentStatus((s) => s.loading);
+  const isRefreshing = useAgentStatus((s) => Boolean(s.refreshing[cli]));
   const refresh = useAgentStatus((s) => s.refresh);
   const agentCli = usePrefs((s) => s.agentCli);
   const setAgentCli = usePrefs((s) => s.setAgentCli);
   const [now, setNow] = useState(() => Date.now());
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    setNow(Date.now());
+    setRefreshCount((c) => c + 1);
+    void refresh(cli, { force: true }).finally(() => {
+      setNow(Date.now());
+    });
+  }, [cli, refresh]);
+
   const savePrefs = useCallback(
     (next: AgentCliPrefs) => {
       setAgentCli(next);
-      void refresh(cli, { force: true });
+      handleRefresh();
     },
-    [cli, refresh, setAgentCli],
+    [handleRefresh, setAgentCli],
   );
 
   const line = statusLine(status, spec, pick);
+  const effectiveNow = Math.max(now, status?.checkedAt ?? 0);
 
   return (
     <div className="space-y-6">
@@ -149,14 +161,22 @@ export function CliProviderDetail({ cli, label }: Props) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {status?.version ? <span className="font-mono text-[12px] text-ink-3">v{status.version}</span> : null}
-          <Button size="icon-sm" onClick={() => void refresh(cli, { force: true })} disabled={loading} aria-label={pick("Yeniden kontrol et", "Check again")}>
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          <Button size="icon-sm" onClick={handleRefresh} disabled={isRefreshing} aria-label={pick("Yeniden kontrol et", "Check again")}>
+            <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} aria-hidden />
           </Button>
         </div>
       </div>
 
       <SettingsGroup>
-        <SettingsRow title={pick("Durum", "Status")} description={line.detail} control={<span className="text-[12.5px] font-medium text-ink-2">{line.title}</span>} />
+        <SettingsRow
+          title={pick("Durum", "Status")}
+          description={line.detail}
+          control={
+            <span className="text-[12.5px] font-medium text-ink-2">
+              {isRefreshing ? pick("Kontrol ediliyor…", "Checking…") : line.title}
+            </span>
+          }
+        />
       </SettingsGroup>
 
       {status?.limits.length ? (
@@ -168,11 +188,33 @@ export function CliProviderDetail({ cli, label }: Props) {
             </Link>
           }
         >
-          <SettingsGroup>
-            {status.limits.map((w) => (
-              <LimitMeter key={w.id} cli={cli} window={w} now={now} size="sm" />
-            ))}
-          </SettingsGroup>
+          <div className={cn("transition-opacity duration-150", isRefreshing && "opacity-60")}>
+            <SettingsGroup>
+              {status.limits.map((w) => (
+                <LimitMeter key={w.id} cli={cli} window={w} now={effectiveNow} size="sm" />
+              ))}
+            </SettingsGroup>
+          </div>
+        </SettingsSection>
+      ) : status?.opencodeStats ? (
+        <SettingsSection
+          title={pick(
+            `Kullanım özeti (Son ${status.opencodeStats.days} gün)`,
+            `Usage summary (Last ${status.opencodeStats.days} days)`,
+          )}
+          description={pick(
+            "OpenCode çoklu sağlayıcı kullandığı için tek bir abonelik kotası yerine yerel token ve model istatistiklerini raporlar.",
+            "Because OpenCode routes across multiple providers, it reports local token and model statistics instead of a single subscription quota.",
+          )}
+          action={
+            <Link href="/settings/usage" className="text-[12.5px] text-accent hover:underline">
+              {pick("Ayrıntılı kullanım", "Detailed usage")}
+            </Link>
+          }
+        >
+          <div className={cn("transition-opacity duration-150", isRefreshing && "opacity-60")}>
+            <OpencodeStatsGroup stats={status.opencodeStats} pick={pick} />
+          </div>
         </SettingsSection>
       ) : status?.limitsError ? (
         <p className="text-[12.5px] text-ink-3">{pick("Limitler okunamadı: ", "Could not read limits: ")}{status.limitsError}</p>
@@ -180,7 +222,13 @@ export function CliProviderDetail({ cli, label }: Props) {
 
       <SettingsSection title={pick("Çalışma ortamı", "Runtime")}>
         <SettingsGroup>
-          <BinaryPathRow spec={spec} agentCli={agentCli} onSave={savePrefs} pick={pick} />
+          <BinaryPathRow
+            spec={spec}
+            agentCli={agentCli}
+            refreshSignal={refreshCount}
+            onSave={savePrefs}
+            pick={pick}
+          />
           {spec.home ? <HomeRow cli={cli} home={spec.home} agentCli={agentCli} onSave={savePrefs} pick={pick} /> : null}
         </SettingsGroup>
       </SettingsSection>
@@ -290,11 +338,12 @@ function PrefTextRow({ id, title, description, saved, placeholder, onSave, pick,
 type BinaryRowProps = {
   spec: CliSpec;
   agentCli: AgentCliPrefs | undefined;
+  refreshSignal: number;
   onSave: (next: AgentCliPrefs) => void;
   pick: LocalePick;
 };
 
-function BinaryPathRow({ spec, agentCli, onSave, pick }: BinaryRowProps) {
+function BinaryPathRow({ spec, agentCli, refreshSignal, onSave, pick }: BinaryRowProps) {
   const saved = agentCli?.[spec.pathKey] ?? "";
   const [probe, setProbe] = useState<AgentCliProbe | null>(null);
   const probeVersion = useRef(0);
@@ -307,7 +356,7 @@ function BinaryPathRow({ spec, agentCli, onSave, pick }: BinaryRowProps) {
     return () => {
       probeVersion.current += 1;
     };
-  }, [saved, spec.binary]);
+  }, [saved, spec.binary, refreshSignal]);
 
   return (
     <PrefTextRow
@@ -328,5 +377,68 @@ function BinaryPathRow({ spec, agentCli, onSave, pick }: BinaryRowProps) {
         <p className="text-[12px] text-ink-3">{probe.error ?? pick(...spec.installHint)}</p>
       ) : null}
     </PrefTextRow>
+  );
+}
+
+export function OpencodeStatsGroup({
+  stats,
+  pick,
+}: {
+  stats: OpencodeUsageStats;
+  pick: LocalePick;
+}) {
+  const totalTokens =
+    stats.inputTokens +
+    stats.outputTokens +
+    stats.cacheReadTokens +
+    stats.cacheWriteTokens;
+
+  return (
+    <SettingsGroup>
+      <SettingsRow
+        title={pick("Toplam aktivite", "Total activity")}
+        description={pick(
+          `${stats.sessions} oturum · ${stats.prompts} istem · ${stats.steps} adım`,
+          `${stats.sessions} sessions · ${stats.prompts} prompts · ${stats.steps} steps`,
+        )}
+        control={
+          <span className="font-mono text-[13px] font-semibold tabular-nums text-ink">
+            {formatCompactNumber(totalTokens)} token
+            {stats.costUsd > 0 ? ` · ${formatUsd(stats.costUsd)}` : ""}
+          </span>
+        }
+      />
+      <SettingsRow
+        title={pick("Token dağılımı", "Token breakdown")}
+        description={pick(
+          `${formatCompactNumber(stats.inputTokens)} girdi · ${formatCompactNumber(stats.outputTokens)} çıktı · ${formatCompactNumber(stats.cacheReadTokens)} önbellek okuma${stats.reasoningTokens > 0 ? ` · ${formatCompactNumber(stats.reasoningTokens)} akıl yürütme` : ""}`,
+          `${formatCompactNumber(stats.inputTokens)} input · ${formatCompactNumber(stats.outputTokens)} output · ${formatCompactNumber(stats.cacheReadTokens)} cache read${stats.reasoningTokens > 0 ? ` · ${formatCompactNumber(stats.reasoningTokens)} reasoning` : ""}`,
+        )}
+      />
+      {stats.models.map((m) => {
+        const modelTotal =
+          m.inputTokens + m.outputTokens + m.cacheReadTokens + m.cacheWriteTokens;
+        return (
+          <SettingsRow
+            key={`${m.providerId}/${m.modelId}`}
+            title={
+              <span className="font-mono text-[12.5px] text-ink">
+                {m.providerId}/{m.modelId}
+              </span>
+            }
+            description={pick(
+              `${m.steps} adım · ${formatCompactNumber(m.inputTokens)} girdi · ${formatCompactNumber(m.outputTokens)} çıktı · ${formatCompactNumber(m.cacheReadTokens)} önbellek`,
+              `${m.steps} steps · ${formatCompactNumber(m.inputTokens)} input · ${formatCompactNumber(m.outputTokens)} output · ${formatCompactNumber(m.cacheReadTokens)} cache`,
+            )}
+            control={
+              <span className="font-mono text-[12.5px] tabular-nums text-ink-2">
+                {formatCompactNumber(modelTotal)} token
+                {m.costUsd > 0 ? ` · ${formatUsd(m.costUsd)}` : ""}
+              </span>
+            }
+          />
+        );
+      })}
+    </SettingsGroup>
   );
 }

@@ -25,7 +25,7 @@ const ok = (cli: AgentAccountStatus["cli"]): AgentAccountStatus => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
-  useAgentStatus.setState({ statuses: {}, loading: false });
+  useAgentStatus.setState({ statuses: {}, refreshing: {}, loading: false });
   claude.mockImplementation(async () => ok("claude"));
   codex.mockImplementation(async () => ok("codex"));
   opencode.mockImplementation(async () => ok("opencode"));
@@ -66,5 +66,24 @@ describe("useAgentStatus", () => {
     await refresh("claude");
     expect(claude).toHaveBeenCalledTimes(3);
     expect(useAgentStatus.getState().statuses.claude?.state).toBe("authenticated");
+  });
+
+  it("tracks per-CLI refreshing state while a forced probe is in flight", async () => {
+    let resolveClaude!: (s: AgentAccountStatus) => void;
+    claude.mockImplementationOnce(
+      () =>
+        new Promise<AgentAccountStatus>((res) => {
+          resolveClaude = res;
+        }),
+    );
+
+    const p = useAgentStatus.getState().refresh("claude", { force: true });
+    expect(useAgentStatus.getState().refreshing.claude).toBe(true);
+    expect(useAgentStatus.getState().refreshing.codex).toBeFalsy();
+
+    resolveClaude(ok("claude"));
+    await p;
+    expect(useAgentStatus.getState().refreshing.claude).toBe(false);
+    expect(useAgentStatus.getState().loading).toBe(false);
   });
 });

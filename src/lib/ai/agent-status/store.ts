@@ -25,6 +25,7 @@ const inflight = new Map<AgentCliId, Promise<void>>();
 
 type AgentStatusState = {
   statuses: Partial<Record<AgentCliId, AgentAccountStatus>>;
+  refreshing: Partial<Record<AgentCliId, boolean>>;
   loading: boolean;
   /** Refresh one CLI (or all). Cached results younger than the TTL are reused unless `force`. */
   refresh: (cli?: AgentCliId, opts?: { force?: boolean }) => Promise<void>;
@@ -56,15 +57,22 @@ export const useAgentStatus = create<AgentStatusState>()((set, get) => {
       set((s) => ({ statuses: { ...s.statuses, [cli]: status } }));
     })().finally(() => {
       inflight.delete(cli);
-      set({ loading: inflight.size > 0 });
+      set((s) => ({
+        loading: inflight.size > 0,
+        refreshing: { ...s.refreshing, [cli]: false },
+      }));
     });
     inflight.set(cli, run);
-    set({ loading: true });
+    set((s) => ({
+      loading: true,
+      refreshing: { ...s.refreshing, [cli]: true },
+    }));
     return run;
   };
 
   return {
     statuses: {},
+    refreshing: {},
     loading: false,
     refresh: async (cli, opts) => {
       const targets = cli ? [cli] : ALL;

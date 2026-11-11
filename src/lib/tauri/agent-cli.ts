@@ -145,6 +145,27 @@ export async function probeAgentCli(
 }
 
 /**
+ * Read OpenCode's local usage statistics (`opencode stats --models --cost --json`).
+ * Returns `null` on the web build or when the command fails (stats are optional
+ * metadata and must never fail the status probe).
+ */
+export async function readOpencodeCliStats(
+  path?: string | undefined,
+  days = 7,
+): Promise<unknown | null> {
+  const core = await getCore();
+  if (!core) return null;
+  try {
+    return await core.invoke<unknown>("agent_cli_opencode_stats", {
+      path: path ?? null,
+      days,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Spawn a session. Resolves once the process is running; output arrives on
  * `onEvent` until an `exit` event. Returns `null` on the web build.
  */

@@ -25,12 +25,17 @@ type PresetChooserProps = {
   // Optional override — defaults to the global QUICK_START_PRESETS list.
   // Useful for tests and Storybook variants that want a subset.
   presets?: QuickStartPreset[];
+  // Optional callback to indicate whether a cloud preset already has a stored
+  // key (or OAuth credential). When true on a requiresKey preset, the tile
+  // renders a "key saved" badge so the user can see which providers are ready.
+  isPresetConfigured?: (preset: QuickStartPreset) => boolean;
 };
 
 export function PresetChooser({
   selectedId,
   onSelect,
   presets = QUICK_START_PRESETS,
+  isPresetConfigured,
 }: PresetChooserProps) {
   const t = useLocalePick();
   const groupId = useId();
@@ -144,6 +149,11 @@ export function PresetChooser({
                   {t("anahtar yok", "no key")}
                 </Chip>
               ) : null}
+              {preset.requiresKey && isPresetConfigured?.(preset) ? (
+                <Chip size="sm" variant="ok">
+                  {t("anahtar kayıtlı", "key saved")}
+                </Chip>
+              ) : null}
             </div>
           </button>
         );
@@ -159,6 +169,9 @@ type DynamicKeyFieldProps = {
   invalid?: boolean;
   // Optional id for label association — Setup Wizard supplies one.
   inputId?: string;
+  // True when the user already has a saved API key (or OAuth token) for this
+  // preset's provider. Allows one-click Apply without re-pasting the key.
+  hasStoredKey?: boolean;
 };
 
 export function DynamicKeyField({
@@ -167,6 +180,7 @@ export function DynamicKeyField({
   onChange,
   invalid = false,
   inputId,
+  hasStoredKey = false,
 }: DynamicKeyFieldProps) {
   const t = useLocalePick();
 
@@ -206,15 +220,34 @@ export function DynamicKeyField({
     );
   }
 
+  const defaultPlaceholder =
+    preset.id === "anthropic"
+      ? "sk-ant-..."
+      : preset.id === "openrouter"
+        ? "sk-or-..."
+        : preset.id === "groq"
+          ? "gsk_..."
+          : preset.id === "gemini"
+            ? "AIza..."
+            : "";
+
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between gap-3">
-        <label
-          htmlFor={inputId}
-          className="text-[13px] font-medium text-ink-2"
-        >
-          {t(`${preset.label} API anahtarı`, `${preset.label} API key`)}
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label
+            htmlFor={inputId}
+            className="text-[13px] font-medium text-ink-2"
+          >
+            {t(`${preset.label} API anahtarı`, `${preset.label} API key`)}
+          </label>
+          {hasStoredKey ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-ok/40 bg-ok/10 px-2 py-0.5 font-mono text-[10.5px] text-ok">
+              <Check className="h-3 w-3" aria-hidden />
+              {t("Kayıtlı", "Saved")}
+            </span>
+          ) : null}
+        </div>
         <a
           href={preset.providerHomeUrl}
           target="_blank"
@@ -232,20 +265,25 @@ export function DynamicKeyField({
         autoComplete="off"
         spellCheck={false}
         placeholder={
-          preset.id === "anthropic"
-            ? "sk-ant-..."
-            : preset.id === "openrouter"
-              ? "sk-or-..."
-              : preset.id === "groq"
-                ? "gsk_..."
-                : preset.id === "gemini"
-                  ? "AIza..."
-                  : ""
+          hasStoredKey
+            ? t(
+                "Kayıtlı anahtar kullanılacak — değiştirmek için yeni anahtar yapıştır",
+                "Saved key will be used — paste a new key to replace",
+              )
+            : defaultPlaceholder
         }
         value={value}
         invalid={invalid}
         onChange={(e) => onChange(e.target.value)}
       />
+      {hasStoredKey && value.trim().length === 0 ? (
+        <p className="text-[12px] text-ink-3">
+          {t(
+            "Bu sağlayıcı için anahtar zaten kayıtlı. Yeni anahtar girmeden doğrudan Uygula diyebilirsin.",
+            "An API key is already saved for this provider. You can click Apply directly without entering a new key.",
+          )}
+        </p>
+      ) : null}
     </div>
   );
 }

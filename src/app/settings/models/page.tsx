@@ -114,7 +114,12 @@ export default function ModelsSettingsPage() {
     >
       <SettingsSection>
         <SettingsGroup>
-          <QuickStartRow keys={keys} />
+          <QuickStartRow
+            keys={keys}
+            onApplied={(applied) =>
+              setDraftBindings((prev) => ({ ...prev, ...applied }))
+            }
+          />
         </SettingsGroup>
       </SettingsSection>
 

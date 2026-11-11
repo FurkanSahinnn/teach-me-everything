@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { SettingsGroup } from "@/components/settings/layout/SettingsPrimitives";
+import { OpencodeStatsGroup } from "@/components/settings/providers/CliProviderDetail";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { useAgentStatus } from "@/lib/ai/agent-status/store";
 import type { AgentAccountStatus, AgentCliId } from "@/lib/ai/agent-status/types";
@@ -12,6 +13,7 @@ import { CLI_SERIES_COLOR, LimitMeter } from "./LimitMeter";
 const CLIS: readonly { cli: AgentCliId; label: string }[] = [
   { cli: "codex", label: "Codex" },
   { cli: "claude", label: "Claude Code" },
+  { cli: "opencode", label: "OpenCode" },
 ];
 
 const CLOCK_TICK_MS = 30_000;
@@ -41,6 +43,7 @@ export function UsageLimitsPanel() {
     <div className="space-y-6">
       {CLIS.map(({ cli, label }) => {
         const status = statuses[cli];
+        const effectiveNow = Math.max(now, status?.checkedAt ?? 0);
         return (
           <section key={cli} className="space-y-2">
             <div className="flex items-center gap-2">
@@ -51,9 +54,11 @@ export function UsageLimitsPanel() {
             {status?.limits.length ? (
               <SettingsGroup>
                 {status.limits.map((w) => (
-                  <LimitMeter key={w.id} cli={cli} window={w} now={now} />
+                  <LimitMeter key={w.id} cli={cli} window={w} now={effectiveNow} />
                 ))}
               </SettingsGroup>
+            ) : status?.opencodeStats ? (
+              <OpencodeStatsGroup stats={status.opencodeStats} pick={pick} />
             ) : (
               <p className="rounded-[var(--radius-lg)] border border-rule bg-paper-2 px-4 py-3 text-[12.5px] text-ink-3">
                 {emptyReason(status, pick)}

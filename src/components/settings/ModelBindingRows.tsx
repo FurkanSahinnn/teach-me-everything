@@ -14,6 +14,7 @@ import { SettingsRow } from "@/components/settings/layout/SettingsPrimitives";
 import type { ApiKeyManager } from "@/components/settings/ApiKeyRow";
 import {
   getQuickStartPreset,
+  type QuickStartPreset,
   type QuickStartPresetId,
 } from "@/lib/ai/quick-start-presets";
 import { type Provider } from "@/lib/db/schema";
@@ -119,7 +120,7 @@ export function ModelRow({
           options={options.map((o) => ({
             id: o.id,
             label: o.label,
-            detail: o.badges.map((b) => b.label.replace(/^S+s/, "")).join(" · "),
+            detail: o.badges.map((b) => b.label.replace(/^\S+\s/, "")).join(" · "),
           }))}
         />
       }
@@ -127,14 +128,28 @@ export function ModelRow({
   );
 }
 
+function isPresetKeyStored(
+  preset: QuickStartPreset,
+  keys: ApiKeyManager,
+): boolean {
+  if (!keys.storedLoaded || !preset.requiresKey) return false;
+  if (preset.providerId === "anthropic") {
+    return keys.isStored("anthropic") || keys.isStored("claude-code-oauth");
+  }
+  return keys.isStored(preset.providerId);
+}
+
 export function QuickStartRow({
   keys,
+  onApplied,
 }: {
   keys: ApiKeyManager;
+  onApplied?: ((applied: Partial<ModelBindings>) => void) | undefined;
 }) {
   const pick = useLocalePick();
   const { toast } = useToast();
   const setModelBinding = usePrefs((s) => s.setModelBinding);
+  const setProviderEnabled = usePrefs((s) => s.setProviderEnabled);
   const [selectedId, setSelectedId] = useState<QuickStartPresetId | null>(null);
   const [keyValue, setKeyValue] = useState("");
   const [applying, setApplying] = useState(false);
@@ -144,8 +159,10 @@ export function QuickStartRow({
     [selectedId],
   );
 
+  const hasStoredKey = preset ? isPresetKeyStored(preset, keys) : false;
+
   const canApply = preset
-    ? !preset.requiresKey || keyValue.trim().length > 0
+    ? !preset.requiresKey || hasStoredKey || keyValue.trim().length > 0
     : false;
 
   function handleSelect(id: QuickStartPresetId): void {
@@ -157,27 +174,34 @@ export function QuickStartRow({
     if (!preset) return;
     setApplying(true);
     try {
-      if (preset.requiresKey) {
-        keys.setDraft(preset.providerId, keyValue.trim());
+      const trimmedKey = keyValue.trim();
+      if (preset.requiresKey && trimmedKey.length > 0) {
+        await keys.save(preset.providerId, trimmedKey);
       }
-      // Apply bindings before the (potentially async) saveAll so the toast
-      // fires once both have landed.
+      setProviderEnabled(preset.providerId, true);
       for (const [task, model] of Object.entries(preset.defaultBindings)) {
         if (model) {
           setModelBinding(task as keyof ModelBindings, model);
         }
       }
+      onApplied?.(preset.defaultBindings);
       await keys.saveAll();
+      const updatedEmbed = Boolean(preset.defaultBindings.embedPresetId);
       toast({
         variant: "success",
         title: pick(
           `${preset.label} hızlı başlangıç uygulandı`,
           `${preset.label} quick-start applied`,
         ),
-        description: pick(
-          "Sohbet, özet ve gömme modelleri güncellendi.",
-          "Chat, summary, and embed models updated.",
-        ),
+        description: updatedEmbed
+          ? pick(
+              "Tüm görev ve gömme (embedding) modelleri güncellendi.",
+              "All task and embedding models updated.",
+            )
+          : pick(
+              "Tüm sohbet ve analiz görev modelleri güncellendi (embedding modeli korundu).",
+              "All chat and analysis task models updated (embedding model kept).",
+            ),
       });
       setKeyValue("");
     } finally {
@@ -195,12 +219,16 @@ export function QuickStartRow({
       </div>
       <p className="mt-1.5 max-w-[60ch] text-[13px] text-ink-3">
         {pick(
-          "Tek tıkla bir sağlayıcı seç — aşağıdaki dört model satırı otomatik güncellenir.",
-          "Pick one provider — the four model rows below get updated automatically.",
+          "Tek tıkla bir sağlayıcı seç — aşağıdaki görev modelleri otomatik güncellenir.",
+          "Pick one provider — the task models below get updated automatically.",
         )}
       </p>
       <div className="mt-4">
-        <PresetChooser selectedId={selectedId} onSelect={handleSelect} />
+        <PresetChooser
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          isPresetConfigured={(p) => isPresetKeyStored(p, keys)}
+        />
       </div>
       <div className="mt-4">
         <DynamicKeyField
@@ -208,6 +236,7 @@ export function QuickStartRow({
           value={keyValue}
           onChange={setKeyValue}
           inputId="settings-quickstart-key"
+          hasStoredKey={hasStoredKey}
         />
       </div>
       <div className="mt-4 flex items-center justify-end">

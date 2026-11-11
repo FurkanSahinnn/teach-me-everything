@@ -114,6 +114,19 @@ describe("PresetChooser", () => {
     const last = QUICK_START_PRESETS[QUICK_START_PRESETS.length - 1]!;
     expect(onSelect).toHaveBeenCalledWith(last.id);
   });
+
+  it("renders key-saved chip on cloud presets when isPresetConfigured returns true", () => {
+    render(
+      <PresetChooser
+        selectedId={null}
+        onSelect={() => {}}
+        isPresetConfigured={(p) => p.id === "gemini"}
+      />,
+    );
+    expect(
+      screen.getByText(/anahtar kayıtlı|key saved/i),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("DynamicKeyField", () => {
@@ -189,5 +202,21 @@ describe("DynamicKeyField", () => {
     );
     const input = document.querySelector("input")!;
     expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("shows saved badge and helper hint when hasStoredKey is true and value is empty", () => {
+    const gemini = getQuickStartPreset("gemini")!;
+    render(
+      <DynamicKeyField
+        preset={gemini}
+        value=""
+        onChange={() => {}}
+        hasStoredKey
+      />,
+    );
+    expect(screen.getByText(/^(Kayıtlı|Saved)$/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/anahtar zaten kayıtlı|already saved/i),
+    ).toBeInTheDocument();
   });
 });

@@ -50,31 +50,74 @@ describe("quick-start-presets registry", () => {
     }
   });
 
-  it("every defaultBindings.chat is a non-empty string", () => {
+  it("every preset populates all 8 chat/task model bindings with valid catalog models", () => {
+    const chatTaskKeys = [
+      "chat",
+      "summary",
+      "quick",
+      "flashcardGen",
+      "roadmapGen",
+      "analysisExtract",
+      "analysisSynthesize",
+      "analysisCritique",
+    ] as const;
+
     for (const qs of QUICK_START_PRESETS) {
-      expect(qs.defaultBindings.chat).toBeTruthy();
-      expect(typeof qs.defaultBindings.chat).toBe("string");
+      const full = PROVIDER_PRESETS[qs.providerId as keyof typeof PROVIDER_PRESETS]!;
+      const validModelIds = new Set<string>([
+        ...(full.availableModels?.map((m) => m.id) ?? []),
+        ...(full.defaultModels.chat ? [full.defaultModels.chat] : []),
+      ]);
+
+      for (const taskKey of chatTaskKeys) {
+        const binding = qs.defaultBindings[taskKey];
+        expect(binding, `${qs.id}.${taskKey} should be set`).toBeTruthy();
+        expect(typeof binding).toBe("string");
+        const prefix = `${qs.providerId}::`;
+        expect(binding!.startsWith(prefix)).toBe(true);
+        const modelId = binding!.slice(prefix.length);
+        expect(
+          validModelIds.has(modelId),
+          `model "${modelId}" for ${qs.id}.${taskKey} must exist in PROVIDER_PRESETS[${qs.providerId}]`,
+        ).toBe(true);
+      }
     }
   });
 
-  it("when embedPresetId is set, it points to a real EMBED_PRESETS entry", () => {
+  it("when embedPresetId is set, it points to a real, non-deprecated EMBED_PRESETS entry", () => {
     for (const qs of QUICK_START_PRESETS) {
       const eid = qs.defaultBindings.embedPresetId;
       if (!eid) continue;
-      // Type narrow — EMBED_PRESETS is keyed by EmbedPresetId, but quick-start
-      // stores it as `EmbedPresetId | string`. Index defensively.
-      const exists = (EMBED_PRESETS as Record<string, unknown>)[eid];
+      const exists = (
+        EMBED_PRESETS as Record<string, { deprecated?: boolean } | undefined>
+      )[eid];
       expect(exists, `embed preset "${eid}" missing for ${qs.id}`).toBeDefined();
+      expect(
+        exists?.deprecated,
+        `embed preset "${eid}" for ${qs.id} must not be retired/deprecated`,
+      ).not.toBe(true);
     }
   });
 
-  it("chat-only providers (groq/anthropic/openrouter) leave embedPresetId unset", () => {
+  it("chat-only providers without an embed endpoint (groq/anthropic) leave embedPresetId unset", () => {
     const chatOnly = QUICK_START_PRESETS.filter((p) =>
-      ["groq", "anthropic", "openrouter"].includes(p.id),
+      ["groq", "anthropic"].includes(p.id),
     );
     for (const qs of chatOnly) {
       expect(qs.defaultBindings.embedPresetId).toBeUndefined();
     }
+  });
+
+  it("providers with embedding support (gemini/ollama/openrouter) set embedPresetId", () => {
+    expect(getQuickStartPreset("gemini")?.defaultBindings.embedPresetId).toBe(
+      "gemini-embed-2",
+    );
+    expect(getQuickStartPreset("ollama")?.defaultBindings.embedPresetId).toBe(
+      "ollama-nomic",
+    );
+    expect(
+      getQuickStartPreset("openrouter")?.defaultBindings.embedPresetId,
+    ).toBe("openrouter-3-small");
   });
 
   it("providerHomeUrl is a valid https URL for every preset", () => {

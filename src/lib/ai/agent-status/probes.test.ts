@@ -4,14 +4,22 @@ import type { AgentCliEvent } from "@/lib/tauri/agent-cli";
 vi.mock("@/lib/tauri/agent-cli", () => ({
   getAgentWorkspace: vi.fn(async () => "/app/agent-workspace"),
   probeAgentCli: vi.fn(),
+  readOpencodeCliStats: vi.fn(async () => null),
   startAgentCli: vi.fn(),
   writeAgentCli: vi.fn(),
   stopAgentCli: vi.fn(async () => {}),
 }));
-import { probeAgentCli, startAgentCli, stopAgentCli, writeAgentCli } from "@/lib/tauri/agent-cli";
+import {
+  probeAgentCli,
+  readOpencodeCliStats,
+  startAgentCli,
+  stopAgentCli,
+  writeAgentCli,
+} from "@/lib/tauri/agent-cli";
 import { probeClaudeStatus, probeCodexStatus, probeOpencodeStatus } from "./probes";
 
 const probe = vi.mocked(probeAgentCli);
+const opencodeStats = vi.mocked(readOpencodeCliStats);
 const start = vi.mocked(startAgentCli);
 const write = vi.mocked(writeAgentCli);
 const stop = vi.mocked(stopAgentCli);
@@ -172,14 +180,31 @@ describe("probeOpencodeStatus", () => {
     });
   }
 
-  it("reports ready with the model count and connected providers", async () => {
+  it("reports ready with the model count, connected providers, and parsed stats", async () => {
     opencodeWith(session(["opencode/big-pickle", "opencode-go/kimi-k3", "anthropic/claude-sonnet-5-5"]));
+    opencodeStats.mockResolvedValueOnce({
+      sessions: 3,
+      prompts: 10,
+      steps: 42,
+      tokens: { input: 5000, output: 1000, reasoning: 0, cache: { read: 20000, write: 0 } },
+      cost: 0,
+      models: [],
+    });
 
     const s = await probeOpencodeStatus({ path: "/bin/opencode", env: { HTTPS_PROXY: "http://p" } });
 
     expect(s).toMatchObject({
       cli: "opencode", state: "authenticated", version: "2.2.6", modelCount: 3,
       providers: ["opencode", "opencode-go", "anthropic"],
+      opencodeStats: {
+        days: 7,
+        sessions: 3,
+        prompts: 10,
+        steps: 42,
+        inputTokens: 5000,
+        outputTokens: 1000,
+        cacheReadTokens: 20000,
+      },
     });
     expect(start.mock.calls[0]?.[0]).toMatchObject({ cli: "opencode", args: ["acp"], path: "/bin/opencode", env: { HTTPS_PROXY: "http://p" } });
     expect(stop).toHaveBeenCalledTimes(1);

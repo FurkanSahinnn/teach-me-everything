@@ -48,7 +48,7 @@ export type QuickStartPreset = {
   freeTier: boolean;
   // Models to write into prefs.modelBindings when this preset is applied.
   // Partial because not every provider has an embed model — chat-only
-  // providers (Groq / Anthropic / OpenRouter) leave embedPresetId untouched
+  // providers (Groq / Anthropic) leave embedPresetId untouched
   // so the user keeps whatever default they had.
   defaultBindings: Partial<ModelBindings>;
 };
@@ -67,11 +67,15 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
     isLocal: false,
     freeTier: true,
     defaultBindings: {
-      chat: encodeChatModelBinding("google-gemini", "gemini-2.5-flash"),
-      summary: encodeChatModelBinding("google-gemini", "gemini-2.5-flash"),
-      quick: encodeChatModelBinding("google-gemini", "gemini-2.5-flash"),
-      embedPresetId: "gemini-004",
-      flashcardGen: encodeChatModelBinding("google-gemini", "gemini-2.5-flash"),
+      chat: encodeChatModelBinding("google-gemini", "gemini-3.5-flash"),
+      summary: encodeChatModelBinding("google-gemini", "gemini-3.5-flash"),
+      quick: encodeChatModelBinding("google-gemini", "gemini-3.1-flash-lite"),
+      embedPresetId: "gemini-embed-2",
+      flashcardGen: encodeChatModelBinding("google-gemini", "gemini-3.5-flash"),
+      roadmapGen: encodeChatModelBinding("google-gemini", "gemini-3.5-flash"),
+      analysisExtract: encodeChatModelBinding("google-gemini", "gemini-3.1-flash-lite"),
+      analysisSynthesize: encodeChatModelBinding("google-gemini", "gemini-3.5-flash"),
+      analysisCritique: encodeChatModelBinding("google-gemini", "gemini-3.5-flash"),
     },
   },
   {
@@ -93,6 +97,10 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
       quick: encodeChatModelBinding("ollama", "qwen2.5:14b"),
       embedPresetId: "ollama-nomic",
       flashcardGen: encodeChatModelBinding("ollama", "qwen2.5:14b"),
+      roadmapGen: encodeChatModelBinding("ollama", "qwen2.5:14b"),
+      analysisExtract: encodeChatModelBinding("ollama", "qwen2.5:14b"),
+      analysisSynthesize: encodeChatModelBinding("ollama", "qwen2.5:14b"),
+      analysisCritique: encodeChatModelBinding("ollama", "qwen2.5:14b"),
     },
   },
   {
@@ -112,6 +120,10 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
       summary: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
       quick: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
       flashcardGen: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
+      roadmapGen: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
+      analysisExtract: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
+      analysisSynthesize: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
+      analysisCritique: encodeChatModelBinding("groq", "llama-3.3-70b-versatile"),
     },
   },
   {
@@ -131,6 +143,10 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
       summary: encodeChatModelBinding("anthropic", "claude-sonnet-4-6"),
       quick: encodeChatModelBinding("anthropic", "claude-haiku-4-5"),
       flashcardGen: encodeChatModelBinding("anthropic", "claude-sonnet-4-6"),
+      roadmapGen: encodeChatModelBinding("anthropic", "claude-sonnet-4-6"),
+      analysisExtract: encodeChatModelBinding("anthropic", "claude-haiku-4-5"),
+      analysisSynthesize: encodeChatModelBinding("anthropic", "claude-sonnet-4-6"),
+      analysisCritique: encodeChatModelBinding("anthropic", "claude-sonnet-4-6"),
     },
   },
   {
@@ -149,7 +165,12 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
       chat: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
       summary: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
       quick: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
+      embedPresetId: "openrouter-3-small",
       flashcardGen: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
+      roadmapGen: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
+      analysisExtract: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
+      analysisSynthesize: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
+      analysisCritique: encodeChatModelBinding("openrouter", "z-ai/glm-5"),
     },
   },
 ];

@@ -47,6 +47,8 @@ export type ProviderCatalogInput = {
   /** Provider ids that have a credential on file (keychain or dexie). */
   storedKeys: ReadonlySet<string>;
   agentStatuses: Partial<Record<AgentCliId, AgentAccountStatus>>;
+  /** CLIs currently running a status probe. */
+  refreshingClis?: Partial<Record<AgentCliId, boolean>> | undefined;
   customEndpoints: readonly CatalogCustomEndpoint[];
   disabledProviders: ReadonlySet<string>;
 };
@@ -100,7 +102,13 @@ function presetEntry(preset: ProviderPreset, input: ProviderCatalogInput): Provi
   const base = { id: preset.id, group, label: preset.label, enabled: !input.disabledProviders.has(preset.id) };
   if (cli) {
     const status = input.agentStatuses[cli];
-    return { ...base, cli, status: cliStatus(status), ...(status?.version ? { version: status.version } : {}) };
+    const isRefreshing = Boolean(input.refreshingClis?.[cli]);
+    return {
+      ...base,
+      cli,
+      status: isRefreshing ? { tone: "muted", key: "cli_checking" } : cliStatus(status),
+      ...(status?.version ? { version: status.version } : {}),
+    };
   }
   if (group === "local") return { ...base, status: { tone: "muted", key: "local_server" } };
   const keyIds = KEY_ALIASES[preset.id] ?? [preset.id];

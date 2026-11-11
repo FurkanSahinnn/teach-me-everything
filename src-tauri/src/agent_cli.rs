@@ -682,13 +682,84 @@ fn probe_cli(cli: &str, path: Option<String>) -> AgentCliProbe {
 }
 
 fn read_tail(mut reader: impl Read) -> String {
+  read_bounded(&mut reader, STDERR_TAIL_CAP)
+}
+
+fn read_bounded(reader: &mut impl Read, cap: usize) -> String {
   let mut tail = String::new();
   let mut bytes = [0u8; 4096];
   while let Ok(n) = reader.read(&mut bytes) {
     if n == 0 { break; }
-    append_tail(&mut tail, &String::from_utf8_lossy(&bytes[..n]));
+    tail.push_str(&String::from_utf8_lossy(&bytes[..n]));
+    if tail.len() > cap {
+      let mut start = tail.len() - cap;
+      while !tail.is_char_boundary(start) { start += 1; }
+      tail.drain(..start);
+    }
   }
   tail
+}
+
+#[tauri::command]
+pub async fn agent_cli_opencode_stats(
+  path: Option<String>,
+  days: Option<u32>,
+) -> Result<serde_json::Value, String> {
+  tauri::async_runtime::spawn_blocking(move || opencode_stats(path, days.unwrap_or(7)))
+    .await
+    .map_err(|e| format!("Could not schedule OpenCode stats: {e}"))?
+}
+
+fn opencode_stats(path: Option<String>, days: u32) -> Result<serde_json::Value, String> {
+  let clamped_days = days.clamp(1, 365);
+  let resolved = match path.as_deref().filter(|p| !p.trim().is_empty()) {
+    Some(p) => PathBuf::from(p),
+    None => detect_cli("opencode")
+      .ok_or_else(|| "opencode was not found in any known location".to_string())?,
+  };
+  let launch = validate_entry("opencode", &resolved).and_then(|_| resolve_launch(&resolved))?;
+
+  let mut args = launch.prefix_args.clone();
+  args.extend([
+    "stats".to_string(),
+    "--days".to_string(),
+    clamped_days.to_string(),
+    "--models".to_string(),
+    "--cost".to_string(),
+    "--json".to_string(),
+  ]);
+
+  let mut command = Command::new(&launch.program);
+  command
+    .args(args)
+    .env("OPENCODE_DISABLE_AUTOUPDATE", "1")
+    .env("OPENCODE_DISABLE_FILEWATCHER", "1")
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+  let (child, tree) = spawn_managed(&mut command)?;
+  let stdout_reader = child.take_stdout().map(|mut pipe| std::thread::spawn(move || read_bounded(&mut pipe, 256 * 1024)));
+  let stderr_reader = child.take_stderr().map(|pipe| std::thread::spawn(move || read_tail(pipe)));
+  let status = child.wait_timeout(std::time::Duration::from_secs(10));
+  tree.terminate();
+  let _ = child.kill();
+  let _ = child.wait();
+  let stdout = stdout_reader.and_then(|t| t.join().ok()).unwrap_or_default();
+  let stderr_tail = stderr_reader.and_then(|t| t.join().ok()).unwrap_or_default();
+  match status {
+    Ok(Some(s)) if s.success() => {}
+    Ok(None) => return Err("OpenCode stats timed out".to_string()),
+    Ok(Some(_)) => {
+      return Err(if stderr_tail.trim().is_empty() {
+        "OpenCode stats command failed".to_string()
+      } else {
+        stderr_tail.trim().to_string()
+      });
+    }
+    Err(e) => return Err(format!("Could not wait for OpenCode stats: {e}")),
+  }
+  serde_json::from_str::<serde_json::Value>(stdout.trim())
+    .map_err(|e| format!("Could not parse OpenCode stats JSON: {e}"))
 }
 
 fn spawn_managed(cmd: &mut Command) -> Result<(Arc<SharedChild>, Arc<ProcessTree>), String> {
