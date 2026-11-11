@@ -17,8 +17,8 @@ export function AnalysisEmptyState({ onCreate }: Props) {
         icon={<FileSearch />}
         title={pick("Henüz analiz yok", "No analyses yet")}
         description={pick(
-          "Bir kaynağı seç — AI onu çok aşamalı olarak analiz eder: ne diyor, sorunu nasıl çözüyor, eleştirisi ve çift dilli terim sözlüğü.",
-          "Pick a source — AI runs a multi-stage analysis: what it says, how it solves the problem, a critique, and a bilingual glossary.",
+          "Bir makale seç; AI kaynak bağlantılı, okunabilir bir analiz hazırlasın. Sonra bölümleri asistana sorabilir veya düzenletebilirsin.",
+          "Pick a paper for a readable, source-linked brief. Then ask the assistant about any section or revise it.",
         )}
         {...(onCreate
           ? {

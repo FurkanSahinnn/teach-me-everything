@@ -9,6 +9,7 @@ import {
   buildReflectionSystem,
   buildStageUserMessage,
   buildSynthesizeSystem,
+  buildBriefSystem,
 } from "@/lib/ai/prompts/article-analysis";
 import { getChatProvider } from "@/lib/ai/providers/registry";
 import type {
@@ -60,6 +61,20 @@ import type {
 } from "@/lib/article-analysis/types";
 import { listChunksBySource } from "@/lib/db/chunks";
 import { getSource } from "@/lib/db/sources";
+import { ensureArxivFullText } from "@/lib/research/arxiv-fulltext";
+import {
+  countBriefWords,
+  countTextWords,
+  countUnmatchedSourceBlocks,
+  hasSufficientBriefDepth,
+  materializeBrief,
+  minimumBriefWords,
+  parseBrief,
+  parseBriefProgress,
+  projectBriefToLegacy,
+  streamingBriefText,
+  type ArticleBrief,
+} from "@/lib/article-analysis/brief";
 
 // Typed error for fatal pipeline failures. A SINGLE degraded stage never
 // throws — it downgrades the result to status "draft" with a fallbackReason.
@@ -92,6 +107,7 @@ const STAGE_MAX_TOKENS = 4096;
 // (20+ bilingual terms). A truncated buffer yields unbalanced braces → a draft
 // with that whole section silently dropped, so these get the headroom.
 const RICH_STAGE_MAX_TOKENS = 8192;
+const BRIEF_MAX_TOKENS = 12_000;
 
 // The Map stage used to launch every section call at once. On a paper that
 // groups into a dozen sections that burst is exactly what trips a provider's
@@ -108,10 +124,12 @@ export const MAP_CONCURRENCY = 3;
 const MAX_REPORTED_MAP_REASONS = 2;
 
 export type ArticleAnalysisStageEvent =
+  | { stage: "prepare" }
   | { stage: "map"; index: number; total: number }
   | { stage: "reduce" }
   | { stage: "specialists" }
   | { stage: "synthesize" }
+  | { stage: "expand" }
   | { stage: "done" };
 
 export type RunArticleAnalysisArgs = {
@@ -124,6 +142,8 @@ export type RunArticleAnalysisArgs = {
   models: { extract: string; synthesize: string; critique: string };
   signal?: AbortSignal | undefined;
   onStage?: ((ev: ArticleAnalysisStageEvent) => void) | undefined;
+  onDraft?: ((brief: ArticleBrief) => Promise<void> | void) | undefined;
+  onStreamText?: ((text: string) => void) | undefined;
 };
 
 export type RunArticleAnalysisResult = {
@@ -132,6 +152,167 @@ export type RunArticleAnalysisResult = {
   status: "ready" | "draft";
   fallbackReason?: string | undefined;
 };
+
+export type RunArticleBriefResult = RunArticleAnalysisResult & { brief: ArticleBrief };
+
+// Adaptive reading flow: one synthesis call for papers that fit the article
+// window; bounded section extraction followed by one writer for longer papers.
+// The legacy projection keeps cross-paper comparison and existing exports usable.
+export async function runArticleBrief(
+  args: RunArticleAnalysisArgs,
+): Promise<RunArticleBriefResult> {
+  const { sourceId, targetLang, signal, onStage } = args;
+  if (signal?.aborted) throw new ArticleAnalysisError("aborted", "Analysis aborted");
+  const [source, originalChunks] = await Promise.all([
+    getSource(sourceId),
+    listChunksBySource(sourceId),
+  ]);
+  if (!source || originalChunks.length === 0) {
+    throw new ArticleAnalysisError("empty_source", "Source has no chunks to analyze");
+  }
+  onStage?.({ stage: "prepare" });
+  const chunks = await ensureArxivFullText(source, originalChunks, signal);
+  const models = await resolveBriefModels(args.models);
+  const window = buildArticleWindow(chunks);
+  const sourceWords = chunks.reduce((total, chunk) => total + countTextWords(chunk.text), 0);
+  const minimumWords = minimumBriefWords(sourceWords);
+  const failed: string[] = [];
+  let usage: Usage = {};
+  let costUsd = 0;
+  const accrue = (out: { usage: Usage; model: string }): void => {
+    usage = mergeUsage(usage, out.usage);
+    costUsd += computeCostUsd(out.model, out.usage);
+  };
+
+  const summaries: MapStageOutput[] = [];
+  if (window.truncated) {
+    const groups = groupChunksIntoSections(chunks, {
+      maxChunksPerGroup: 12,
+      maxTokensPerGroup: 8000,
+      maxGroups: chunks.length,
+    });
+    let settled = 0;
+    const mapped = await mapWithConcurrency(groups, MAP_CONCURRENCY, async (group) => {
+      if (signal?.aborted) throw new ArticleAnalysisError("aborted", "Analysis aborted");
+      try {
+        return await runWithRetry(
+          () => callStage(
+            models.extract,
+            buildMapSystem({
+              articleText: groupToText(group),
+              targetLang,
+              ...(group.sectionTitle ? { sectionTitle: group.sectionTitle } : {}),
+            }),
+            buildStageUserMessage(targetLang),
+            parseMapStage,
+            signal,
+          ),
+          { isRetryable: isRetryableStreamError, ...(signal ? { signal } : {}) },
+        );
+      } finally {
+        settled += 1;
+        onStage?.({ stage: "map", index: settled - 1, total: groups.length });
+      }
+    });
+    for (const item of mapped) {
+      if (item.status === "fulfilled") {
+        summaries.push(item.value.value);
+        accrue(item.value);
+      } else {
+        rethrowIfFatal(item.reason);
+        failed.push(`section extraction: ${stageFailureDetail(item.reason)}`);
+      }
+    }
+  }
+
+  onStage?.({ stage: "synthesize" });
+  const quoteIndex = buildQuoteIndex(chunks);
+  const coverage = { includedChunks: window.includedChunks, omittedChunks: window.omittedChunks };
+  let revealedSections = -1;
+  let lastPreview = "";
+  const out = await callStage(
+    models.synthesize,
+    buildBriefSystem({ articleText: window.text, targetLang, sectionSummaries: summaries, minimumWords }),
+    buildStageUserMessage(targetLang),
+    parseBrief,
+    signal,
+    BRIEF_MAX_TOKENS,
+    args.onDraft || args.onStreamText ? async (raw) => {
+      if (args.onDraft) {
+        const progress = parseBriefProgress(raw);
+        if (progress.ok && progress.value.sections.length > revealedSections) {
+          revealedSections = progress.value.sections.length;
+          await args.onDraft(materializeBrief(progress.value, quoteIndex, coverage));
+          lastPreview = "";
+          args.onStreamText?.("");
+        }
+      }
+      const preview = streamingBriefText(raw);
+      if (preview && preview !== lastPreview) {
+        lastPreview = preview;
+        args.onStreamText?.(preview);
+      }
+    } : undefined,
+  );
+  args.onStreamText?.("");
+  accrue(out);
+  let brief = materializeBrief(out.value, quoteIndex, coverage);
+  if (!hasSufficientBriefDepth(brief, sourceWords)) {
+    onStage?.({ stage: "expand" });
+    try {
+      const expanded = await callStage(
+        models.synthesize,
+        buildBriefSystem({
+          articleText: window.text,
+          targetLang,
+          sectionSummaries: summaries,
+          minimumWords,
+          previousBrief: out.value,
+        }),
+        buildStageUserMessage(targetLang),
+        parseBrief,
+        signal,
+        BRIEF_MAX_TOKENS,
+        args.onStreamText ? (raw) => {
+          const preview = streamingBriefText(raw);
+          if (preview) args.onStreamText?.(preview);
+        } : undefined,
+      );
+      accrue(expanded);
+      const candidate = materializeBrief(expanded.value, quoteIndex, coverage);
+      const candidateBlocks = 1 + candidate.sections.reduce((sum, section) => sum + section.blocks.length, 0);
+      const allowedUnmatched = Math.max(countUnmatchedSourceBlocks(brief), Math.ceil(candidateBlocks * 0.05));
+      if (countBriefWords(candidate) > countBriefWords(brief)
+        && countUnmatchedSourceBlocks(candidate) <= allowedUnmatched) {
+        brief = candidate;
+      }
+    } catch (err) {
+      rethrowIfFatal(err);
+      failed.push(`expansion: ${stageFailureDetail(err)}`);
+    } finally {
+      args.onStreamText?.("");
+    }
+    if (!hasSufficientBriefDepth(brief, sourceWords)) {
+      failed.push(`insufficient detail: ${countBriefWords(brief)} of ${minimumWords} words`);
+    }
+  }
+  const unmatched = countUnmatchedSourceBlocks(brief);
+  if (unmatched > 0) failed.push(`${unmatched} source claim(s) have no matching passage`);
+  onStage?.({ stage: "done" });
+  return {
+    brief,
+    payload: projectBriefToLegacy(brief),
+    usage: {
+      inputTokens: usage.input_tokens ?? 0,
+      outputTokens: usage.output_tokens ?? 0,
+      ...(usage.cache_read_input_tokens !== undefined ? { cacheReadTokens: usage.cache_read_input_tokens } : {}),
+      ...(usage.cache_creation_input_tokens !== undefined ? { cacheCreationTokens: usage.cache_creation_input_tokens } : {}),
+      costUsd,
+    },
+    status: failed.length > 0 ? "draft" : "ready",
+    ...(failed.length > 0 ? { fallbackReason: summarizeReasons(failed) } : {}),
+  };
+}
 
 // A model binding resolved once up front: upstream model id + the credential
 // for its preset. Credentials are cached by preset so models sharing a preset
@@ -161,6 +342,7 @@ function mergeUsage(a: Usage, b: Usage): Usage {
 async function drainStream(
   handle: ReturnType<ReturnType<typeof getChatProvider>["streamChat"]>,
   fallbackModel: string,
+  onText?: ((raw: string) => Promise<void> | void) | undefined,
 ): Promise<{
   buffer: string;
   model: string;
@@ -175,6 +357,7 @@ async function drainStream(
     for await (const event of handle.events) {
       if (event.kind === "text") {
         buffer += event.delta;
+        await onText?.(buffer);
       } else if (event.kind === "start") {
         model = event.model || model;
         usage = event.usage ?? usage;
@@ -216,20 +399,9 @@ function summarizeReasons(reasons: readonly string[]): string {
   return rest > 0 ? `${shown}; +${rest} more` : shown;
 }
 
-async function resolveModels(models: {
-  extract: string;
-  synthesize: string;
-  critique: string;
-}): Promise<{
-  extract: ResolvedModel;
-  synthesize: ResolvedModel;
-  critique: ResolvedModel;
-}> {
-  const credCache = new Map<
-    string,
-    { apiKey: string; authKind?: "oauth" | "api-key" | undefined }
-  >();
-  const resolveOne = async (binding: string): Promise<ResolvedModel> => {
+function createModelResolver() {
+  const credCache = new Map<string, { apiKey: string; authKind?: "oauth" | "api-key" | undefined }>();
+  return async (binding: string): Promise<ResolvedModel> => {
     const option = findChatOption(binding);
     if (!option) {
       throw new ArticleAnalysisError(
@@ -256,6 +428,29 @@ async function resolveModels(models: {
       ...(cred.authKind ? { authKind: cred.authKind } : {}),
     };
   };
+}
+
+async function resolveBriefModels(models: { extract: string; synthesize: string }): Promise<{
+  extract: ResolvedModel;
+  synthesize: ResolvedModel;
+}> {
+  const resolveOne = createModelResolver();
+  const [extract, synthesize] = await Promise.all([
+    resolveOne(models.extract), resolveOne(models.synthesize),
+  ]);
+  return { extract, synthesize };
+}
+
+async function resolveModels(models: {
+  extract: string;
+  synthesize: string;
+  critique: string;
+}): Promise<{
+  extract: ResolvedModel;
+  synthesize: ResolvedModel;
+  critique: ResolvedModel;
+}> {
+  const resolveOne = createModelResolver();
   const [extract, synthesize, critique] = await Promise.all([
     resolveOne(models.extract),
     resolveOne(models.synthesize),
@@ -274,6 +469,7 @@ async function callStage<T>(
   parse: (raw: string) => ParseResult<T>,
   signal: AbortSignal | undefined,
   maxTokens: number = STAGE_MAX_TOKENS,
+  onText?: ((raw: string) => Promise<void> | void) | undefined,
 ): Promise<{ value: T; usage: Usage; model: string }> {
   const provider = getChatProvider(model.presetId, {
     ...(model.authKind ? { authKind: model.authKind } : {}),
@@ -287,7 +483,7 @@ async function callStage<T>(
     maxTokens,
     ...(signal ? { signal } : {}),
   };
-  const drained = await drainStream(provider.streamChat(request), model.modelId);
+  const drained = await drainStream(provider.streamChat(request), model.modelId, onText);
   const parsed = parse(drained.buffer);
   if (!parsed.ok) {
     // A buffer cut off at the output cap yields unbalanced braces → "no_json".

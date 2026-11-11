@@ -176,8 +176,8 @@ export default function ModelsSettingsPage() {
             options={summaryOptions}
             keys={keys}
             hint={pick(
-              "Makale analizinin çıkarım adımı. OpenRouter ve özel modeller de seçilebilir.",
-              "The extraction step of article analysis. OpenRouter and custom models are also selectable.",
+              "Uzun makalelerde bölüm özetlerini çıkarır. OpenRouter ve özel modeller de seçilebilir.",
+              "Extracts section notes for long papers. OpenRouter and custom models are also selectable.",
             )}
           />
           <ChatModelRow
@@ -187,19 +187,8 @@ export default function ModelsSettingsPage() {
             options={summaryOptions}
             keys={keys}
             hint={pick(
-              "Makale analizinin sentez adımı. OpenRouter ve özel modeller de seçilebilir.",
-              "The synthesis step of article analysis. OpenRouter and custom models are also selectable.",
-            )}
-          />
-          <ChatModelRow
-            label={pick("Makale analizi · Eleştiri", "Article analysis · Critique")}
-            value={draftBindings.analysisCritique}
-            onChange={(v) => setDraftBinding("analysisCritique", v)}
-            options={summaryOptions}
-            keys={keys}
-            hint={pick(
-              "Makale analizinin eleştiri adımı. OpenRouter ve özel modeller de seçilebilir.",
-              "The critique step of article analysis. OpenRouter and custom models are also selectable.",
+              "Okuma dosyasını ve analiz asistanının yanıtlarını yazar. OpenRouter ve özel modeller de seçilebilir.",
+              "Writes the reading brief and assistant responses. OpenRouter and custom models are also selectable.",
             )}
           />
           <ModelRow

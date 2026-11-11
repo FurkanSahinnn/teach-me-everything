@@ -1,4 +1,5 @@
 import type { SystemBlock } from "@/lib/ai/providers/types";
+import type { BriefWire } from "@/lib/article-analysis/brief";
 import type { AnalysisTargetLang } from "@/lib/article-analysis/types";
 import type {
   CritiqueStageOutput,
@@ -74,12 +75,12 @@ export function buildMapSystem(input: MapSystemInput): SystemBlock[] {
       ? `This excerpt corresponds to the section: "${input.sectionTitle}".`
       : "This excerpt is one contiguous window of the paper.",
     "",
-    "Task: Be EXTRACTIVE first. Summarize what this excerpt actually says, then pull the most load-bearing VERBATIM quotes (claims, definitions, results, equations-in-words). Copy quotes exactly as they appear; never paraphrase inside a quote.",
+    "Task: Be EXTRACTIVE first. Capture the excerpt's concrete details so a later writer can explain the paper without seeing this excerpt. Include the question, definitions, assumptions, procedure, formulas in words, experimental setup, datasets, baselines, metrics, numerical results, ablations, limitations, and author caveats when present. Preserve exact numbers and conditions; omit categories absent from this excerpt. Then pull load-bearing VERBATIM quotes. Copy quotes exactly as they appear; never paraphrase inside a quote.",
     "",
     "Output STRICT JSON only (no markdown fences, no commentary) matching:",
     "{",
     '  "sectionTitle": "string — a short title for this section",',
-    '  "summary": "string — 2-5 sentences, extractive",',
+    '  "summary": "string — detailed extractive notes, typically 8-15 sentences for a substantial section",',
     '  "keyQuotes": [ { "quote": "verbatim span from the excerpt", "page": 0 } ]',
     "}",
     'Include `page` on a quote only when the chunk marker shows one; otherwise omit it.',
@@ -359,4 +360,67 @@ export function buildStageUserMessage(targetLang: AnalysisTargetLang): string {
   return targetLang === "tr"
     ? "Yukarıdaki talimatlara göre yalnızca geçerli JSON üret."
     : "Produce only the valid JSON described above.";
+}
+
+// The new reading brief has one writer for the entire visible narrative. Long
+// papers supply section extraction notes; short papers need only this call.
+export function buildBriefSystem(input: {
+  articleText: string;
+  targetLang: AnalysisTargetLang;
+  sectionSummaries: MapStageOutput[];
+  minimumWords?: number;
+  previousBrief?: BriefWire;
+}): SystemBlock[] {
+  const example: BriefWire = {
+    paperType: "empirical / theoretical / review / other",
+    field: "research field if stated",
+    methodologyType: "method if stated",
+    dataSample: "sample or data scale if stated",
+    thesis: { kind: "prose", text: "Central claim and why it matters", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+    sections: [
+      { kind: "context", title: "Question and prior gap", blocks: [
+        { kind: "prose", text: "Research question and why it matters, explained in depth", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+        { kind: "prose", text: "Prior approaches, their precise gap, and this paper's contribution", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+      ] },
+      { kind: "method", title: "Method and mechanism", blocks: [
+        { kind: "step", title: "First step", text: "Inputs, operation, and a concrete explanation", why: "Reason for this design", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+        { kind: "step", title: "Next step", text: "Transformation, output, assumptions, and important formula", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+      ] },
+      { kind: "findings", title: "Evaluation design", blocks: [
+        { kind: "prose", text: "Dataset or sample, splits, baselines, metrics, and test conditions", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+        { kind: "prose", text: "What each comparison can establish and what it cannot", grounding: "interpretation" },
+      ] },
+      { kind: "findings", title: "Results and interpretation", blocks: [
+        { kind: "result", text: "Main observed result and its meaning", metric: "outcome and value if reported", comparison: "baseline if reported", context: "dataset/sample/conditions if reported", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+        { kind: "prose", text: "Other results, ablations, uncertainty, or failures when reported", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+      ] },
+      { kind: "critical", title: "Limits and open questions", blocks: [
+        { kind: "caution", text: "Authors' stated limitations and unresolved questions", grounding: "source", citations: [{ quote: "verbatim source phrase" }] },
+        { kind: "caution", text: "Carefully marked inference about generalization or reproducibility", grounding: "interpretation" },
+      ] },
+    ],
+  };
+  const summaries = input.sectionSummaries.length > 0
+    ? JSON.stringify(input.sectionSummaries)
+    : "None; the complete paper is in the article window.";
+  return [
+    { type: "text", text: input.articleText, cache_control: { type: "ephemeral" } },
+    { type: "text", text: [
+      "Write a thorough, source-grounded reading guide for ONE paper. A reader should understand the research question, prior gap, contribution, mechanism, evaluation, findings, and limits without first reading the entire paper. Output valid JSON only.",
+      languageDirective(input.targetLang),
+      "Use the paper as the only source. Section summaries may cover text omitted from the article window.",
+      "Each idea appears once. The thesis orients; context covers the problem, prior approaches, and precise gap; method walks through inputs, transformations, outputs, design reasons, and important formulas; findings explain evaluation design before results; critical separates authors' limitations from your careful inferences. Avoid repeating a conclusion across sections.",
+      "Coverage checklist, only where supported by the paper: research question and contribution; definitions and assumptions; full method sequence and important equations; data/sample and preprocessing; experimental protocol and baselines; each important metric with value, unit, and conditions; uncertainty, ablations, failure cases; author-stated limitations and reproducibility details. Explain the meaning of each item, not just its name. Explicitly distinguish a missing paper detail from a detail omitted by this brief.",
+      "For a full research paper, usually write 5-8 substantive sections with 2-4 distinct blocks each, often 12-24 blocks overall. Each block should explain one specific idea in readable paragraphs. Explain the method step by step with a concrete example when the paper supports one. Report datasets or sample, baselines, metrics, values, uncertainty, and ablations when present; say plainly when a crucial detail is not reported. Review and theory papers need an adapted structure, not fictitious experiments.",
+      input.minimumWords && input.minimumWords > 0
+        ? `Depth target: at least about ${input.minimumWords} words across thesis and body, often ${Math.round(input.minimumWords * 1.25)} or more when the paper warrants it. A one-paragraph-per-section summary is insufficient. Use source-supported explanation, not filler, repeated claims, or invented detail.`
+        : "For a short source, use only the detail actually supported by the text; do not pad it.",
+      "For every source-grounded block, include a short VERBATIM quote from the raw article text or a section summary's keyQuotes. Do not quote a paraphrased summary sentence. Never declare a quote verified; the application checks it. Interpretations must be labeled interpretation and should be modest.",
+      "For result blocks, metric, comparison, and context are optional and must be populated only when explicitly reported. Explain what a number measures and against which baseline. Do not convert percentages into relative improvements without a valid calculation.",
+      "Do not use external sources or cite your own knowledge. Use readable paragraphs with concrete explanations, headings, and no generic praise.",
+      input.previousBrief ? `PREVIOUS BRIEF WAS TOO SHALLOW. Rewrite it as a substantially more complete reading guide while keeping correct claims and citations. Fill omitted mechanism, experiment setup, results, and limitations from the source; do not merely lengthen existing sentences. PREVIOUS BRIEF: ${JSON.stringify(input.previousBrief)}` : "",
+      `JSON shape example (replace all text and omit unsupported optional fields): ${JSON.stringify(example)}`,
+      `SECTION EXTRACTION NOTES: ${summaries}`,
+    ].filter(Boolean).join("\n\n") },
+  ];
 }

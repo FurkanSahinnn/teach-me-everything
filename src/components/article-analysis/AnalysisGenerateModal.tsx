@@ -11,7 +11,7 @@ import { findChatOption } from "@/lib/ai/model-options";
 import { computeCostUsd } from "@/lib/ai/pricing";
 import { useArticleAnalysisRunner } from "@/lib/ai/runners/article-analysis-runner";
 import { listChunksBySource } from "@/lib/db/chunks";
-import { useSources } from "@/lib/db/hooks";
+import { useArticleAnalysis, useSources } from "@/lib/db/hooks";
 import {
   ingestPdfForAnalysis,
   IngestPdfError,
@@ -34,12 +34,8 @@ type Props = {
 
 // Rough pre-run estimate — a "~tahmini", never an invoice.
 //
-// Map sees the whole document once (extract model, chunked). The five later
-// stages each see the SHARED ARTICLE WINDOW, which is capped — so estimating
-// them off the raw source token sum overstated long papers badly. Clamp to the
-// window the pipeline will actually build.
-const SYNTHESIZE_PASSES = 4; // reduce + glossary + reflection + synthesize
-const OUTPUT_TOKENS_PER_STAGE = 2000;
+// Short papers use one writing call. Long papers add section extraction calls
+// before the writer; the estimate remains a rough BYOK guide.
 
 function bareModelId(binding: string): string {
   return findChatOption(binding)?.modelId ?? binding;
@@ -47,28 +43,25 @@ function bareModelId(binding: string): string {
 
 function estimateCostUsd(
   tokenSum: number,
-  bindings: { extract: string; synthesize: string; critique: string },
+  bindings: { extract: string; synthesize: string },
 ): number {
   if (tokenSum <= 0) return 0;
   const windowTokens = Math.min(tokenSum, ARTICLE_WINDOW_TOKENS);
-  const extract = computeCostUsd(bareModelId(bindings.extract), {
-    input_tokens: tokenSum,
-    output_tokens: OUTPUT_TOKENS_PER_STAGE,
-  });
+  const long = tokenSum > ARTICLE_WINDOW_TOKENS;
+  const groups = long ? Math.max(1, Math.ceil(tokenSum / 6000)) : 0;
+  const extract = long ? computeCostUsd(bareModelId(bindings.extract), {
+    input_tokens: tokenSum + groups * 300,
+    output_tokens: groups * 650,
+  }) : 0;
   const synthesize = computeCostUsd(bareModelId(bindings.synthesize), {
-    input_tokens: windowTokens * SYNTHESIZE_PASSES,
-    output_tokens: OUTPUT_TOKENS_PER_STAGE * SYNTHESIZE_PASSES,
+    input_tokens: windowTokens + groups * 700,
+    output_tokens: 8000,
   });
-  const critique = computeCostUsd(bareModelId(bindings.critique), {
-    input_tokens: windowTokens,
-    output_tokens: OUTPUT_TOKENS_PER_STAGE,
-  });
-  return extract + synthesize + critique;
+  return extract + synthesize * 1.25;
 }
 
-// Pretty label for a stage progress event, mirroring the spec copy:
-// "Bölüm özetleri 7/14 → Sentez → Uzman analizleri → Birleştirme".
-const STAGE_ORDER = ["map", "reduce", "specialists", "synthesize"] as const;
+// Pretty label for the adaptive brief progress events.
+const STAGE_ORDER = ["prepare", "map", "synthesize", "expand"] as const;
 
 export function AnalysisGenerateModal(props: Props) {
   return props.open ? <AnalysisGenerateSession key={`${props.workspaceId}:${props.sourceId ?? "upload"}`} {...props} /> : null;
@@ -117,6 +110,7 @@ function AnalysisGenerateSession({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { state, generate, cancel } = useArticleAnalysisRunner();
+  const liveAnalysis = useArticleAnalysis(state.analysisId);
   const notifiedRef = useRef(false);
 
   // Closing unmounts this session, so a reopened form cannot receive an old
@@ -160,9 +154,8 @@ function AnalysisGenerateSession({
       estimateCostUsd(tokenSum ?? 0, {
         extract: mb.analysisExtract,
         synthesize: mb.analysisSynthesize,
-        critique: mb.analysisCritique,
       }),
-    [tokenSum, mb.analysisExtract, mb.analysisSynthesize, mb.analysisCritique],
+    [tokenSum, mb.analysisExtract, mb.analysisSynthesize],
   );
 
   const running = state.phase === "running";
@@ -277,6 +270,8 @@ function AnalysisGenerateSession({
     total?: number | undefined,
   ): string => {
     switch (stage) {
+      case "prepare":
+        return pick("Makale hazırlanıyor", "Preparing article");
       case "map":
         return total
           ? pick(
@@ -284,12 +279,10 @@ function AnalysisGenerateSession({
               `Section summaries ${(index ?? 0) + 1}/${total}`,
             )
           : pick("Bölüm özetleri", "Section summaries");
-      case "reduce":
-        return pick("Sentez", "Synthesis");
-      case "specialists":
-        return pick("Uzman analizleri", "Specialist analyses");
       case "synthesize":
-        return pick("Birleştirme", "Assembly");
+        return pick("Okuma dosyası yazılıyor", "Writing reading brief");
+      case "expand":
+        return pick("Ayrıntılar derinleştiriliyor", "Expanding missing detail");
     }
   };
 
@@ -307,8 +300,8 @@ function AnalysisGenerateSession({
       size="lg"
       title={pick("Makale analizi", "Article analysis")}
       description={pick(
-        "Bir makaleyi (PDF) çok aşamalı AI ile derinlemesine analiz et.",
-        "Deep multi-stage AI analysis of a single article (PDF).",
+        "Makaleyi kaynaklarıyla birlikte anlaşılır bir okuma dosyasına dönüştür.",
+        "Turn a paper into a clear, source-linked reading brief.",
       )}
       footer={
         <div className="flex w-full items-center justify-between gap-2">
@@ -499,7 +492,6 @@ function AnalysisGenerateSession({
             pick("Sentez", "Synthesize"),
             mb.analysisSynthesize,
           )}
-          {modelRow(pick("Eleştiri", "Critique"), mb.analysisCritique)}
         </div>
 
         {/* Cost estimate */}
@@ -554,6 +546,21 @@ function AnalysisGenerateSession({
                 </span>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {running && (liveAnalysis?.brief || state.streamText) ? (
+          <div aria-live="polite" className="max-h-[280px] space-y-4 overflow-y-auto rounded-[10px] border border-rule-soft bg-paper px-4 py-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-accent-ink">{pick("Oluşan analiz", "Brief taking shape")}</p>
+            {liveAnalysis?.brief ? <p className="font-serif text-[17px] leading-relaxed text-ink">{liveAnalysis.brief.thesis.text}</p> : null}
+            {liveAnalysis?.brief?.sections.map((section) => <section key={section.id} className="article-brief-enter border-t border-rule-soft pt-3">
+              <h3 className="font-serif text-[16px] text-ink">{section.title}</h3>
+              {section.blocks.map((block) => <p key={block.id} className="mt-2 text-[12.5px] leading-relaxed text-ink-2">{block.text}</p>)}
+            </section>)}
+            {state.streamText ? <div className="border-t border-rule-soft pt-3 text-[12.5px] leading-relaxed text-ink-3">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-ink-4">{pick("Geçici taslak · kaynak kontrolü sürüyor", "Live draft · checking sources")}</p>
+              <p>{state.streamText}<span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-accent align-middle" aria-hidden /></p>
+            </div> : null}
           </div>
         ) : null}
 

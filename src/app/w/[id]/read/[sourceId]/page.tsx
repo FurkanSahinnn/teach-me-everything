@@ -1925,7 +1925,7 @@ function ReaderPanel({
   // Only PDFs benefit from the canvas+textLayer viewer. DOCX blobs are
   // stored too but a Word renderer is out of scope for now; the toggle
   // simply doesn't appear for non-PDF sources.
-  const blobAvailable = source.type === "pdf";
+  const blobAvailable = source.type === "pdf" || source.meta?.extractor === "arxiv-pdf";
   const blob = useSourceBlob(blobAvailable ? source.id : undefined);
   const [viewMode, setViewMode] = useState<"reading" | "pdf">("reading");
   // PdfViewer is heavy (loads pdfjs ~2MB) and we want to preserve its scroll

@@ -89,9 +89,9 @@
   --type-xl:            17px;
 
   /* ---- Typography (font families) ---- */
-  --font-serif:         var(--font-source-serif), 'Charter', 'Iowan Old Style', Georgia, serif;
-  --font-sans:          var(--font-geist), -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-mono:          var(--font-jetbrains-mono), 'SF Mono', ui-monospace, Menlo, monospace;
+  --font-serif:         'Charter', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans:          'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:          'Cascadia Code', 'SF Mono', ui-monospace, Menlo, monospace;
 }
 
 /* =========================================================================
@@ -1018,4 +1018,17 @@ html.theme-init-complete body {
 .textLayer ::selection {
   background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
   color: transparent;
+}
+
+@keyframes article-brief-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.article-brief-enter {
+  animation: article-brief-enter 420ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .article-brief-enter { animation: none; }
 }

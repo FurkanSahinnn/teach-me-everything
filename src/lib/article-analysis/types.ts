@@ -33,6 +33,7 @@ export type GroundingKind = "source" | "general";
 // without reaching into the verification module.
 export type { CitationVerification } from "@/lib/article-analysis/citation-verify";
 import type { CitationVerification } from "@/lib/article-analysis/citation-verify";
+import type { ArticleBrief } from "@/lib/article-analysis/brief";
 
 // A verbatim span lifted from the paper. `chunkId` is resolved in code (by
 // matching the quote back to a source chunk) so the detail page can render a
@@ -180,6 +181,27 @@ export type ArticleAnalysisRecord = {
   usage: AnalysisUsage;
   // Undefined while generating; partial allowed on "draft"; complete on "ready".
   payload?: ArticleAnalysisPayload | undefined;
+  brief?: ArticleBrief | undefined;
+  briefChat?: BriefChatMessage[] | undefined;
+  briefRevisions?: BriefRevision[] | undefined;
   createdAt: number;
   updatedAt: number;
+};
+
+export type BriefChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  sectionId?: string | undefined;
+  citations?: AnalysisCitation[] | undefined;
+  externalSources?: { title: string; url: string }[] | undefined;
+  createdAt: number;
+};
+
+export type BriefRevision = {
+  id: string;
+  sectionId: string;
+  previous?: ArticleBrief["sections"][number] | undefined;
+  next: ArticleBrief["sections"][number];
+  createdAt: number;
 };

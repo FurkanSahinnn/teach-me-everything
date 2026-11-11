@@ -100,4 +100,18 @@ describe("analysisToHtml", () => {
     expect(html).toContain("Glossary");
     expect(html).toContain("general knowledge");
   });
+
+  it("exports the current brief without the legacy repeated sections", () => {
+    const html = analysisToHtml(record({
+      brief: {
+        version: 2, paperType: "empirical", coverage: { includedChunks: 2, omittedChunks: 0 },
+        thesis: { id: "thesis", kind: "prose", text: "One clear idea", grounding: "source" },
+        sections: [{ id: "method-0", kind: "method", title: "How it works", blocks: [{ id: "method-0-0", kind: "step", text: "First step", grounding: "source" }] }],
+      },
+      targetLang: "en",
+    }));
+    expect(html).toContain("One clear idea");
+    expect(html).toContain("How it works");
+    expect(html).not.toContain("5 C's assessment");
+  });
 });

@@ -7,7 +7,10 @@ import type {
   AnalysisUsage,
   ArticleAnalysisPayload,
   ArticleAnalysisRecord,
+  BriefChatMessage,
+  BriefRevision,
 } from "@/lib/article-analysis/types";
+import { projectBriefToLegacy, type ArticleBrief, type BriefSection } from "@/lib/article-analysis/brief";
 
 // ---------------------------------------------------------------------------
 // Article Analysis (one row per AI multi-stage analysis of a single source)
@@ -83,6 +86,9 @@ export type AnalysisPatch = Partial<{
   // `null` is the explicit-clear signal (translated to undefined → Dexie
   // drops the field rather than storing a JSON null).
   payload: ArticleAnalysisPayload | null;
+  brief: ArticleBrief | null;
+  briefChat: BriefChatMessage[];
+  briefRevisions: BriefRevision[];
   fallbackReason: string | null;
   errorMessage: string | null;
 }>;
@@ -104,6 +110,7 @@ export async function updateAnalysis(
 // while writing the payload / merged usage / degradation reason in one stamp.
 export type AnalysisStatusExtra = {
   payload?: ArticleAnalysisPayload | null;
+  brief?: ArticleBrief | null;
   usage?: AnalysisUsage;
   fallbackReason?: string | null;
   errorMessage?: string | null;
@@ -117,6 +124,7 @@ export async function setAnalysisStatus(
   await updateAnalysis(id, {
     status,
     ...(extra?.payload !== undefined ? { payload: extra.payload } : {}),
+    ...(extra?.brief !== undefined ? { brief: extra.brief } : {}),
     ...(extra?.usage !== undefined ? { usage: extra.usage } : {}),
     ...(extra?.fallbackReason !== undefined
       ? { fallbackReason: extra.fallbackReason }
@@ -129,4 +137,120 @@ export async function setAnalysisStatus(
 
 export async function deleteAnalysis(id: string): Promise<void> {
   await db.articleAnalyses.delete(id);
+}
+
+export async function appendBriefChat(id: string, message: BriefChatMessage): Promise<void> {
+  await db.transaction("rw", db.articleAnalyses, async () => {
+    const record = await db.articleAnalyses.get(id);
+    if (!record) throw new Error("Analysis not found");
+    await db.articleAnalyses.update(id, {
+      briefChat: [...(record.briefChat ?? []), message],
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+export async function applyBriefRevision(id: string, next: BriefSection): Promise<void> {
+  await db.transaction("rw", db.articleAnalyses, async () => {
+    const record = await db.articleAnalyses.get(id);
+    if (!record?.brief) throw new Error("Editable brief not found");
+    const previous = record.brief.sections.find((section) => section.id === next.id);
+    if (!previous || previous.kind !== next.kind) throw new Error("Section mismatch");
+    const brief: ArticleBrief = {
+      ...record.brief,
+      sections: record.brief.sections.map((section) => section.id === next.id ? next : section),
+    };
+    const revision: BriefRevision = {
+      id: newId("rev"),
+      sectionId: next.id,
+      previous,
+      next,
+      createdAt: Date.now(),
+    };
+    await db.articleAnalyses.update(id, {
+      brief,
+      payload: projectBriefToLegacy(brief),
+      briefRevisions: [...(record.briefRevisions ?? []), revision],
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+export async function undoBriefRevision(id: string, sectionId: string): Promise<void> {
+  await db.transaction("rw", db.articleAnalyses, async () => {
+    const record = await db.articleAnalyses.get(id);
+    if (!record?.brief) throw new Error("Editable brief not found");
+    const revisions = record.briefRevisions ?? [];
+    const index = revisions.findLastIndex((revision) => revision.sectionId === sectionId);
+    if (index < 0) return;
+    const previous = revisions[index]!.previous;
+    const brief: ArticleBrief = {
+      ...record.brief,
+      sections: previous
+        ? record.brief.sections.map((section) => section.id === sectionId ? previous : section)
+        : record.brief.sections.filter((section) => section.id !== sectionId),
+    };
+    await db.articleAnalyses.update(id, {
+      brief,
+      payload: projectBriefToLegacy(brief),
+      briefRevisions: revisions.filter((_, i) => i !== index),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+export async function appendExternalNote(
+  id: string,
+  text: string,
+  sources: { title: string; url: string }[],
+  focusedSectionId?: string,
+): Promise<void> {
+  await db.transaction("rw", db.articleAnalyses, async () => {
+    const record = await db.articleAnalyses.get(id);
+    if (!record?.brief) throw new Error("Editable brief not found");
+    const sectionId = newId("research");
+    const safeSources = sources.filter((source) => /^https?:\/\//i.test(source.url));
+    const externalBlock = {
+      id: `${sectionId}-0`,
+      kind: "external" as const,
+      text,
+      grounding: "external" as const,
+      externalSources: safeSources,
+    };
+    const focused = record.brief.sections.find((section) => section.id === focusedSectionId);
+    if (focused) {
+      const next: BriefSection = { ...focused, blocks: [...focused.blocks, externalBlock] };
+      const brief: ArticleBrief = {
+        ...record.brief,
+        sections: record.brief.sections.map((section) => section.id === focused.id ? next : section),
+      };
+      const revision: BriefRevision = {
+        id: newId("rev"), sectionId: focused.id, previous: focused, next, createdAt: Date.now(),
+      };
+      await db.articleAnalyses.update(id, {
+        brief,
+        briefRevisions: [...(record.briefRevisions ?? []), revision],
+        updatedAt: Date.now(),
+      });
+      return;
+    }
+    const brief: ArticleBrief = {
+      ...record.brief,
+      sections: [...record.brief.sections, {
+        id: sectionId,
+        kind: "external",
+        title: record.targetLang === "tr" ? "Ek araştırma" : "Further research",
+        blocks: [externalBlock],
+      }],
+    };
+    const next = brief.sections[brief.sections.length - 1]!;
+    const revision: BriefRevision = {
+      id: newId("rev"), sectionId, next, createdAt: Date.now(),
+    };
+    await db.articleAnalyses.update(id, {
+      brief,
+      briefRevisions: [...(record.briefRevisions ?? []), revision],
+      updatedAt: Date.now(),
+    });
+  });
 }

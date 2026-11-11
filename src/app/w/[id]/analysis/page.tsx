@@ -64,8 +64,8 @@ export default function AnalysisListPage() {
           </h1>
           <p className="text-[13px] text-ink-3">
             {pick(
-              "Zorlu bir makaleyi hızlıca anla: ne diyor, sorunu nasıl çözüyor, kıdemli hakem eleştirisi ve çift dilli terim sözlüğü.",
-              "Understand a hard paper fast: what it says, how it solves the problem, a senior-reviewer critique, and a bilingual glossary.",
+              "Makaleyi tek akışta anla: temel fikir, yöntem, kanıtlar ve sınırlar. Anlamadığın yeri seçip asistana sor veya yeniden yazdır.",
+              "Read the central idea, method, evidence, and limits in one flow. Select any passage to ask the assistant or revise it.",
             )}
           </p>
         </header>

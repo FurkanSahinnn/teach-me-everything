@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import {
-  runArticleAnalysis,
+  runArticleBrief,
   ArticleAnalysisError,
   type ArticleAnalysisStageEvent,
 } from "@/lib/ai/article-analysis";
-import { createAnalysis, setAnalysisStatus } from "@/lib/db/article-analyses";
+import { createAnalysis, setAnalysisStatus, updateAnalysis } from "@/lib/db/article-analyses";
 import type {
   AnalysisModelSnapshot,
   AnalysisTargetLang,
@@ -27,11 +27,9 @@ export type AnalysisRunProgress = {
 export type AnalysisRunnerState = {
   phase: AnalysisRunPhase;
   progress?: AnalysisRunProgress | undefined;
-  // Available as soon as the row is minted (before the pipeline finishes) so
-  // callers can deep-link to the detail page. NOTE: per-stage progress is held
-  // in THIS hook's in-memory state only — the row's payload is persisted once
-  // at the end of the run, so the detail page shows a neutral "in progress"
-  // state until completion, not incremental sections.
+  streamText?: string | undefined;
+  // Available once the row is created. Completed brief sections are stored
+  // during generation so the modal and detail page can display them.
   analysisId?: string | undefined;
   error?: string | undefined;
 };
@@ -146,7 +144,7 @@ export function useArticleAnalysisRunner(): UseArticleAnalysisRunnerResult {
 
       const controller = new AbortController();
       abortRef.current = controller;
-      safeSet({ phase: "running", progress: { stage: "map" } }, myGen);
+      safeSet({ phase: "running", progress: { stage: "prepare" } }, myGen);
 
       // Mint the row up-front (status "generating") so the list + detail page
       // can render it live while the pipeline runs.
@@ -179,19 +177,27 @@ export function useArticleAnalysisRunner(): UseArticleAnalysisRunnerResult {
       safeSet(
         {
           phase: "running",
-          progress: { stage: "map" },
+          progress: { stage: "prepare" },
           analysisId,
         },
         myGen,
       );
 
       try {
-        const result = await runArticleAnalysis({
+        const result = await runArticleBrief({
           workspaceId: input.workspaceId,
           sourceId: input.sourceId,
           targetLang: input.targetLang,
           models: modelSnapshot,
           signal: controller.signal,
+          onDraft: async (brief) => {
+            await updateAnalysis(analysisId, { brief });
+          },
+          onStreamText: (text) => {
+            if (mountedRef.current && generationRef.current === myGen) {
+              setState((current) => ({ ...current, streamText: text }));
+            }
+          },
           onStage: (ev) => {
             safeSet(
               {
@@ -209,6 +215,7 @@ export function useArticleAnalysisRunner(): UseArticleAnalysisRunnerResult {
 
         await setAnalysisStatus(analysisId, result.status, {
           payload: result.payload,
+          brief: result.brief,
           usage: result.usage,
           fallbackReason: result.fallbackReason ?? null,
         });

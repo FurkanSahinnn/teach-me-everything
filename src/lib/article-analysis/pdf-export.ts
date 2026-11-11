@@ -252,6 +252,27 @@ function section(title: string, inner: string): string {
 }
 
 function buildBody(record: ArticleAnalysisRecord, exportedAt: number): string {
+  if (record.brief) {
+    const brief = record.brief;
+    const cite = (block: typeof brief.thesis): string => (block.citations ?? [])
+      .map((citation) => `<span class="quote"> [${citation.verification === "unverified" ? "?" : "§"} ${escapeHtml(citation.quote)}]</span>`)
+      .join("");
+    const rendered = brief.sections.map((entry) => section(entry.title, entry.blocks.map((block) => [
+      block.title ? `<h3>${escapeHtml(block.title)}</h3>` : "",
+      `<p>${escapeHtml(block.text)}${cite(block)}${block.grounding !== "source" ? `<span class="gen">${block.grounding === "external" ? "outside context" : "AI interpretation"}</span>` : ""}</p>`,
+      block.why ? `<p class="quote">${record.targetLang === "tr" ? "Neden" : "Why"}: ${escapeHtml(block.why)}</p>` : "",
+      [block.metric, block.comparison, block.context].some(Boolean)
+        ? `<p class="quote">${[block.metric, block.comparison, block.context].filter(Boolean).map((part) => escapeHtml(part ?? "")).join(" · ")}</p>` : "",
+      ...(block.externalSources ?? []).filter((source) => /^https?:\/\//i.test(source.url)).map((source) => `<p><a href="${escapeHtml(source.url)}">${escapeHtml(source.title)}</a></p>`),
+    ].join("")).join(""))).join("");
+    return [
+      `<h1>${escapeHtml(record.title)}</h1>`,
+      `<p class="meta">${escapeHtml(brief.paperType)} · ${new Date(exportedAt).toLocaleDateString(record.targetLang)}</p>`,
+      `<p class="lede">${escapeHtml(brief.thesis.text)}${cite(brief.thesis)}</p>`,
+      rendered,
+      `<p class="quote">${record.targetLang === "tr" ? "Kaynak eşleşmesi yorumu tek başına doğrulamaz." : "A source match does not by itself validate an interpretation."}</p>`,
+    ].join("");
+  }
   const t = L[record.targetLang] ?? L.en;
   const p = record.payload;
   if (!p) return "";

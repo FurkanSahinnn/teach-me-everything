@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useRouteParams } from "@/lib/utils/route-params";
 import { AppShell } from "@/components/shell/AppShell";
 import { AnalysisDetailView } from "@/components/article-analysis/AnalysisDetailView";
+import { ArticleBriefView } from "@/components/article-analysis/ArticleBriefView";
 import { AnalysisGenerateModal } from "@/components/article-analysis/AnalysisGenerateModal";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
@@ -83,7 +84,7 @@ export default function AnalysisDetailPage() {
           : undefined
       }
     >
-      <div className="mx-auto flex w-full max-w-[920px] flex-col gap-5 px-4 py-6 sm:px-6">
+      <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-5 px-4 py-6 sm:px-6">
         <header className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2 min-w-0">
             <Link
@@ -156,12 +157,19 @@ export default function AnalysisDetailPage() {
         ) : analysis === undefined ? (
           <p className="text-[13px] text-ink-4">{pick("Yükleniyor…", "Loading…")}</p>
         ) : analysis.status === "generating" ? (
+          <div className="space-y-5">
           <div className="flex items-center gap-2.5 rounded-[10px] border border-accent-soft bg-accent-wash px-4 py-3 text-[13px] text-accent-ink">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             {pick(
               "Analiz üretiliyor — birkaç dakika sürebilir.",
               "Analysis in progress — this can take a few minutes.",
             )}
+          </div>
+            {analysis.brief ? <ArticleBriefView analysis={analysis} /> : <div className="mx-auto max-w-[860px] space-y-4 rounded-[18px] border border-rule-soft bg-paper p-10" aria-hidden>
+              <div className="h-3 w-28 animate-pulse rounded bg-paper-3" />
+              <div className="h-7 w-4/5 animate-pulse rounded bg-paper-3" />
+              <div className="h-5 w-2/3 animate-pulse rounded bg-paper-3" />
+            </div>}
           </div>
         ) : analysis.status === "error" ? (
           <div className="rounded-[10px] border border-err/30 bg-err/10 px-4 py-3 text-[13px] text-err">
@@ -182,7 +190,7 @@ export default function AnalysisDetailPage() {
             </Button>
           </div>
         ) : (
-          <AnalysisDetailView analysis={analysis} />
+          analysis.brief ? <ArticleBriefView analysis={analysis} /> : <AnalysisDetailView analysis={analysis} />
         )}
       </div>
 

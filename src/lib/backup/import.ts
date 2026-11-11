@@ -34,7 +34,8 @@ import type {
   RoadmapNodeRecord,
   RoadmapRecord,
 } from "@/lib/roadmap/types";
-import type { ArticleAnalysisRecord } from "@/lib/article-analysis/types";
+import type { AnalysisCitation, AnalysisClaim, ArticleAnalysisPayload, ArticleAnalysisRecord } from "@/lib/article-analysis/types";
+import type { ArticleBrief, BriefBlock, BriefSection } from "@/lib/article-analysis/brief";
 import type { CrossAnalysisRecord } from "@/lib/cross-analysis/types";
 import {
   BACKUP_SCHEMA_VERSION,
@@ -958,16 +959,56 @@ export async function importBackup(
     fromNodeId: remapRoadmapNode(e.fromNodeId),
     toNodeId: remapRoadmapNode(e.toNodeId),
   }));
-  // An analysis binds to exactly one workspace + source. The structured
-  // payload also embeds best-effort `chunkId` citations, but those are
-  // re-resolved in code on the detail page (see article-analysis/types.ts),
-  // so we leave the JSON blob alone and only remap the row-level FKs.
+  // Citations deep-link to chunk IDs. Remap those IDs alongside the source and
+  // workspace so imported briefs, chat answers, and legacy analyses still jump
+  // to the imported paper when a workspace is cloned.
+  const remapCitation = (citation: AnalysisCitation): AnalysisCitation => ({
+    ...citation,
+    ...(citation.chunkId ? { chunkId: remapChunkId(citation.chunkId) } : {}),
+  });
+  const remapClaim = (claim: AnalysisClaim): AnalysisClaim => ({
+    ...claim,
+    ...(claim.citations ? { citations: claim.citations.map(remapCitation) } : {}),
+  });
+  const remapPayload = (payload: ArticleAnalysisPayload): ArticleAnalysisPayload => ({
+    ...payload,
+    problemMotivation: payload.problemMotivation.map(remapClaim),
+    priorWorkGap: payload.priorWorkGap.map(remapClaim),
+    contributions: payload.contributions.map(remapClaim),
+    howItSolves: payload.howItSolves.map(remapClaim),
+    keyResults: payload.keyResults.map(remapClaim),
+    assumptionsLimitations: payload.assumptionsLimitations.map(remapClaim),
+  });
+  const remapBlock = (block: BriefBlock): BriefBlock => ({
+    ...block,
+    ...(block.citations ? { citations: block.citations.map(remapCitation) } : {}),
+  });
+  const remapBriefSection = (section: BriefSection): BriefSection => ({
+    ...section,
+    blocks: section.blocks.map(remapBlock),
+  });
+  const remapBrief = (brief: ArticleBrief): ArticleBrief => ({
+    ...brief,
+    thesis: remapBlock(brief.thesis),
+    sections: brief.sections.map(remapBriefSection),
+  });
   const articleAnalyses: ArticleAnalysisRecord[] = backup.articleAnalyses.map(
     (a) => ({
       ...a,
       id: analysisRemap.get(a.id) ?? a.id,
       workspaceId: remapWs(a.workspaceId),
       sourceId: remapSourceId(a.sourceId),
+      ...(a.payload ? { payload: remapPayload(a.payload) } : {}),
+      ...(a.brief ? { brief: remapBrief(a.brief) } : {}),
+      ...(a.briefChat ? { briefChat: a.briefChat.map((message) => ({
+        ...message,
+        ...(message.citations ? { citations: message.citations.map(remapCitation) } : {}),
+      })) } : {}),
+      ...(a.briefRevisions ? { briefRevisions: a.briefRevisions.map((revision) => ({
+        ...revision,
+        ...(revision.previous ? { previous: remapBriefSection(revision.previous) } : {}),
+        next: remapBriefSection(revision.next),
+      })) } : {}),
     }),
   );
   // A comparison points at the analyses it compared, so every analysis id it

@@ -86,6 +86,8 @@
         { "url": "https://api.tavily.com/*" },
         { "url": "https://api.search.brave.com/*" },
         { "url": "https://api.diffbot.com/*" },
+        { "url": "https://arxiv.org/*" },
+        { "url": "https://export.arxiv.org/*" },
         { "url": "https://api.brightdata.com/*" },
         { "url": "https://www.googleapis.com/*" },
         { "url": "https://youtube.googleapis.com/*" },

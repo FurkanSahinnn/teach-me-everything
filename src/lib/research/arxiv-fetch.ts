@@ -5,6 +5,7 @@
 
 import { ResearchError } from "./providers/types";
 import type { ResearchResult } from "./providers/types";
+import { smartFetch } from "@/lib/tauri/fetch";
 
 const ARXIV_API = "https://export.arxiv.org/api/query";
 
@@ -107,7 +108,7 @@ export async function fetchArxiv(
   const endpoint = `${ARXIV_API}?id_list=${encodeURIComponent(arxivId)}`;
   let res: Response;
   try {
-    res = await fetch(endpoint, {
+    res = await smartFetch(endpoint, {
       method: "GET",
       headers: { Accept: "application/atom+xml" },
       ...(opts.signal ? { signal: opts.signal } : {}),
@@ -159,6 +160,7 @@ export async function fetchArxiv(
       extractor: "arxiv-api",
       arxivId,
       publishedYear: parsed.publishedYear,
+      pdfUrl: parsed.pdfUrl,
     },
   };
   if (parsed.pdfUrl) result.pdfUrl = parsed.pdfUrl;

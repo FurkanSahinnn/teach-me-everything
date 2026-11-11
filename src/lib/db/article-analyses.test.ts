@@ -8,7 +8,11 @@ import {
   listAnalysesByWorkspace,
   setAnalysisStatus,
   updateAnalysis,
+  applyBriefRevision,
+  undoBriefRevision,
+  appendExternalNote,
 } from "./article-analyses";
+import { projectBriefToLegacy, type ArticleBrief } from "@/lib/article-analysis/brief";
 import { db } from "./schema";
 import type {
   AnalysisModelSnapshot,
@@ -82,6 +86,51 @@ afterEach(async () => {
 });
 
 describe("article-analyses repo", () => {
+  it("applies a section proposal and restores the previous version", async () => {
+    const rec = await createAnalysis(makeInput());
+    const brief: ArticleBrief = {
+      version: 2,
+      paperType: "method",
+      thesis: { id: "thesis", kind: "prose", text: "A method", grounding: "source" },
+      sections: [{ id: "method-0", kind: "method", title: "Method", blocks: [{ id: "method-0-0", kind: "step", text: "Old text", grounding: "source" }] }],
+      coverage: { includedChunks: 1, omittedChunks: 0 },
+    };
+    await updateAnalysis(rec.id, { brief, payload: projectBriefToLegacy(brief) });
+    const next = { ...brief.sections[0]!, blocks: [{ ...brief.sections[0]!.blocks[0]!, text: "New text" }] };
+    await applyBriefRevision(rec.id, next);
+    expect((await getAnalysis(rec.id))?.brief?.sections[0]?.blocks[0]?.text).toBe("New text");
+    await undoBriefRevision(rec.id, "method-0");
+    expect((await getAnalysis(rec.id))?.brief?.sections[0]?.blocks[0]?.text).toBe("Old text");
+  });
+
+  it("attaches outside research to the focused section with undo", async () => {
+    const rec = await createAnalysis(makeInput());
+    const brief: ArticleBrief = {
+      version: 2, paperType: "method", coverage: { includedChunks: 1, omittedChunks: 0 },
+      thesis: { id: "thesis", kind: "prose", text: "A method", grounding: "source" },
+      sections: [{ id: "method-0", kind: "method", title: "Method", blocks: [{ id: "method-0-0", kind: "step", text: "Original", grounding: "source" }] }],
+    };
+    await updateAnalysis(rec.id, { brief, payload: projectBriefToLegacy(brief) });
+    await appendExternalNote(rec.id, "Outside context", [{ title: "Source", url: "https://example.org" }], "method-0");
+    expect((await getAnalysis(rec.id))?.brief?.sections[0]?.blocks[1]?.grounding).toBe("external");
+    await undoBriefRevision(rec.id, "method-0");
+    expect((await getAnalysis(rec.id))?.brief?.sections[0]?.blocks).toHaveLength(1);
+  });
+
+  it("can undo an added outside-research section", async () => {
+    const rec = await createAnalysis(makeInput());
+    const brief: ArticleBrief = {
+      version: 2, paperType: "method", coverage: { includedChunks: 1, omittedChunks: 0 },
+      thesis: { id: "thesis", kind: "prose", text: "A method", grounding: "source" },
+      sections: [],
+    };
+    await updateAnalysis(rec.id, { brief, payload: projectBriefToLegacy(brief) });
+    await appendExternalNote(rec.id, "Outside context", [{ title: "Source", url: "https://example.org" }]);
+    const added = (await getAnalysis(rec.id))?.brief?.sections[0];
+    expect(added?.kind).toBe("external");
+    await undoBriefRevision(rec.id, added!.id);
+    expect((await getAnalysis(rec.id))?.brief?.sections).toHaveLength(0);
+  });
   it("create → get round-trip with generating defaults", async () => {
     const rec = await createAnalysis(makeInput());
     expect(rec.id).toMatch(/^ana/);

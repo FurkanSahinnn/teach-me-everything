@@ -443,6 +443,13 @@ describe("backup/import round-trip", () => {
 
   it("remaps conflicting workspace IDs and updates FK chain", async () => {
     const { wsId, src1Id, chunkIds } = await seedDataset();
+    await db.articleAnalyses.update("analysis-test", {
+      brief: {
+        version: 2, paperType: "empirical", coverage: { includedChunks: 1, omittedChunks: 0 },
+        thesis: { id: "thesis", kind: "prose", text: "Alpha", grounding: "source", citations: [{ quote: "alpha", chunkId: chunkIds[0], verification: "exact" }] },
+        sections: [{ id: "findings-0", kind: "findings", title: "Findings", blocks: [{ id: "findings-0-0", kind: "result", text: "Alpha", grounding: "source", citations: [{ quote: "alpha", chunkId: chunkIds[0], verification: "exact" }] }] }],
+      },
+    });
     const blob = await exportBackup();
     // Do NOT wipe — re-import on top of itself triggers conflict.
     const file = blobToFile(blob);
@@ -560,6 +567,7 @@ describe("backup/import round-trip", () => {
     expect(remappedAnalysis?.id).not.toBe("analysis-test");
     expect(remappedSourceIds.has(remappedAnalysis?.sourceId ?? "")).toBe(true);
     expect(remappedAnalysis?.payload?.tldr).toBe("Short.");
+    expect(remappedChunkIds.has(remappedAnalysis?.brief?.thesis.citations?.[0]?.chunkId ?? "")).toBe(true);
 
     // The comparison clone must follow the analysis remap everywhere it stores
     // an analysis id, or its deep-links point at rows that no longer exist.

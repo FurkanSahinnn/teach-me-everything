@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, JetBrains_Mono, Source_Serif_4 } from "next/font/google";
 import { IntlProvider } from "@/i18n/IntlProvider";
 import { ToastProvider } from "@/components/ui/Toast";
 import { VaultSetupBoot } from "@/components/vault/VaultSetupBoot";
@@ -10,26 +9,6 @@ import { EventBridgeMount } from "@/components/mounts/EventBridgeMount";
 import { UpdateCheckMount } from "@/components/mounts/UpdateCheckMount";
 import { themeInitScript } from "@/lib/utils/theme-script";
 import "./globals.css";
-
-const sourceSerif = Source_Serif_4({
-  variable: "--font-source-serif",
-  subsets: ["latin", "latin-ext"],
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-});
-
-const geist = Geist({
-  variable: "--font-geist",
-  subsets: ["latin", "latin-ext"],
-  display: "swap",
-});
-
-const jetBrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  display: "swap",
-  weight: ["400", "500"],
-});
 
 export const metadata: Metadata = {
   title: {
@@ -63,7 +42,7 @@ export default function RootLayout({
   return (
     <html
       lang="tr"
-      className={`${sourceSerif.variable} ${geist.variable} ${jetBrainsMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       <head>
