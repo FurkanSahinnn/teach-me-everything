@@ -1,21 +1,9 @@
 "use client";
 
-import { BookOpen, GitBranch, Moon, Sun } from "lucide-react";
 import { type Theme, usePrefs } from "@/stores/prefs";
+import { THEME_OPTIONS, THEME_SWATCH } from "@/components/settings/PreferenceRows";
+import { useLocalePick } from "@/i18n/IntlProvider";
 import { cn } from "@/lib/utils/cn";
-
-type Option = {
-  value: Theme;
-  icon: typeof Sun;
-  label: string;
-};
-
-const OPTIONS: readonly Option[] = [
-  { value: "white", icon: Sun, label: "White" },
-  { value: "sepia", icon: BookOpen, label: "Sepia" },
-  { value: "dark", icon: Moon, label: "Dark" },
-  { value: "github", icon: GitBranch, label: "GitHub" },
-];
 
 type Props = {
   className?: string;
@@ -25,21 +13,24 @@ type Props = {
 export function ThemeToggle({ className, size = "sm" }: Props) {
   const theme = usePrefs((s) => s.theme);
   const setTheme = usePrefs((s) => s.setTheme);
+  const pick = useLocalePick();
 
-  const dim = size === "sm" ? "h-7 w-7" : "h-8 w-8";
-  const iconSize = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
+  const dim = size === "sm" ? "h-6 w-6" : "h-7 w-7";
 
   return (
     <div
       role="radiogroup"
       aria-label="Theme"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-[12px] border border-rule-strong bg-paper-2 p-1.5 shadow-[var(--shadow-soft)]",
+        "inline-flex flex-wrap items-center gap-1 rounded-[12px] border border-rule-strong bg-paper-2 p-1.5 shadow-[var(--shadow-soft)]",
         className,
       )}
     >
-      {OPTIONS.map(({ value, icon: Icon, label }) => {
+      {THEME_OPTIONS.map((opt) => {
+        const value = opt.value as Theme;
         const active = theme === value;
+        const swatch = THEME_SWATCH[value];
+        const label = pick(opt.tr, opt.en);
         return (
           <button
             key={value}
@@ -50,21 +41,26 @@ export function ThemeToggle({ className, size = "sm" }: Props) {
             title={label}
             onClick={() => setTheme(value)}
             className={cn(
-              "grid place-items-center rounded-[9px] border cursor-pointer",
-              "transition-[background,color,box-shadow,border-color,transform] duration-[160ms] ease-[cubic-bezier(0.2,0.6,0.2,1)]",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-paper-3",
+              "relative grid place-items-center overflow-hidden rounded-[7px] border cursor-pointer",
+              "transition-[box-shadow,border-color,transform] duration-[160ms] ease-[cubic-bezier(0.2,0.6,0.2,1)]",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent",
               "active:scale-[0.92]",
               dim,
               active
-                ? "border-accent bg-accent-hot text-white shadow-[var(--shadow-medium)]"
-                : cn(
-                    "border-transparent text-ink-3",
-                    "hover:border-rule-strong hover:text-ink hover:bg-paper hover:shadow-[var(--shadow-soft)]",
-                    "hover:scale-[1.08]",
-                  ),
+                ? "border-accent ring-2 ring-accent/40 scale-105 shadow-[var(--shadow-medium)]"
+                : "border-rule hover:border-rule-strong hover:scale-105",
             )}
           >
-            <Icon className={iconSize} aria-hidden />
+            <span className="flex h-full w-full">
+              <span
+                className="h-full flex-1"
+                style={{ backgroundColor: swatch?.bg ?? "#101216" }}
+              />
+              <span
+                className="h-full flex-1"
+                style={{ backgroundColor: swatch?.accent ?? "#E59947" }}
+              />
+            </span>
           </button>
         );
       })}

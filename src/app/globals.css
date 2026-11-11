@@ -95,163 +95,399 @@
 }
 
 /* =========================================================================
-   THEME · WHITE (default · modern minimal)
+   THEME · WHITE (default · crisp daylight ivory)
    ========================================================================= */
 :root,
 [data-theme="white"] {
-  --color-paper:        #FFFFFF;
-  --color-paper-2:      #FAFAF9;
-  --color-paper-3:      #F4F4F2;
-  --color-paper-4:      #EDEDEA;
+  --color-paper:        #FDFDFC;
+  --color-paper-2:      #F6F5F2;
+  --color-paper-3:      #ECEAE4;
+  --color-paper-4:      #E2DFD7;
 
-  --color-rule:         #E5E5E1;
-  --color-rule-soft:    #EFEEEA;
-  --color-rule-strong:  #D4D3CD;
+  --color-rule:         #DCD9D0;
+  --color-rule-soft:    #E8E5DD;
+  --color-rule-strong:  #C4C0B5;
 
-  --color-ink:          #0F0F0E;
-  --color-ink-2:        #2B2B29;
-  --color-ink-3:        #5C5B57;
-  --color-ink-4:        #8B8A85;
-  --color-ink-5:        #B8B7B1;
+  --color-ink:          #111110;
+  --color-ink-2:        #2A2927;
+  --color-ink-3:        #575550;
+  --color-ink-4:        #84817A;
+  --color-ink-5:        #B2AEA6;
 
-  --color-accent:       #B86A2B;
-  --color-accent-hot:   #C26A2E;
-  --color-accent-soft:  #E8C9A8;
-  --color-accent-wash:  #FCEFDC;
-  --color-accent-ink:   #6E3A0F;
+  --color-accent:       #C06221;
+  --color-accent-hot:   #A85116;
+  --color-accent-soft:  #E9C5A3;
+  --color-accent-wash:  #FBF0E4;
+  --color-accent-ink:   #6B330C;
 
-  --shadow-soft:        0 1px 2px rgb(15 15 14 / 0.04), 0 4px 12px -4px rgb(15 15 14 / 0.06);
-  --shadow-medium:      0 4px 8px -2px rgb(15 15 14 / 0.06), 0 12px 32px -8px rgb(15 15 14 / 0.10);
-  --shadow-deep:        0 8px 16px -4px rgb(15 15 14 / 0.08), 0 24px 64px -16px rgb(15 15 14 / 0.16);
-  --shadow-lift:        0 2px 0 rgb(15 15 14 / 0.02), 0 8px 20px -8px rgb(15 15 14 / 0.12);
+  --color-ok:           #2E7D32;
+  --color-warn:         #B4690E;
+  --color-err:          #C62828;
+
+  --shadow-soft:        0 1px 2px rgb(15 15 14 / 0.05), 0 4px 12px -4px rgb(15 15 14 / 0.07);
+  --shadow-medium:      0 4px 8px -2px rgb(15 15 14 / 0.07), 0 12px 32px -8px rgb(15 15 14 / 0.11);
+  --shadow-deep:        0 8px 16px -4px rgb(15 15 14 / 0.09), 0 24px 64px -16px rgb(15 15 14 / 0.18);
+  --shadow-lift:        0 2px 0 rgb(15 15 14 / 0.03), 0 8px 20px -8px rgb(15 15 14 / 0.13);
 
   color-scheme: light;
 }
 
 /* =========================================================================
-   THEME · SEPIA (warm parchment · akademik okuma)
-   Surface stratejisi: border ağırlıklı, shadow neredeyse yok.
+   THEME · GITHUB LIGHT (Primer Light paleti)
+   ========================================================================= */
+[data-theme="github-light"] {
+  --color-paper:        #FFFFFF;
+  --color-paper-2:      #F6F8FA;
+  --color-paper-3:      #EAEEF2;
+  --color-paper-4:      #D0D7DE;
+
+  --color-rule:         #D0D7DE;
+  --color-rule-soft:    #E6EAEF;
+  --color-rule-strong:  #8C959F;
+
+  --color-ink:          #1F2328;
+  --color-ink-2:        #32383F;
+  --color-ink-3:        #656D76;
+  --color-ink-4:        #8C959F;
+  --color-ink-5:        #AFB8C1;
+
+  --color-accent:       #0969DA;
+  --color-accent-hot:   #0550AE;
+  --color-accent-soft:  #B6E3FF;
+  --color-accent-wash:  #DDF4FF;
+  --color-accent-ink:   #0550AE;
+
+  --color-ok:           #1A7F37;
+  --color-warn:         #9A6700;
+  --color-err:          #CF222E;
+
+  --color-series-1:     #0969DA;
+  --color-series-2:     #BC4C00;
+
+  --shadow-soft:        0 1px 2px rgb(31 35 40 / 0.05);
+  --shadow-medium:      0 3px 6px rgb(140 149 159 / 0.15);
+  --shadow-deep:        0 8px 24px rgb(140 149 159 / 0.22);
+  --shadow-lift:        0 1px 0 rgb(31 35 40 / 0.04), 0 4px 12px rgb(140 149 159 / 0.15);
+
+  color-scheme: light;
+}
+
+/* =========================================================================
+   THEME · SEPIA (warm parchment · Oxford reading room)
    ========================================================================= */
 [data-theme="sepia"] {
-  /* ---- Color: chart series (categorical, validated per surface) ---- */
-  --color-series-1:     #2a78d6;  /* Codex */
-  --color-series-2:     #c4501f;  /* Claude */
+  --color-series-1:     #2a78d6;
+  --color-series-2:     #c4501f;
 
-  --color-paper:        #F6EAD2;
-  --color-paper-2:      #EFDFC0;
-  --color-paper-3:      #E5D2AC;
-  --color-paper-4:      #DCC79A;
+  --color-paper:        #F5ECD8;
+  --color-paper-2:      #ECE0C6;
+  --color-paper-3:      #E1D2B2;
+  --color-paper-4:      #D5C29D;
 
-  --color-rule:         #C9B68F;
-  --color-rule-soft:    #D6C4A0;
-  --color-rule-strong:  #A6925F;
+  --color-rule:         #C6B28B;
+  --color-rule-soft:    #D5C39F;
+  --color-rule-strong:  #9E885E;
 
-  --color-ink:          #2E1F0E;
-  --color-ink-2:        #4A331A;
-  --color-ink-3:        #6B4F30;
-  --color-ink-4:        #8E7651;
-  --color-ink-5:        #B19979;
+  --color-ink:          #26190B;
+  --color-ink-2:        #422D16;
+  --color-ink-3:        #66492B;
+  --color-ink-4:        #8A6D4B;
+  --color-ink-5:        #AE9270;
 
-  --color-accent:       #B86A2B;
-  --color-accent-hot:   #B25920;
-  --color-accent-soft:  #DDB988;
-  --color-accent-wash:  #ECD8B0;
-  --color-accent-ink:   #5C2E08;
+  --color-accent:       #A64B17;
+  --color-accent-hot:   #8E3C0E;
+  --color-accent-soft:  #D8B182;
+  --color-accent-wash:  #E9D5B2;
+  --color-accent-ink:   #522205;
 
-  --shadow-soft:        0 1px 2px rgb(46 31 14 / 0.05);
-  --shadow-medium:      0 2px 4px rgb(46 31 14 / 0.06), 0 8px 24px -8px rgb(46 31 14 / 0.10);
-  --shadow-deep:        0 12px 32px -8px rgb(46 31 14 / 0.18);
-  --shadow-lift:        0 1px 3px rgb(46 31 14 / 0.08);
+  --color-ok:           #3D6B2C;
+  --color-warn:         #9E5D10;
+  --color-err:          #A12A2A;
+
+  --shadow-soft:        0 1px 2px rgb(38 25 11 / 0.06);
+  --shadow-medium:      0 2px 6px rgb(38 25 11 / 0.08), 0 8px 24px -8px rgb(38 25 11 / 0.12);
+  --shadow-deep:        0 12px 32px -8px rgb(38 25 11 / 0.20);
+  --shadow-lift:        0 1px 3px rgb(38 25 11 / 0.09);
 
   color-scheme: light;
 }
 
 /* =========================================================================
-   THEME · DARK (sofistike gece modu)
-   Surface stratejisi: border + belirgin ama temiz shadow.
+   THEME · DARK (Obsidian Slate · refined midnight studio)
    ========================================================================= */
 [data-theme="dark"] {
-  --color-paper:        #11100E;
-  --color-paper-2:      #1B1814;
-  --color-paper-3:      #282219;
-  --color-paper-4:      #342B20;
+  --color-paper:        #101216;
+  --color-paper-2:      #171A21;
+  --color-paper-3:      #20242E;
+  --color-paper-4:      #2A303D;
 
-  --color-rule:         #473B2D;
-  --color-rule-soft:    #322A21;
-  --color-rule-strong:  #6D5A42;
+  --color-rule:         #2B313E;
+  --color-rule-soft:    #202530;
+  --color-rule-strong:  #464F63;
 
-  --color-ink:          #F5F0E7;
-  --color-ink-2:        #DCD2C1;
-  --color-ink-3:        #A99D8B;
-  --color-ink-4:        #776D60;
-  --color-ink-5:        #524B42;
+  --color-ink:          #F1F3F7;
+  --color-ink-2:        #D2D7E2;
+  --color-ink-3:        #97A0B3;
+  --color-ink-4:        #697287;
+  --color-ink-5:        #495061;
 
-  --color-accent:       #D99A5E;
-  --color-accent-hot:   #E8A764;
-  --color-accent-soft:  #6F4A27;
-  --color-accent-wash:  #2F2417;
-  --color-accent-ink:   #F2C995;
+  --color-accent:       #E59947;
+  --color-accent-hot:   #F0A858;
+  --color-accent-soft:  #664420;
+  --color-accent-wash:  #251E18;
+  --color-accent-ink:   #F7CA94;
 
-  --color-ok:           #7BA85F;
-  --color-warn:         #D89A4A;
-  --color-err:          #C9594A;
+  --color-ok:           #56C271;
+  --color-warn:         #E5A645;
+  --color-err:          #E55C5C;
 
-  /* ---- Color: chart series (categorical, validated per surface) ---- */
-  --color-series-1:     #3987e5;  /* Codex */
-  --color-series-2:     #d95926;  /* Claude */
+  --color-series-1:     #4C9AFF;
+  --color-series-2:     #E59947;
 
-  --shadow-soft:        0 1px 0 rgb(255 244 224 / 0.03), 0 16px 40px -32px rgb(0 0 0 / 0.85);
-  --shadow-medium:      0 1px 0 rgb(255 244 224 / 0.04), 0 20px 56px -28px rgb(0 0 0 / 0.90);
-  --shadow-deep:        0 1px 0 rgb(255 244 224 / 0.05), 0 30px 80px -26px rgb(0 0 0 / 0.95);
-  --shadow-lift:        0 1px 0 rgb(255 244 224 / 0.05), 0 18px 44px -28px rgb(0 0 0 / 0.90);
+  --shadow-soft:        0 1px 2px rgb(0 0 0 / 0.45), 0 8px 24px -12px rgb(0 0 0 / 0.65);
+  --shadow-medium:      0 4px 12px -2px rgb(0 0 0 / 0.55), 0 20px 48px -20px rgb(0 0 0 / 0.80);
+  --shadow-deep:        0 0 0 1px #2B313E, 0 24px 64px -16px rgb(0 0 0 / 0.90);
+  --shadow-lift:        0 0 0 1px #2B313E, 0 12px 32px -12px rgb(0 0 0 / 0.75);
 
   color-scheme: dark;
 }
 
 /* =========================================================================
    THEME · GITHUB (GitHub Dark · Primer paleti)
-   Kaynak: @primer/primitives → dist/css/functional/themes/dark.css
-   (bgColor-default #0d1117 · borderColor-default #30363d · fgColor #e6edf3 ·
-   fgColor-accent #58a6ff · bgColor-accent-emphasis #1f6feb) — base gri
-   skalası Obsidian "GitHub Theme" (krios2146) ile birebir aynı.
-   Surface stratejisi: GitHub gibi border-first; shadow yalnızca floating
-   katmanda ve orada da ring (0 0 0 1px rule) ile birlikte — GitHub kartları
-   düz, sadece overlay'ler yükselir.
    ========================================================================= */
 [data-theme="github"] {
-  --color-paper:        #0D1117;  /* canvas.default            */
-  --color-paper-2:      #161B22;  /* canvas.subtle · sidebar   */
-  --color-paper-3:      #21262D;  /* btn.bg · hover            */
-  --color-paper-4:      #30363D;  /* btn.hoverBg · pressed     */
+  --color-paper:        #0D1117;
+  --color-paper-2:      #161B22;
+  --color-paper-3:      #21262D;
+  --color-paper-4:      #30363D;
 
-  --color-rule:         #30363D;  /* border.default            */
-  --color-rule-soft:    #21262D;  /* border.muted              */
-  --color-rule-strong:  #6E7681;  /* neutral.emphasis · hover  */
+  --color-rule:         #30363D;
+  --color-rule-soft:    #21262D;
+  --color-rule-strong:  #6E7681;
 
-  --color-ink:          #E6EDF3;  /* fg.default                */
+  --color-ink:          #E6EDF3;
   --color-ink-2:        #C9D1D9;
-  --color-ink-3:        #8B949E;  /* fg.muted                  */
-  --color-ink-4:        #6E7681;  /* fg.subtle                 */
-  --color-ink-5:        #484F58;  /* fg.disabled               */
+  --color-ink-3:        #8B949E;
+  --color-ink-4:        #6E7681;
+  --color-ink-5:        #484F58;
 
-  --color-accent:       #58A6FF;  /* link blue                 */
-  --color-accent-hot:   #1F6FEB;  /* accent.emphasis · CTA     */
-  --color-accent-soft:  #1E4273;  /* accent.muted border       */
-  --color-accent-wash:  #121D2F;  /* accent.subtle bg          */
-  --color-accent-ink:   #A5D6FF;  /* wash üstü accent yazı     */
+  --color-accent:       #58A6FF;
+  --color-accent-hot:   #1F6FEB;
+  --color-accent-soft:  #1E4273;
+  --color-accent-wash:  #121D2F;
+  --color-accent-ink:   #A5D6FF;
 
-  --color-ok:           #3FB950;  /* success.fg                */
-  --color-warn:         #D29922;  /* attention.fg              */
-  --color-err:          #F85149;  /* danger.fg                 */
+  --color-ok:           #3FB950;
+  --color-warn:         #D29922;
+  --color-err:          #F85149;
 
-  /* ---- Color: chart series (categorical, validated per surface) ---- */
-  --color-series-1:     #3987e5;  /* Codex */
-  --color-series-2:     #d95926;  /* Claude */
+  --color-series-1:     #3987e5;
+  --color-series-2:     #d95926;
 
   --shadow-soft:        0 1px 1px 0 rgb(1 4 9 / 0.60), 0 1px 3px 0 rgb(1 4 9 / 0.60);
   --shadow-medium:      0 1px 1px 0 rgb(1 4 9 / 0.40), 0 3px 6px 0 rgb(1 4 9 / 0.80);
   --shadow-deep:        0 0 0 1px #30363D, 0 24px 48px 0 rgb(1 4 9 / 0.85);
   --shadow-lift:        0 0 0 1px #30363D, 0 6px 12px -3px rgb(1 4 9 / 0.40), 0 6px 18px 0 rgb(1 4 9 / 0.40);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   THEME · DRACULA (Official Dracula PRO / Classic palette)
+   ========================================================================= */
+[data-theme="dracula"] {
+  --color-paper:        #282A36;
+  --color-paper-2:      #21222C;
+  --color-paper-3:      #343746;
+  --color-paper-4:      #44475A;
+
+  --color-rule:         #44475A;
+  --color-rule-soft:    #343746;
+  --color-rule-strong:  #6272A4;
+
+  --color-ink:          #F8F8F2;
+  --color-ink-2:        #E2E2DC;
+  --color-ink-3:        #A9B4D8;
+  --color-ink-4:        #6272A4;
+  --color-ink-5:        #4D5980;
+
+  --color-accent:       #BD93F9;
+  --color-accent-hot:   #FF79C6;
+  --color-accent-soft:  #56427A;
+  --color-accent-wash:  #332B4A;
+  --color-accent-ink:   #E2CEFF;
+
+  --color-ok:           #50FA7B;
+  --color-warn:         #FFB86C;
+  --color-err:          #FF5555;
+
+  --color-series-1:     #8BE9FD;
+  --color-series-2:     #FF79C6;
+
+  --shadow-soft:        0 2px 6px rgb(15 16 22 / 0.55);
+  --shadow-medium:      0 6px 18px rgb(15 16 22 / 0.65);
+  --shadow-deep:        0 0 0 1px #44475A, 0 24px 48px rgb(15 16 22 / 0.85);
+  --shadow-lift:        0 0 0 1px #44475A, 0 8px 20px rgb(15 16 22 / 0.60);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   THEME · MONOKAI (Monokai Pro Warm Charcoal)
+   ========================================================================= */
+[data-theme="monokai"] {
+  --color-paper:        #2D2A2E;
+  --color-paper-2:      #221F22;
+  --color-paper-3:      #383539;
+  --color-paper-4:      #49454A;
+
+  --color-rule:         #423F43;
+  --color-rule-soft:    #353236;
+  --color-rule-strong:  #727072;
+
+  --color-ink:          #FCFCFA;
+  --color-ink-2:        #E1E0DF;
+  --color-ink-3:        #A5A3A6;
+  --color-ink-4:        #727072;
+  --color-ink-5:        #5B595C;
+
+  --color-accent:       #FFD866;
+  --color-accent-hot:   #FF6188;
+  --color-accent-soft:  #6B5B2B;
+  --color-accent-wash:  #3B3527;
+  --color-accent-ink:   #FFE799;
+
+  --color-ok:           #A9DC76;
+  --color-warn:         #FC9867;
+  --color-err:          #FF6188;
+
+  --color-series-1:     #78DCE8;
+  --color-series-2:     #FF6188;
+
+  --shadow-soft:        0 2px 6px rgb(18 16 18 / 0.55);
+  --shadow-medium:      0 6px 18px rgb(18 16 18 / 0.70);
+  --shadow-deep:        0 0 0 1px #423F43, 0 24px 48px rgb(18 16 18 / 0.85);
+  --shadow-lift:        0 0 0 1px #423F43, 0 8px 20px rgb(18 16 18 / 0.65);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   THEME · NORD (Arctic Polar Night & Frost)
+   ========================================================================= */
+[data-theme="nord"] {
+  --color-paper:        #2E3440;
+  --color-paper-2:      #272C36;
+  --color-paper-3:      #3B4252;
+  --color-paper-4:      #434C5E;
+
+  --color-rule:         #434C5E;
+  --color-rule-soft:    #363D4C;
+  --color-rule-strong:  #616E88;
+
+  --color-ink:          #ECEFF4;
+  --color-ink-2:        #E5E9F0;
+  --color-ink-3:        #AEB7C8;
+  --color-ink-4:        #7B88A1;
+  --color-ink-5:        #59647A;
+
+  --color-accent:       #88C0D0;
+  --color-accent-hot:   #5E81AC;
+  --color-accent-soft:  #415A6B;
+  --color-accent-wash:  #293845;
+  --color-accent-ink:   #BCE5F0;
+
+  --color-ok:           #A3BE8C;
+  --color-warn:         #EBCB8B;
+  --color-err:          #BF616A;
+
+  --color-series-1:     #88C0D0;
+  --color-series-2:     #D08770;
+
+  --shadow-soft:        0 2px 6px rgb(20 24 30 / 0.45);
+  --shadow-medium:      0 6px 18px rgb(20 24 30 / 0.60);
+  --shadow-deep:        0 0 0 1px #434C5E, 0 24px 48px rgb(20 24 30 / 0.80);
+  --shadow-lift:        0 0 0 1px #434C5E, 0 8px 20px rgb(20 24 30 / 0.55);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   THEME · CATPPUCCIN (Catppuccin Mocha soothing pastel dark)
+   ========================================================================= */
+[data-theme="catppuccin"] {
+  --color-paper:        #1E1E2E;
+  --color-paper-2:      #181825;
+  --color-paper-3:      #313244;
+  --color-paper-4:      #45475A;
+
+  --color-rule:         #383A4F;
+  --color-rule-soft:    #2A2B3D;
+  --color-rule-strong:  #585B70;
+
+  --color-ink:          #CDD6F4;
+  --color-ink-2:        #BAC2DE;
+  --color-ink-3:        #9399B2;
+  --color-ink-4:        #6C7086;
+  --color-ink-5:        #585B70;
+
+  --color-accent:       #CBA6F7;
+  --color-accent-hot:   #FAB387;
+  --color-accent-soft:  #52436B;
+  --color-accent-wash:  #2B243B;
+  --color-accent-ink:   #E4D0FF;
+
+  --color-ok:           #A6E3A1;
+  --color-warn:         #F9E2AF;
+  --color-err:          #F38BA8;
+
+  --color-series-1:     #89B4FA;
+  --color-series-2:     #FAB387;
+
+  --shadow-soft:        0 2px 6px rgb(12 12 20 / 0.55);
+  --shadow-medium:      0 6px 18px rgb(12 12 20 / 0.70);
+  --shadow-deep:        0 0 0 1px #45475A, 0 24px 48px rgb(12 12 20 / 0.85);
+  --shadow-lift:        0 0 0 1px #45475A, 0 8px 20px rgb(12 12 20 / 0.65);
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   THEME · TOKYO NIGHT (Downtown Tokyo neon night)
+   ========================================================================= */
+[data-theme="tokyo-night"] {
+  --color-paper:        #1A1B26;
+  --color-paper-2:      #16161E;
+  --color-paper-3:      #24283B;
+  --color-paper-4:      #2F3549;
+
+  --color-rule:         #292E42;
+  --color-rule-soft:    #1F2335;
+  --color-rule-strong:  #414868;
+
+  --color-ink:          #C0CAF5;
+  --color-ink-2:        #A9B1D6;
+  --color-ink-3:        #7982A9;
+  --color-ink-4:        #565F89;
+  --color-ink-5:        #414868;
+
+  --color-accent:       #7AA2F7;
+  --color-accent-hot:   #BB9AF7;
+  --color-accent-soft:  #2D3F6B;
+  --color-accent-wash:  #1E253A;
+  --color-accent-ink:   #B4CCFF;
+
+  --color-ok:           #9ECE6A;
+  --color-warn:         #E0AF68;
+  --color-err:          #F7768E;
+
+  --color-series-1:     #7AA2F7;
+  --color-series-2:     #FF9E64;
+
+  --shadow-soft:        0 2px 6px rgb(10 11 16 / 0.60);
+  --shadow-medium:      0 6px 18px rgb(10 11 16 / 0.75);
+  --shadow-deep:        0 0 0 1px #292E42, 0 24px 48px rgb(10 11 16 / 0.88);
+  --shadow-lift:        0 0 0 1px #292E42, 0 8px 20px rgb(10 11 16 / 0.68);
 
   color-scheme: dark;
 }
@@ -742,6 +978,81 @@ html.theme-init-complete body {
   --md-code-built-in: #ffa657;
   --md-code-comment: #8b949e;
   --md-inline-code-bg: #21262d;
+}
+[data-theme="dracula"] .markdown-preview,
+[data-theme="dracula"] .tme-note-editor {
+  --md-code-bg: #21222c;
+  --md-code-border: #44475a;
+  --md-code-fg: #f8f8f2;
+  --md-code-muted: #6272a4;
+  --md-code-keyword: #ff79c6;
+  --md-code-title: #50fa7b;
+  --md-code-string: #f1fa8c;
+  --md-code-number: #bd93f9;
+  --md-code-attr: #ffb86c;
+  --md-code-built-in: #8be9fd;
+  --md-code-comment: #6272a4;
+  --md-inline-code-bg: #343746;
+}
+[data-theme="monokai"] .markdown-preview,
+[data-theme="monokai"] .tme-note-editor {
+  --md-code-bg: #221f22;
+  --md-code-border: #423f43;
+  --md-code-fg: #fcfcfa;
+  --md-code-muted: #727072;
+  --md-code-keyword: #ff6188;
+  --md-code-title: #a9dc76;
+  --md-code-string: #ffd866;
+  --md-code-number: #ab9df2;
+  --md-code-attr: #fc9867;
+  --md-code-built-in: #78dce8;
+  --md-code-comment: #727072;
+  --md-inline-code-bg: #383539;
+}
+[data-theme="nord"] .markdown-preview,
+[data-theme="nord"] .tme-note-editor {
+  --md-code-bg: #242933;
+  --md-code-border: #434c5e;
+  --md-code-fg: #eceff4;
+  --md-code-muted: #616e88;
+  --md-code-keyword: #81a1c1;
+  --md-code-title: #88c0d0;
+  --md-code-string: #a3be8c;
+  --md-code-number: #b48ead;
+  --md-code-attr: #d08770;
+  --md-code-built-in: #ebcb8b;
+  --md-code-comment: #616e88;
+  --md-inline-code-bg: #3b4252;
+}
+[data-theme="catppuccin"] .markdown-preview,
+[data-theme="catppuccin"] .tme-note-editor {
+  --md-code-bg: #181825;
+  --md-code-border: #383a4f;
+  --md-code-fg: #cdd6f4;
+  --md-code-muted: #6c7086;
+  --md-code-keyword: #cba6f7;
+  --md-code-title: #89b4fa;
+  --md-code-string: #a6e3a1;
+  --md-code-number: #fab387;
+  --md-code-attr: #f9e2af;
+  --md-code-built-in: #94e2d5;
+  --md-code-comment: #6c7086;
+  --md-inline-code-bg: #313244;
+}
+[data-theme="tokyo-night"] .markdown-preview,
+[data-theme="tokyo-night"] .tme-note-editor {
+  --md-code-bg: #16161e;
+  --md-code-border: #292e42;
+  --md-code-fg: #c0caf5;
+  --md-code-muted: #565f89;
+  --md-code-keyword: #bb9af7;
+  --md-code-title: #7aa2f7;
+  --md-code-string: #9ece6a;
+  --md-code-number: #ff9e64;
+  --md-code-attr: #e0af68;
+  --md-code-built-in: #2ac3de;
+  --md-code-comment: #565f89;
+  --md-inline-code-bg: #24283b;
 }
 .markdown-preview .markdown-code-block {
   border-color: var(--md-code-border);

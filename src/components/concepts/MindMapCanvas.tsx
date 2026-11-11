@@ -20,6 +20,7 @@ import type {
   ConceptKind,
   ConceptRecord,
 } from "@/lib/concepts/types";
+import { usePrefs } from "@/stores/prefs";
 
 const NODE_RADIUS = 20;
 const NODE_FILL: Record<ConceptKind, string> = {
@@ -66,6 +67,7 @@ export function MindMapCanvas({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const graphRef = useRef<LayoutGraph | null>(null);
+  const theme = usePrefs((s) => s.theme);
   const [viewport, setViewport] = useState<Viewport>({
     scale: 1,
     tx: 0,
@@ -93,13 +95,25 @@ export function MindMapCanvas({
     ctx.translate(viewport.tx, viewport.ty);
     ctx.scale(viewport.scale, viewport.scale);
 
+    const rootStyles =
+      typeof document !== "undefined"
+        ? getComputedStyle(document.documentElement)
+        : null;
+    const inkColor =
+      rootStyles?.getPropertyValue("--color-ink").trim() || "#E6EDF3";
+    const accentColor =
+      rootStyles?.getPropertyValue("--color-accent").trim() || "#B8601C";
+    const ruleStrongColor =
+      rootStyles?.getPropertyValue("--color-rule-strong").trim() || "#6E7681";
+
     // Edges first so nodes paint on top.
     for (const link of graph.links) {
       const a = graph.nodes.find((n) => n.id === link.source);
       const b = graph.nodes.find((n) => n.id === link.target);
       if (!a || !b) continue;
       const style = EDGE_STYLE[link.kind];
-      ctx.strokeStyle = style.color;
+      ctx.strokeStyle =
+        link.kind === "is-a" ? ruleStrongColor : style.color;
       ctx.lineWidth = style.width;
       ctx.setLineDash(style.dash);
       ctx.beginPath();
@@ -111,22 +125,22 @@ export function MindMapCanvas({
 
     // Nodes.
     ctx.font =
-      "12px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      "500 12.5px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     for (const node of graph.nodes) {
       const isSelected = node.id === selectedId;
       ctx.fillStyle = NODE_FILL[node.kind] ?? NODE_FILL.concept;
-      ctx.strokeStyle = isSelected ? "#B8601C" : "#3a3a3a";
-      ctx.lineWidth = isSelected ? 3 : 1;
+      ctx.strokeStyle = isSelected ? accentColor : ruleStrongColor;
+      ctx.lineWidth = isSelected ? 3 : 1.5;
       ctx.beginPath();
       ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = "#1a1a1a";
+      ctx.fillStyle = inkColor;
       const truncated =
-        node.label.length > 22 ? node.label.slice(0, 21) + "…" : node.label;
-      ctx.fillText(truncated, node.x, node.y + NODE_RADIUS + 4);
+        node.label.length > 24 ? node.label.slice(0, 23) + "…" : node.label;
+      ctx.fillText(truncated, node.x, node.y + NODE_RADIUS + 6);
     }
 
     ctx.restore();
@@ -149,7 +163,7 @@ export function MindMapCanvas({
 
   useEffect(() => {
     draw();
-  }, [draw]);
+  }, [draw, theme]);
 
   const screenToWorld = useCallback(
     (sx: number, sy: number): { x: number; y: number } => {

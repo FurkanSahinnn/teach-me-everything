@@ -85,14 +85,31 @@ export function ToggleRow({
   );
 }
 
-const THEME_SWATCH: Record<string, { bg: string; accent: string }> = {
-  white: { bg: "#FFFFFF", accent: "#F4F4F2" },
-  sepia: { bg: "#F6EAD2", accent: "#E5D2AC" },
-  dark: { bg: "#0E0E10", accent: "#242428" },
-  // İkinci yarı burada yüzey değil aksan: GitHub'ın #0D1117/#21262D çifti
-  // 28px'lik çipte "dark"tan ayırt edilemiyordu, imza mavisi ayırt ediyor.
-  github: { bg: "#0D1117", accent: "#1F6FEB" },
+export const THEME_SWATCH: Record<string, { bg: string; surface: string; accent: string }> = {
+  white: { bg: "#FDFDFC", surface: "#ECEAE4", accent: "#C06221" },
+  "github-light": { bg: "#FFFFFF", surface: "#EAEEF2", accent: "#0969DA" },
+  sepia: { bg: "#F5ECD8", surface: "#E1D2B2", accent: "#A64B17" },
+  dark: { bg: "#101216", surface: "#20242E", accent: "#E59947" },
+  github: { bg: "#0D1117", surface: "#21262D", accent: "#1F6FEB" },
+  dracula: { bg: "#282A36", surface: "#44475A", accent: "#BD93F9" },
+  monokai: { bg: "#2D2A2E", surface: "#423F43", accent: "#FFD866" },
+  nord: { bg: "#2E3440", surface: "#434C5E", accent: "#88C0D0" },
+  catppuccin: { bg: "#1E1E2E", surface: "#313244", accent: "#CBA6F7" },
+  "tokyo-night": { bg: "#1A1B26", surface: "#24283B", accent: "#7AA2F7" },
 };
+
+export const THEME_OPTIONS: Option[] = [
+  { value: "white", tr: "Beyaz (Fildişi)", en: "White (Ivory)" },
+  { value: "github-light", tr: "GitHub Açık", en: "GitHub Light" },
+  { value: "sepia", tr: "Sepya (Parşömen)", en: "Sepia (Parchment)" },
+  { value: "dark", tr: "Obsidyen Koyu", en: "Obsidian Dark" },
+  { value: "github", tr: "GitHub Koyu", en: "GitHub Dark" },
+  { value: "dracula", tr: "Dracula", en: "Dracula" },
+  { value: "monokai", tr: "Monokai Pro", en: "Monokai Pro" },
+  { value: "nord", tr: "Nord", en: "Nord" },
+  { value: "catppuccin", tr: "Catppuccin Mocha", en: "Catppuccin Mocha" },
+  { value: "tokyo-night", tr: "Tokyo Night", en: "Tokyo Night" },
+];
 
 export function ToggleGroupRow({
   label,
@@ -139,12 +156,16 @@ export function ToggleGroupRow({
                   style={{ backgroundColor: swatch?.bg ?? "var(--paper)" }}
                 >
                   <span
-                    className="h-full flex-1"
+                    className="h-full flex-[2]"
                     style={{ backgroundColor: swatch?.bg ?? "var(--paper)" }}
                   />
                   <span
                     className="h-full flex-1"
-                    style={{ backgroundColor: swatch?.accent ?? "var(--paper-2)" }}
+                    style={{ backgroundColor: swatch?.surface ?? "var(--paper-3)" }}
+                  />
+                  <span
+                    className="h-full flex-1"
+                    style={{ backgroundColor: swatch?.accent ?? "var(--accent)" }}
                   />
                 </div>
                 <span
@@ -208,12 +229,7 @@ export function AppearancePreferenceRows() {
         label={t("tema")}
         value={theme}
         onChange={(v) => setTheme(v as Theme)}
-        options={[
-          { value: "white", tr: "Beyaz", en: "White" },
-          { value: "sepia", tr: "Sepya", en: "Sepia" },
-          { value: "dark", tr: "Koyu", en: "Dark" },
-          { value: "github", tr: "GitHub", en: "GitHub" },
-        ]}
+        options={THEME_OPTIONS}
         variant="theme"
       />
       <SelectRow

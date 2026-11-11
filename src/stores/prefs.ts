@@ -26,7 +26,17 @@ import {
   sanitizeNoteEditorPrefs,
 } from "@/lib/notes/editor-prefs";
 
-export type Theme = "white" | "sepia" | "dark" | "github";
+export type Theme =
+  | "white"
+  | "github-light"
+  | "sepia"
+  | "dark"
+  | "github"
+  | "dracula"
+  | "monokai"
+  | "nord"
+  | "catppuccin"
+  | "tokyo-night";
 export type Density = "compact" | "normal" | "comfy";
 export type Locale = "tr" | "en";
 export type AnthropicAuthPreference = "oauth" | "api-key";
@@ -328,7 +338,18 @@ const VALID_TTS_PROVIDERS: readonly TtsProviderId[] = [
   "vibevoice",
 ];
 const DEFAULT_TTS_PROVIDER: TtsProviderId = "piper";
-const VALID_THEMES: readonly Theme[] = ["white", "sepia", "dark", "github"];
+export const VALID_THEMES: readonly Theme[] = [
+  "white",
+  "github-light",
+  "sepia",
+  "dark",
+  "github",
+  "dracula",
+  "monokai",
+  "nord",
+  "catppuccin",
+  "tokyo-night",
+];
 const VALID_AI_LOCALES: readonly AiResponseLocale[] = ["tr", "en", "follow_source"];
 const VALID_READER_WIDTHS: readonly ReaderWidth[] = ["narrow", "full"];
 const MODEL_BINDING_KEYS: readonly (keyof ModelBindings)[] = [
@@ -783,8 +804,11 @@ type PrefsState = {
    */
   podcastFeatureEnabled: boolean;
   /** When true (desktop only), silently check GitHub Releases for a newer
-   *  build on launch and toast if one is found. Never auto-installs. */
+   *  build on launch and show the update welcome modal if one is found. */
   autoCheckUpdates: boolean;
+  /** When true (desktop only), automatically download, install, and relaunch
+   *  when a newer release is detected on launch. */
+  autoInstallUpdates: boolean;
   curriculumGeneration: CurriculumGenerationPrefs;
   setTheme: (theme: Theme) => void;
   setThemeFollowsSystem: (follow: boolean) => void;
@@ -855,6 +879,7 @@ type PrefsState = {
   /** Phase 11.A — toggle whether the podcast feature surface is shown at all. */
   setPodcastFeatureEnabled: (value: boolean) => void;
   setAutoCheckUpdates: (value: boolean) => void;
+  setAutoInstallUpdates: (value: boolean) => void;
   setCurriculumChunkDetail: (value: number) => void;
 };
 
@@ -893,6 +918,7 @@ export const usePrefs = create<PrefsState>()(
       ttsProvider: DEFAULT_TTS_PROVIDER,
       podcastFeatureEnabled: true,
       autoCheckUpdates: true,
+      autoInstallUpdates: false,
       curriculumGeneration: { ...DEFAULT_CURRICULUM_GENERATION_PREFS },
       setTheme: (theme) => {
         set({ theme, themeFollowsSystem: false });
@@ -1174,6 +1200,9 @@ export const usePrefs = create<PrefsState>()(
       },
       setAutoCheckUpdates: (value) => {
         set({ autoCheckUpdates: value });
+      },
+      setAutoInstallUpdates: (value) => {
+        set({ autoInstallUpdates: value });
       },
       setCurriculumChunkDetail: (value) => {
         set((s) => ({

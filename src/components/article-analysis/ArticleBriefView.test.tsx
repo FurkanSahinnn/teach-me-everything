@@ -36,6 +36,7 @@ describe("ArticleBriefView", () => {
     expect(screen.getByText(/baseline/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Ask about this section/ }));
     expect(screen.getByRole("textbox", { name: /Question or instruction/ })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /Assistant model/ })).toBeInTheDocument();
   });
 
   it("shows a streaming draft without offering edits before generation finishes", () => {

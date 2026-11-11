@@ -21,19 +21,64 @@ export type BriefChatResult =
   | { kind: "answer"; text: string; citations: AnalysisCitation[]; externalSources?: { title: string; url: string }[] }
   | { kind: "rewrite"; section: BriefSection };
 
+export function resolveBriefChatModel(
+  analysis: ArticleAnalysisRecord,
+  overrideModel?: string,
+): string {
+  const state = usePrefs.getState();
+  const candidates = [
+    overrideModel,
+    state?.modelBindings?.chat,
+    state?.modelBindings?.analysisSynthesize,
+    analysis.modelSnapshot?.synthesize,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0 && findChatOption(candidate)) {
+      return candidate;
+    }
+  }
+  return analysis.modelSnapshot?.synthesize || "anthropic::claude-sonnet-4-6";
+}
+
 export async function runBriefChat(input: {
   analysis: ArticleAnalysisRecord;
   question: string;
   mode: "answer" | "rewrite" | "research";
   sectionId?: string;
   selectedText?: string;
+  modelBinding?: string;
   signal?: AbortSignal;
 }): Promise<BriefChatResult> {
   const brief = input.analysis.brief;
   if (!brief) throw new Error("No editable brief is available");
-  const option = findChatOption(input.analysis.modelSnapshot.synthesize);
+
+  const state = usePrefs.getState();
+  const candidateBindings = Array.from(
+    new Set(
+      [
+        input.modelBinding,
+        state?.modelBindings?.chat,
+        state?.modelBindings?.analysisSynthesize,
+        input.analysis.modelSnapshot?.synthesize,
+      ].filter((c): c is string => typeof c === "string" && c.trim().length > 0),
+    ),
+  );
+
+  let option = undefined;
+  let credential = null;
+  for (const binding of candidateBindings) {
+    const opt = findChatOption(binding);
+    if (!opt) continue;
+    if (!option) option = opt;
+    const cred = await resolveChatCredentialForPreset(opt.presetId);
+    if (cred) {
+      option = opt;
+      credential = cred;
+      break;
+    }
+  }
+
   if (!option) throw new Error("Selected analysis model is no longer available");
-  const credential = await resolveChatCredentialForPreset(option.presetId);
   if (!credential) throw new Error("No credential for the analysis model");
   const chunks = await listChunksBySource(input.analysis.sourceId);
   const quoteIndex = buildQuoteIndex(chunks);
@@ -95,8 +140,24 @@ export async function runBriefChat(input: {
     return { kind: "rewrite", section: materializeSectionRewrite(parsed.value, section, quoteIndex) };
   }
   const json = extractFirstJsonObject(raw);
-  const parsed = json ? AnswerSchema.safeParse(JSON.parse(json)) : null;
-  if (!parsed?.success) throw new Error("The model returned an invalid answer");
+  let parsed: ReturnType<typeof AnswerSchema.safeParse> | null = null;
+  if (json) {
+    try {
+      parsed = AnswerSchema.safeParse(JSON.parse(json));
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed?.success) {
+    const fallbackText = raw.trim();
+    if (!fallbackText) throw new Error("The model returned an invalid answer");
+    return {
+      kind: "answer",
+      text: fallbackText,
+      citations: [],
+      ...(externalSources ? { externalSources } : {}),
+    };
+  }
   return {
     kind: "answer",
     text: parsed.data.text,

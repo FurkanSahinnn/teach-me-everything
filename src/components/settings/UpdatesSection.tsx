@@ -74,6 +74,8 @@ export function UpdatesSection(): React.ReactElement | null {
   const pick = useLocalePick();
   const autoCheckUpdates = usePrefs((s) => s.autoCheckUpdates);
   const setAutoCheckUpdates = usePrefs((s) => s.setAutoCheckUpdates);
+  const autoInstallUpdates = usePrefs((s) => s.autoInstallUpdates);
+  const setAutoInstallUpdates = usePrefs((s) => s.setAutoInstallUpdates);
   const toastRef = useRef(toast);
   // Keep the latest toast in a ref for the post-relaunch async callback,
   // synced in an effect (updating a ref during render is disallowed).
@@ -166,12 +168,12 @@ export function UpdatesSection(): React.ReactElement | null {
       <label className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-line/60 bg-paper px-4 py-3">
         <span className="min-w-0">
           <span className="block text-sm font-medium text-ink">
-            {pick("Açılışta otomatik kontrol", "Auto-check on launch")}
+            {pick("Açılışta güncelleme paneli ile karşıla", "Check & show update panel on launch")}
           </span>
           <span className="mt-0.5 block text-xs text-ink-soft">
             {pick(
-              "Uygulama açıldığında yeni sürüm var mı diye bakar; bulursa bildirir, otomatik kurmaz.",
-              "On launch, checks GitHub Releases for a newer build; notifies you if found — never installs automatically.",
+              "Uygulama açıldığında yeni sürüm var mı diye bakar; bulursa güncelleme karşılama panelini açar.",
+              "On launch, checks GitHub Releases for a newer build and opens the update welcome panel if found.",
             )}
           </span>
         </span>
@@ -180,6 +182,26 @@ export function UpdatesSection(): React.ReactElement | null {
           onCheckedChange={setAutoCheckUpdates}
           size="sm"
           ariaLabel={pick("Açılışta otomatik kontrol", "Auto-check on launch")}
+        />
+      </label>
+
+      <label className="mt-2.5 flex items-start justify-between gap-3 rounded-xl border border-line/60 bg-paper px-4 py-3">
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-ink">
+            {pick("Yeni güncellemeyi otomatik indir ve kur", "Automatically download & install updates")}
+          </span>
+          <span className="mt-0.5 block text-xs text-ink-soft">
+            {pick(
+              "Açılışta yeni sürüm bulunduğunda onay beklemeden indirip kurar ve uygulamayı yeniden başlatır.",
+              "When a new version is found on launch, automatically downloads, installs, and restarts the app.",
+            )}
+          </span>
+        </span>
+        <Switch
+          checked={autoInstallUpdates}
+          onCheckedChange={setAutoInstallUpdates}
+          size="sm"
+          ariaLabel={pick("Yeni güncellemeyi otomatik indir ve kur", "Automatically download & install updates")}
         />
       </label>
     </section>

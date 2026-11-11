@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Check, CornerDownLeft, MessageCircle, RotateCcw, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, Check, CornerDownLeft, Cpu, MessageCircle, RotateCcw, Search, Sparkles, X } from "lucide-react";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { runBriefChat } from "@/lib/ai/article-brief-chat";
+import { encodeChatModelBinding, findChatOption, getProviderChatModels, listChatOptions } from "@/lib/ai/model-options";
 import { countUnmatchedSourceBlocks } from "@/lib/article-analysis/brief";
 import type { BriefBlock, BriefSection } from "@/lib/article-analysis/brief";
 import type { AnalysisCitation, ArticleAnalysisRecord, BriefChatMessage } from "@/lib/article-analysis/types";
 import { appendBriefChat, appendExternalNote, applyBriefRevision, undoBriefRevision } from "@/lib/db/article-analyses";
+import { usePrefs } from "@/stores/prefs";
 
 type Mode = "answer" | "rewrite" | "research";
 type Proposal = { section: BriefSection; original: BriefSection };
@@ -53,8 +55,8 @@ function BriefBlockView({ block, onJump, pick }: {
   pick: (tr: string, en: string) => string;
 }) {
   return <div className={block.kind === "caution" ? "rounded-xl border-l-[3px] border-warn bg-warn/5 px-4 py-3" : block.kind === "result" ? "border-l-[3px] border-accent bg-paper-2 px-4 py-3" : ""}>
-    {block.title ? <h4 className="mb-1 font-medium text-ink">{block.title}</h4> : null}
-    <p className="whitespace-pre-line text-[15px] leading-[1.8] text-ink-2">
+    {block.title ? <h4 className="mb-1 text-[14.5px] font-medium text-ink">{block.title}</h4> : null}
+    <p className="whitespace-pre-line text-[14px] leading-[1.75] text-ink-2 sm:text-[14.5px]">
       {block.text}
       <CitationLinks citations={block.citations} onJump={onJump} pick={pick} />
     </p>
@@ -86,7 +88,43 @@ export function ArticleBriefView({ analysis }: { analysis: ArticleAnalysisRecord
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [localMessages, setLocalMessages] = useState<BriefChatMessage[]>([]);
+  const chatBinding = usePrefs((s) => s.modelBindings?.chat);
+  const synthBinding = usePrefs((s) => s.modelBindings?.analysisSynthesize);
+  const disabledProviders = usePrefs((s) => s.disabledProviders);
+  const setModelBinding = usePrefs((s) => s.setModelBinding);
+  const [modelOverride, setModelOverride] = useState<string>("");
   const generating = analysis.status === "generating";
+
+  const activeModel =
+    modelOverride ||
+    chatBinding ||
+    synthBinding ||
+    analysis.modelSnapshot?.synthesize ||
+    "anthropic::claude-sonnet-4-6";
+
+  const availableModelChoices = useMemo(() => {
+    const disabled = new Set(disabledProviders ?? []);
+    const baseOptions = listChatOptions().filter((o) => !disabled.has(String(o.presetId)));
+    const choices: { id: string; label: string }[] = [];
+    for (const opt of baseOptions) {
+      const providerLabel = opt.label.split(" · ")[0] ?? String(opt.presetId);
+      const models = getProviderChatModels(opt.presetId);
+      for (const m of models) {
+        choices.push({
+          id: encodeChatModelBinding(opt.presetId, m.id),
+          label: `${providerLabel} · ${m.displayName || m.id}`,
+        });
+      }
+    }
+    if (activeModel && !choices.some((c) => c.id === activeModel)) {
+      const resolved = findChatOption(activeModel);
+      choices.unshift({
+        id: activeModel,
+        label: resolved ? resolved.label : activeModel,
+      });
+    }
+    return choices;
+  }, [disabledProviders, activeModel]);
 
   useEffect(() => {
     if (chatOpen) inputRef.current?.focus();
@@ -145,6 +183,7 @@ export function ArticleBriefView({ analysis }: { analysis: ArticleAnalysisRecord
       const result = await runBriefChat({
         analysis: { ...analysis, briefChat: messages },
         question: trimmed, mode,
+        modelBinding: activeModel,
         ...(activeSectionId ? { sectionId: activeSectionId } : {}),
         ...(selectedText ? { selectedText } : {}),
       });
@@ -193,17 +232,17 @@ export function ArticleBriefView({ analysis }: { analysis: ArticleAnalysisRecord
         <span aria-hidden>·</span><span>{brief.paperType}</span>
         {brief.field ? <><span aria-hidden>·</span><span>{brief.field}</span></> : null}
       </div>
-      <div data-brief-section="thesis" className="article-brief-enter border-b border-rule-soft pb-8">
-        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-accent-ink">{pick("Temel fikir", "The central idea")}</p>
-        <h2 className="max-w-[68ch] font-serif text-[23px] leading-[1.45] text-ink sm:text-[29px]">{brief.thesis.text}<CitationLinks citations={brief.thesis.citations} onJump={onJump} pick={pick} /></h2>
+      <div data-brief-section="thesis" className="article-brief-enter border-b border-rule-soft pb-7">
+        <p className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.14em] text-accent-ink">{pick("Temel fikir", "The central idea")}</p>
+        <h2 className="max-w-[72ch] font-serif text-[16.5px] font-normal leading-[1.65] text-ink sm:text-[18.5px]">{brief.thesis.text}<CitationLinks citations={brief.thesis.citations} onJump={onJump} pick={pick} /></h2>
       </div>
       {brief.coverage.omittedChunks > 0 ? <p className="mt-5 text-[11px] leading-relaxed text-ink-4">{pick(`Kaynağın ${brief.coverage.omittedChunks} parçası ana okuma penceresine sığmadı; bölüm özetleriyle işlendi.`, `${brief.coverage.omittedChunks} source chunks were outside the main reading window and processed through section summaries.`)}</p> : null}
-      <nav aria-label={pick("Bölümler", "Sections")} className="mt-7 flex flex-wrap gap-x-4 gap-y-2 border-b border-rule-soft pb-5">
+      <nav aria-label={pick("Bölümler", "Sections")} className="mt-6 flex flex-wrap gap-x-4 gap-y-2 border-b border-rule-soft pb-4">
         {brief.sections.map((section, index) => <a key={section.id} href={`#brief-${section.id}`} className="text-[12px] text-ink-3 underline-offset-4 transition-colors hover:text-accent-ink hover:underline"><span className="mr-1 font-mono text-ink-4">0{index + 1}</span>{section.title}</a>)}
       </nav>
-      {brief.sections.map((section, index) => <section key={section.id} id={`brief-${section.id}`} data-brief-section={section.id} style={{ animationDelay: `${Math.min(index + 1, 6) * 65}ms` }} className="article-brief-enter scroll-mt-6 border-b border-rule-soft py-9 last:border-0">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div><p className="mb-2 font-mono text-[11px] text-ink-4">0{index + 1} / {brief.sections.length}</p><h3 className="font-serif text-[22px] leading-tight text-ink sm:text-[25px]">{section.title}</h3></div>
+      {brief.sections.map((section, index) => <section key={section.id} id={`brief-${section.id}`} data-brief-section={section.id} style={{ animationDelay: `${Math.min(index + 1, 6) * 65}ms` }} className="article-brief-enter scroll-mt-6 border-b border-rule-soft py-8 last:border-0">
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div><p className="mb-1.5 font-mono text-[11px] text-ink-4">0{index + 1} / {brief.sections.length}</p><h3 className="font-serif text-[18px] font-medium leading-snug text-ink sm:text-[20px]">{section.title}</h3></div>
           {!generating ? <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => openChat(section.id)} className="rounded-full border border-rule-soft px-2.5 py-1.5 text-[11px] text-ink-3 transition-colors hover:border-accent hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-accent"><MessageCircle className="mr-1 inline h-3.5 w-3.5" aria-hidden />{pick("Bu bölümü sor", "Ask about this section")}</button>
             <button type="button" onClick={() => openChat(section.id, "rewrite")} className="rounded-full border border-rule-soft px-2.5 py-1.5 text-[11px] text-ink-3 transition-colors hover:border-accent hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-accent"><Sparkles className="mr-1 inline h-3.5 w-3.5" aria-hidden />{pick("Düzenle", "Revise")}</button>
@@ -227,9 +266,34 @@ export function ArticleBriefView({ analysis }: { analysis: ArticleAnalysisRecord
     {chatOpen ? <>
       <button type="button" aria-label={pick("Sohbeti kapat", "Close assistant")} onClick={() => setChatOpen(false)} className="fixed inset-0 z-40 bg-black/35 lg:hidden" />
       <aside aria-label={pick("Analiz asistanı", "Analysis assistant")} className="fixed inset-x-0 bottom-0 top-12 z-50 flex flex-col border-l border-rule-soft bg-paper shadow-xl lg:sticky lg:top-5 lg:z-auto lg:h-[min(780px,calc(100vh-180px))] lg:min-h-[360px] lg:rounded-[18px] lg:border lg:shadow-sm">
-        <header className="flex items-center justify-between border-b border-rule-soft px-4 py-3">
-          <div><p className="font-serif text-[17px] text-ink">{pick("Okuma asistanı", "Reading assistant")}</p><p className="text-[11px] text-ink-4">{activeSection ? activeSection.title : pick("Tüm makale", "Whole paper")}</p></div>
-          <button type="button" aria-label={pick("Sohbeti kapat", "Close assistant")} onClick={() => setChatOpen(false)} className="rounded-lg p-2 text-ink-3 hover:bg-paper-2"><X className="h-4 w-4" aria-hidden /></button>
+        <header className="flex flex-col gap-2 border-b border-rule-soft px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div><p className="font-serif text-[16px] font-medium text-ink">{pick("Okuma asistanı", "Reading assistant")}</p><p className="text-[11px] text-ink-4">{activeSection ? activeSection.title : pick("Tüm makale", "Whole paper")}</p></div>
+            <button type="button" aria-label={pick("Sohbeti kapat", "Close assistant")} onClick={() => setChatOpen(false)} className="rounded-lg p-2 text-ink-3 hover:bg-paper-2"><X className="h-4 w-4" aria-hidden /></button>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-lg border border-rule-soft bg-paper-2 px-2.5 py-1.5 text-[11px] text-ink-3">
+            <Cpu className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+            <label htmlFor="brief-chat-model" className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-ink-4">
+              {pick("Model", "Model")}:
+            </label>
+            <select
+              id="brief-chat-model"
+              aria-label={pick("Asistan modeli", "Assistant model")}
+              value={activeModel}
+              onChange={(event) => {
+                const next = event.target.value;
+                setModelOverride(next);
+                setModelBinding("chat", next);
+              }}
+              className="min-w-0 flex-1 truncate bg-transparent font-mono text-[11px] text-ink outline-none"
+            >
+              {availableModelChoices.map((choice) => (
+                <option key={choice.id} value={choice.id} className="bg-paper text-ink">
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </header>
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5" aria-live="polite">
           {messages.length === 0 ? <div className="rounded-xl bg-paper-2 p-4 text-[13px] leading-relaxed text-ink-3">{pick("Anlamadığın bir noktayı sor veya bir bölümü daha açık yazdır.", "Ask about a difficult point or revise a section to make it clearer.")}</div> : null}

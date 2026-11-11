@@ -1,6 +1,6 @@
 [package]
 name = "tme"
-version = "0.1.0"
+version = "1.1.0"
 description = "Teach Me Everything — local-first active learning workspace"
 authors = ["Teach Me Everything contributors"]
 license = "MIT"

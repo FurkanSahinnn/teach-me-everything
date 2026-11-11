@@ -44,4 +44,14 @@ describe("analysis assistant", () => {
     if (result.kind === "rewrite") expect(result.section.blocks[0]?.citations?.[0]?.chunkId).toBe("chunk-1");
     expect(analysis.brief?.sections[0]?.title).toBe("Method");
   });
+
+  it("gracefully falls back to plain text when the model responds without JSON", async () => {
+    response = "Here is a plain-text explanation of the paper's methodology.";
+    const result = await runBriefChat({ analysis, question: "Explain the method", mode: "answer" });
+    expect(result.kind).toBe("answer");
+    if (result.kind === "answer") {
+      expect(result.text).toBe("Here is a plain-text explanation of the paper's methodology.");
+      expect(result.citations).toEqual([]);
+    }
+  });
 });
