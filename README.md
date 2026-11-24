@@ -42,8 +42,12 @@ Automatically extract core concepts, methods, and dependencies across your sourc
 
 ### Option A: Download Prebuilt Desktop Installer (Recommended for Users)
 1. Go to the [**Latest GitHub Release**](https://github.com/FurkanSahinnn/teach-me-everything/releases/latest).
-2. Download and run the installer for your system (`.msi` or `-setup.exe` on Windows).
-3. Launch **Teach Me Everything** — whenever a new version is published, the app greets you on launch with an **Update Welcome Panel** (or installs updates automatically if enabled in *Settings → Updates*).
+2. Choose the package for your system.
+   - **Windows x64:** Run the `.msi` or `-setup.exe` installer.
+   - **Linux x64:** Use the **AppImage** across distributions, the **DEB** on Ubuntu or Debian, or the **RPM** on Fedora. Install a local package with `sudo apt install ./<file>.deb` or `sudo dnf install ./<file>.rpm`.
+3. Launch **Teach Me Everything**. In-app updates use the same package format you installed. Linux DEB and RPM updates may request administrator authorization.
+
+On Linux, make the AppImage executable (`chmod +x "<file>.AppImage"`) before opening it. If your system lacks FUSE, run `./<file>.AppImage --appimage-extract-and-run`. Packages are built on Ubuntu 22.04 and target glibc-based x64 desktops. Saving API keys requires a running Secret Service provider such as GNOME Keyring or a compatible desktop wallet.
 
 ### Option B: Build or Run the Desktop App from Source
 Prerequisites:
@@ -57,7 +61,7 @@ npm install
 # 2. Run the native desktop app in development mode
 npm run tauri:dev
 
-# 3. Build a production desktop installer (.msi / .exe)
+# 3. Build production installers for the current operating system
 npm run tauri:build
 ```
 
@@ -79,7 +83,7 @@ npm run test:e2e     # End-to-end tests (Playwright)
 
 ## 🔄 Automated Releases & In-App Auto-Updater
 
-- **CI/CD Release Pipeline (`.github/workflows/release.yml`):** Every push or merge to `main` (as well as `v*` tags) automatically resolves the next semantic version, builds signed Windows installers (`.msi` and NSIS `.exe`) plus the `latest.json` updater manifest, verifies signatures via `scripts/check-release.mjs`, and publishes the GitHub Release live.
+- **CI/CD Release Pipeline (`.github/workflows/release.yml`):** A push to `main` or a `v*` tag builds Windows installers and Linux AppImage, DEB, and RPM packages for one version. The final job validates the packages and the signatures referenced by the shared `latest.json` updater manifest before publishing. A manual preview run makes the packages available as GitHub Actions artifacts.
 - **In-App Update Panel (`UpdateCheckMount`):** When users open the installed desktop app and a newer release is available on GitHub Releases, an **Update Welcome Panel** appears with the new version badge, release notes, a one-click **"Update & Restart Now"** progress bar, and an optional toggle to auto-install future updates on launch.
 
 ---

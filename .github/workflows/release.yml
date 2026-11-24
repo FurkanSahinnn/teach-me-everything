@@ -1,162 +1,183 @@
-# Automated Windows Tauri release & updater pipeline.
-#
-# Triggers automatically on:
-#   1. Any push or merge to `main` (auto-resolves next vX.Y.Z tag if current version is already released)
-#   2. Pushing a `v*` tag (`git tag v1.1.0 && git push --tags`)
-#   3. Manual `workflow_dispatch`
-#
-# Flow:
-#   - Builds signed desktop installers (.msi + NSIS .exe) and `latest.json` updater manifest as a draft
-#   - Verifies all updater assets & signatures via `scripts/check-release.mjs`
-#   - Automatically publishes the verified release (`--draft=false --latest`) so installed desktop apps
-#     immediately detect the update on launch via `/releases/latest/download/latest.json`.
-#
-# Required GitHub Secrets:
-#   - TAURI_SIGNING_PRIVATE_KEY          (from `npx tauri signer generate`)
-#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the passphrase set during generate)
-# The matching public key lives in src-tauri/tauri.conf.json (plugins.updater.pubkey).
-
 name: Release
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
     paths-ignore:
       - "**.md"
       - "docs/**"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Optional release tag (vX.Y.Z). Leave empty to auto-resolve from package.json."
+        description: "Optional release tag (vX.Y.Z). Leave empty to resolve automatically."
         required: false
         type: string
+      preview:
+        description: "Build downloadable Actions artifacts without publishing a release."
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && !inputs.preview && 'stable-release' || format('release-preview-{0}', github.ref) }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  publish-tauri:
-    permissions:
-      contents: write
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Resolve release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+          PUBLISH: ${{ (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && !inputs.preview }}
+        run: |
+          tag="$(node scripts/release-version.mjs)"
+          node scripts/release-version.mjs "$tag"
+          node scripts/check-release.mjs "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: "windows-latest"
-            args: ""
-
+          - platform: windows-latest
+            artifact: windows-x64
+            bundles: msi,nsis
+          - platform: ubuntu-22.04
+            artifact: linux-x64
+            bundles: appimage,deb,rpm
     runs-on: ${{ matrix.platform }}
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: "npm"
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+          cache: npm
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            libdbus-1-dev libssl-dev patchelf libfuse2 xdg-utils rpm xauth xvfb xdotool \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
-
-      - name: Resolve release version and sync manifests
-        id: version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_TAG: ${{ inputs.tag }}
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-        run: |
-          node -e '
-            const fs = require("node:fs");
-            const { execFileSync } = require("node:child_process");
-
-            const pkgPath = "package.json";
-            const tauriPath = "src-tauri/tauri.conf.json";
-            const cargoPath = "src-tauri/Cargo.toml";
-
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-            const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
-
-            let requestedTag = process.env.INPUT_TAG || (process.env.REF_TYPE === "tag" ? process.env.REF_NAME : "");
-            let version = requestedTag ? requestedTag.replace(/^v/, "") : pkg.version;
-
-            // When triggered from a push/merge to main, check existing GitHub releases/tags
-            // and auto-increment patch version if the current version was already released.
-            if (!requestedTag) {
-              let existingTags = new Set();
-              try {
-                const out = execFileSync("git", ["tag", "--list", "v*"], { encoding: "utf8" });
-                for (const line of out.split(/\r?\n/)) {
-                  if (line.trim()) existingTags.add(line.trim());
-                }
-              } catch {}
-              try {
-                const relOut = execFileSync("gh", ["release", "list", "--limit", "100", "--json", "tagName"], { encoding: "utf8" });
-                for (const r of JSON.parse(relOut)) {
-                  if (r.tagName) existingTags.add(r.tagName);
-                }
-              } catch {}
-
-              const parts = version.split(".").map((n) => parseInt(n, 10));
-              while (existingTags.has(`v${parts.join(".")}`)) {
-                parts[2] = (parts[2] || 0) + 1;
-              }
-              version = parts.join(".");
-            }
-
-            const tag = `v${version}`;
-            pkg.version = version;
-            tauri.version = version;
-            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-            fs.writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + "\n");
-
-            if (fs.existsSync(cargoPath)) {
-              const cargo = fs.readFileSync(cargoPath, "utf8").replace(
-                /^(version\s*=\s*)"[^"]*"/m,
-                `$1"${version}"`
-              );
-              fs.writeFileSync(cargoPath, cargo);
-            }
-
-            fs.appendFileSync(process.env.GITHUB_ENV, `RELEASE_TAG=${tag}\n`);
-            console.log(`Resolved release tag: ${tag}`);
-          '
-
+          cache-on-failure: ${{ runner.os == 'Linux' }}
+      - name: Sync release version
+        run: node scripts/release-version.mjs "$RELEASE_TAG"
       - name: Install frontend dependencies
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
         run: npm ci
-
-      - name: Validate release version and updater configuration
-        run: node scripts/check-release.mjs "$env:RELEASE_TAG"
-
-      - name: Build & upload Tauri release assets
-        id: tauri
-        uses: tauri-apps/tauri-action@v0
+      - name: Build signed installers
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ env.RELEASE_TAG }}
-          releaseName: "Teach Me Everything ${{ env.RELEASE_TAG }}"
-          releaseBody: "Download the Windows desktop installer (.msi or setup.exe) from the assets below. Installed desktop apps receive this update automatically on launch."
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: true
-          args: ${{ matrix.args }}
-
-      - name: Validate updater assets & publish release live
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_ID: ${{ steps.tauri.outputs.releaseId }}
+          PUBLISH: ${{ needs.prepare.outputs.publish }}
+          BUNDLES: ${{ matrix.bundles }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.prepare.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.prepare.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: |
-          if (-not $env:RELEASE_ID) { throw "Tauri action did not return a release ID" }
-          node scripts/check-release.mjs "$env:RELEASE_TAG" "$env:RELEASE_ID"
-          gh release edit "$env:RELEASE_TAG" --draft=false --latest
-          Write-Host "Published $env:RELEASE_TAG as latest release."
+          args=(--bundles "$BUNDLES")
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            # linuxdeploy's strip can reject sections in newer system libraries.
+            export NO_STRIP=true
+            args+=(--verbose)
+          fi
+          if [[ "$PUBLISH" != "true" ]]; then
+            # Preview packages use a disposable key and are never sent to Releases.
+            key="$RUNNER_TEMP/tauri-preview.key"
+            preview_passphrase="$(node -p 'require("node:crypto").randomBytes(32).toString("hex")')"
+            echo "::add-mask::$preview_passphrase"
+            npm run tauri -- signer generate --ci --password "$preview_passphrase" --write-keys "$key" > /dev/null
+            export TAURI_SIGNING_PRIVATE_KEY="$(cat "$key")"
+            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$preview_passphrase"
+            export PREVIEW_PUBKEY="$(cat "$key.pub")"
+            node -e 'console.log(JSON.stringify({plugins:{updater:{pubkey:process.env.PREVIEW_PUBKEY}}}))' > "$RUNNER_TEMP/tauri-preview.json"
+            args+=(--config "$RUNNER_TEMP/tauri-preview.json")
+          fi
+          npm run tauri -- build "${args[@]}"
+      - name: Smoke test Linux AppImage and Piper
+        if: runner.os == 'Linux'
+        run: bash scripts/check-linux-package.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle/*/*.exe
+            src-tauri/target/release/bundle/*/*.msi
+            src-tauri/target/release/bundle/*/*.AppImage
+            src-tauri/target/release/bundle/*/*.deb
+            src-tauri/target/release/bundle/*/*.rpm
+            src-tauri/target/release/bundle/*/*.sig
+
+  assemble:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v8
+        with:
+          path: bundles
+      - name: Assemble and validate all release assets
+        run: |
+          mkdir release-assets
+          while IFS= read -r -d '' path; do
+            name="${path##*/}"
+            asset="release-assets/${name// /.}"
+            test ! -e "$asset"
+            mv -- "$path" "$asset"
+          done < <(find bundles -type f -print0)
+          node scripts/release-version.mjs "$RELEASE_TAG"
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          - Windows x64: download the MSI or setup EXE.
+          - Linux x64: download the AppImage, the DEB for Debian/Ubuntu, or the RPM for Fedora.
+          - In-app updates use the matching package format.
+          NOTES
+          node scripts/check-release.mjs "$RELEASE_TAG" --prepare release-assets "$RUNNER_TEMP/release-notes.md"
+      - name: Validate draft and publish release
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" release-assets/* --draft --target "$GITHUB_SHA" \
+            --title "Teach Me Everything $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\" and .draft) | .id")"
+          test -n "$release_id"
+          node scripts/check-release.mjs "$RELEASE_TAG" "$release_id"
+          gh release edit "$RELEASE_TAG" --draft=false --latest

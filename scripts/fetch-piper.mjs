@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Phase 11.A automation: download the platform-specific Piper TTS engine
-// distribution and place its FULL folder under
+// distribution and place its runtime files under
 //   src-tauri/binaries/piper-<rust-target-triple>/
 //
 // Piper isn't a single static binary — the Windows release ships
@@ -127,13 +127,23 @@ async function downloadFile(url, destPath) {
 
 function extractArchive(archivePath, destDir) {
   log(`extracting ${basename(archivePath)}`);
-  // Windows ships bsdtar, which reads ZIP without the PowerShell Archive module.
-  const command = process.platform === "win32" ? "tar.exe" : "tar";
+  // Git for Windows puts GNU tar on PATH, so use Windows' ZIP-capable bsdtar explicitly.
+  const command = process.platform === "win32"
+    ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+    : "tar";
   const flags = archivePath.endsWith(".zip") ? "-xf" : "-xzf";
   const result = spawnSync(command, [flags, archivePath, "-C", destDir], { stdio: "inherit" });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} could not extract ${basename(archivePath)} (${result.signal ?? `exit ${result.status}`})`);
+  }
+}
+
+function removeUnusedPiperTools(directory) {
+  // The standalone eSpeak CLI lacks a library runpath on Linux. Piper
+  // loads the adjacent eSpeak library directly and only needs its data.
+  if (process.platform === "linux") {
+    rmSync(join(directory, "espeak-ng"), { force: true });
   }
 }
 
@@ -151,6 +161,7 @@ async function main() {
   const piperExePath = join(finalDir, target.exe);
 
   if (existsSync(piperExePath)) {
+    removeUnusedPiperTools(finalDir);
     log(`already present: piper-${target.triple}/${target.exe} — skipping.`);
     return;
   }
@@ -189,8 +200,9 @@ async function main() {
     if (existsSync(finalDir)) {
       rmSync(finalDir, { recursive: true, force: true });
     }
-    // cpSync handles cross-device copies (tmp on another drive on Windows).
-    cpSync(extractedRoot, finalDir, { recursive: true });
+    removeUnusedPiperTools(extractedRoot);
+    // Keep relative library links pointed inside the copied Piper distribution.
+    cpSync(extractedRoot, finalDir, { recursive: true, verbatimSymlinks: true });
 
     if (process.platform !== "win32") {
       chmodSync(piperExePath, 0o755);
