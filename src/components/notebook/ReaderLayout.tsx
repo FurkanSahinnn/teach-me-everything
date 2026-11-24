@@ -12,7 +12,6 @@ export type ReaderTab = "source" | "chat" | "notes";
 
 const MIN_READER_WIDTH = 320;
 const MIN_PANEL_WIDTH = 300;
-const MAX_PANEL_WIDTH = 560;
 const HANDLE_WIDTH = 7;
 const MIN_SPLIT_WIDTH = MIN_READER_WIDTH + HANDLE_WIDTH + MIN_PANEL_WIDTH;
 
@@ -51,7 +50,7 @@ export function ReaderLayout({
   }, []);
 
   const split = containerWidth >= MIN_SPLIT_WIDTH;
-  const maxWidth = Math.min(MAX_PANEL_WIDTH, containerWidth - MIN_READER_WIDTH - HANDLE_WIDTH);
+  const maxWidth = containerWidth - MIN_READER_WIDTH - HANDLE_WIDTH;
   const width = Math.max(MIN_PANEL_WIDTH, Math.min(maxWidth, preferredWidth));
   const panelTab = activeTab === "source" && split ? "chat" : activeTab;
   const panelHidden = split ? collapsed : activeTab === "source";
