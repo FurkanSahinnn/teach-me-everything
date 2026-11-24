@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Phase 11.A automation: download the platform-specific Piper TTS engine
-// distribution and place its FULL folder under
+// distribution and place its runtime files under
 //   src-tauri/binaries/piper-<rust-target-triple>/
 //
 // Piper isn't a single static binary — the Windows release ships
@@ -139,6 +139,14 @@ function extractArchive(archivePath, destDir) {
   }
 }
 
+function removeUnusedPiperTools(directory) {
+  // The standalone eSpeak CLI lacks a library runpath on Linux. Piper
+  // loads the adjacent eSpeak library directly and only needs its data.
+  if (process.platform === "linux") {
+    rmSync(join(directory, "espeak-ng"), { force: true });
+  }
+}
+
 async function main() {
   const platformKey = `${process.platform}-${process.arch}`;
   const target = TARGETS[platformKey];
@@ -153,6 +161,7 @@ async function main() {
   const piperExePath = join(finalDir, target.exe);
 
   if (existsSync(piperExePath)) {
+    removeUnusedPiperTools(finalDir);
     log(`already present: piper-${target.triple}/${target.exe} — skipping.`);
     return;
   }
@@ -191,6 +200,7 @@ async function main() {
     if (existsSync(finalDir)) {
       rmSync(finalDir, { recursive: true, force: true });
     }
+    removeUnusedPiperTools(extractedRoot);
     // Keep relative library links pointed inside the copied Piper distribution.
     cpSync(extractedRoot, finalDir, { recursive: true, verbatimSymlinks: true });
 
