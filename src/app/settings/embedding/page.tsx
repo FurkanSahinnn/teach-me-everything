@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { SettingsPage, SettingsSection } from "@/components/settings/layout/SettingsPrimitives";
 import { EmbedSection } from "@/components/settings/EmbedSection";
+import { LocalEmbedModelsSection } from "@/components/settings/LocalEmbedModelsSection";
 import { RechunkSection } from "@/components/settings/RechunkSection";
 
 export default function EmbeddingSettingsPage() {
@@ -18,6 +19,7 @@ export default function EmbeddingSettingsPage() {
       )}
     >
       <SettingsSection>
+        <LocalEmbedModelsSection />
         <EmbedSection />
         <RechunkSection />
       </SettingsSection>

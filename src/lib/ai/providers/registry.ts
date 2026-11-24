@@ -8,6 +8,7 @@ import { CohereEmbedProvider } from "./embed-cohere";
 import { GeminiEmbedProvider } from "./embed-gemini";
 import { HuggingFaceEmbedProvider } from "./embed-hf";
 import { JinaEmbedProvider } from "./embed-jina";
+import { LocalOnnxEmbedProvider } from "./embed-local";
 import { OpenAICompatEmbedProvider } from "./embed-openai-compat";
 import { OpenAIEmbedProvider } from "./embed-openai";
 import { VoyageEmbedProvider } from "./embed-voyage";
@@ -110,6 +111,9 @@ function constructEmbedProvider(id: ProviderId): EmbedProvider {
       baseUrl: "http://localhost:11434/v1",
       isLocal: true,
     });
+  }
+  if (id === "local-embed") {
+    return new LocalOnnxEmbedProvider();
   }
 
   // Custom endpoints (custom:xxx) — synthesize from prefs and route through

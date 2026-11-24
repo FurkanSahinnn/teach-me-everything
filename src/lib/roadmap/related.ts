@@ -13,7 +13,7 @@ import type { ProviderId } from "@/lib/ai/providers/types";
 
 const DEFAULT_EMBED_MODEL = "text-embedding-3-small";
 // Providers that run locally need no API key (the adapter omits the header).
-const LOCAL_EMBED_PROVIDERS = new Set(["ollama", "lm-studio", "llama-cpp"]);
+const LOCAL_EMBED_PROVIDERS = new Set(["ollama", "lm-studio", "llama-cpp", "local-embed"]);
 
 export type RelatedReason =
   | "no_chunks"
@@ -70,6 +70,7 @@ async function defaultEmbedQuery(args: {
     apiKey,
     model: args.model,
     inputs: [args.query],
+    inputType: "query",
   });
   return result.vectors[0] ?? null;
 }

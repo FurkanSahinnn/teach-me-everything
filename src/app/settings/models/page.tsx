@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useLocalePick } from "@/i18n/IntlProvider";
 import { Button } from "@/components/ui/Button";
@@ -17,7 +17,8 @@ import {
   QuickStartRow,
 } from "@/components/settings/ModelBindingRows";
 import { useApiKeyManager } from "@/hooks/useApiKeyManager";
-import { listChatOptions, listEmbedOptions } from "@/lib/ai/model-options";
+import { filterInstalledEmbedOptions, listChatOptions, listEmbedOptions } from "@/lib/ai/model-options";
+import { listInstalledEmbedModels } from "@/lib/embed-local/install";
 import { filterEnabledChatOptions } from "@/lib/ai/provider-catalog";
 import { type ModelBindings, usePrefs } from "@/stores/prefs";
 
@@ -49,6 +50,14 @@ export default function ModelsSettingsPage() {
   // Save. Quick-start applies write straight to the store; the sync below
   // catches that and refreshes the draft.
   const [draftBindings, setDraftBindings] = useState<ModelBindings>(modelBindings);
+  const [installedEmbedIds, setInstalledEmbedIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let active = true;
+    void listInstalledEmbedModels().then((models) => {
+      if (active) setInstalledEmbedIds(new Set(models.map((model) => model.modelId)));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const [previousBindings, setPreviousBindings] = useState(modelBindings);
   if (previousBindings !== modelBindings) {
     setPreviousBindings(modelBindings);
@@ -98,10 +107,10 @@ export default function ModelsSettingsPage() {
   // user is currently bound to visible so the picker reflects their choice.
   const visibleEmbedOptions = useMemo(
     () =>
-      embedOptions.filter(
+      filterInstalledEmbedOptions(embedOptions, installedEmbedIds, draftBindings.embedPresetId).filter(
         (o) => !o.deprecated || o.id === draftBindings.embedPresetId,
       ),
-    [embedOptions, draftBindings.embedPresetId],
+    [embedOptions, installedEmbedIds, draftBindings.embedPresetId],
   );
 
   return (
