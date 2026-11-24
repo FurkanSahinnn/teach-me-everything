@@ -937,6 +937,7 @@ export async function importBackup(
     id: noteRemap.get(n.id) ?? n.id,
     workspaceId: remapWs(n.workspaceId),
     folderId: remapNoteFolder(n.folderId),
+    ...(n.readerSourceId ? { readerSourceId: remapSourceId(n.readerSourceId) } : {}),
   }));
   const remapRoadmap = (id: string): string => roadmapRemap.get(id) ?? id;
   const remapRoadmapNode = (id: string): string =>

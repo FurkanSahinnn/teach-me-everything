@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   BookText,
   ChevronDown,
-  ChevronsLeft,
   CircleStop,
   CornerUpLeft,
   FileImage,
@@ -48,6 +47,7 @@ import {
 } from "@/components/notebook/CitationChip";
 import { ChatBubble as ChatBubbleStandalone } from "@/components/notebook/ChatBubble";
 import { ChatThreadSidebar } from "@/components/notebook/ChatThreadSidebar";
+import { ReaderLayout, type ReaderTab } from "@/components/notebook/ReaderLayout";
 import { WebCitationPeekModal } from "@/components/notebook/WebCitationPeekModal";
 import { GenerateBatchModal } from "@/components/flashcards/GenerateBatchModal";
 import { useLocalePick } from "@/i18n/IntlProvider";
@@ -148,25 +148,9 @@ const RETRIEVAL_FALLBACK_LIMIT = 12;
 const MAX_TOOL_ROUNDS = 3;
 const FLASHCARD_UNDO_MS = 5000;
 
-type ReaderPanelMode = "closed" | "narrow" | "default" | "wide";
-
-const CHAT_WIDTH_PX: Record<ReaderPanelMode, number> = {
-  closed: 52,
-  narrow: 320,
-  default: 390,
-  wide: 520,
-};
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function chatModeFromWidth(width: number): ReaderPanelMode {
-  if (width <= 72) return "closed";
-  if (width < 360) return "narrow";
-  if (width < 470) return "default";
-  return "wide";
-}
+const ReaderNotesPanel = dynamic(() =>
+  import("@/components/notebook/ReaderNotesPanel").then((module) => module.ReaderNotesPanel),
+);
 
 const STATUS_COPY: Record<IngestStatus, { tr: string; en: string; tone: "info" | "warn" | "err" | "ok" }> = {
   pending: { tr: "Yükleme sırasında", en: "Awaiting parse", tone: "info" },
@@ -193,8 +177,6 @@ type ChatStatus =
   | { kind: "preparing" }
   | { kind: "streaming"; messageId: string }
   | { kind: "error"; code: string; message: string };
-
-type MobileTab = "source" | "chat";
 
 // The proxy + provider wrap upstream errors as `${code}: ${message}` because
 // the legacy StreamEvent error shape has no separate code field. Pull the code
@@ -295,12 +277,11 @@ export default function NotebookReaderPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const activeTab: MobileTab = tabParam === "chat" ? "chat" : "source";
-  const [chatWidth, setChatWidth] = useState(CHAT_WIDTH_PX.default);
-  const chatMode = chatModeFromWidth(chatWidth);
+  const activeTab: ReaderTab = tabParam === "chat" || tabParam === "notes" ? tabParam : "source";
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const setActiveTab = useCallback(
-    (next: MobileTab) => {
+    (next: ReaderTab) => {
       if (next === activeTab) return;
       const sp = new URLSearchParams(searchParams.toString());
       if (next === "source") sp.delete("tab");
@@ -310,54 +291,6 @@ export default function NotebookReaderPage() {
     },
     [activeTab, router, searchParams],
   );
-
-  const desktopGridColumns = useMemo(
-    () => `minmax(0,1fr) 6px ${chatWidth}px`,
-    [chatWidth],
-  );
-
-  function setChatMode(next: ReaderPanelMode): void {
-    setChatWidth(CHAT_WIDTH_PX[next]);
-  }
-
-  const desktopGridRef = useRef<HTMLDivElement | null>(null);
-
-  function startChatResize(event: React.MouseEvent<HTMLDivElement>): void {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = chatWidth;
-    let nextWidth = startWidth;
-    let frameQueued = false;
-    const applyToDom = (): void => {
-      frameQueued = false;
-      if (desktopGridRef.current) {
-        // Bypass React entirely during the drag — writing the grid track
-        // straight to the DOM avoids re-rendering the reader subtree on
-        // every mousemove. setState only happens once on mouseup.
-        desktopGridRef.current.style.gridTemplateColumns = `minmax(0,1fr) 6px ${nextWidth}px`;
-      }
-    };
-    const onMove = (moveEvent: MouseEvent): void => {
-      nextWidth = clamp(startWidth - (moveEvent.clientX - startX), 52, 560);
-      if (!frameQueued) {
-        frameQueued = true;
-        window.requestAnimationFrame(applyToDom);
-      }
-    };
-    const onUp = (): void => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      // Commit final width once — chatMode (narrow/default/wide) reflows
-      // ChatPanel only at the end of the drag instead of every frame.
-      setChatWidth(nextWidth);
-    };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }
 
   const ws = useWorkspace(workspaceId);
   const source = useSource(sourceId);
@@ -605,9 +538,8 @@ export default function NotebookReaderPage() {
       router.push(`/w/${workspaceId}/notes?id=${noteRef.noteId}`);
       return;
     }
-    // On mobile we may currently be on the chat tab — flip to source first so
-    // the chunk node is mounted before we try to scroll it into view.
-    if (activeTab !== "source") setActiveTab("source");
+    const target = document.getElementById(`chunk-${chunk.id}`);
+    const switchTab = activeTab !== "source" && target && target.getClientRects().length === 0;
     const doScroll = () => {
       const el = document.getElementById(`chunk-${chunk.id}`);
       if (!el) return;
@@ -619,8 +551,9 @@ export default function NotebookReaderPage() {
         el.classList.remove("citation-pulse");
       }, 1400);
     };
-    // If we just switched tabs the source pane mounts on the next frame.
-    if (activeTab !== "source") {
+    // In the single-pane layout, reveal the document before scrolling.
+    if (switchTab) {
+      setActiveTab("source");
       window.requestAnimationFrame(() => window.requestAnimationFrame(doScroll));
     } else {
       doScroll();
@@ -1424,128 +1357,75 @@ export default function NotebookReaderPage() {
       workspaceId={workspaceId}
       breadcrumb={[t("dashboard"), pick(ws.name, ws.nameEn ?? ws.name), t("okuma")]}
     >
-      {/* Mobile (<md): single-pane Source/Chat tabs */}
-      <div className="flex h-full min-h-0 flex-col md:hidden">
-        <div className="border-b border-rule bg-paper px-3 py-2">
-          <SegmentedControl<MobileTab>
-            size="sm"
-            value={activeTab}
-            onChange={setActiveTab}
-            options={[
-              { value: "source", label: pick("Kaynak", "Source") },
-              { value: "chat", label: pick("Sohbet", "Chat") },
-            ]}
-            ariaLabel={pick("Sekme", "Tab")}
-            className="w-full"
+      <ReaderLayout
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        collapsed={panelCollapsed}
+        onCollapsedChange={setPanelCollapsed}
+        reader={
+          <ReaderPanel
+            source={source}
+            chunks={chunks}
+            highlights={highlights}
+            workspaceId={workspaceId}
+            onMouseUp={handleMouseUp}
+            pick={pick}
           />
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {activeTab === "source" ? (
-            <ReaderPanel
-              source={source}
-              chunks={chunks}
-              highlights={highlights}
-              workspaceId={workspaceId}
-              onMouseUp={handleMouseUp}
-              pick={pick}
-            />
-          ) : (
-            <ChatPanel
-              messages={messages}
-              chunks={chunks}
-              chatStatus={chatStatus}
-              chunkCount={chunks.length}
-              sourceReady={source.ingestStatus === "ready"}
-              onSend={sendMessage}
-              onCancel={cancelStream}
-              onUnlock={() => setVaultModalOpen(true)}
-              onJumpCitation={jumpToChunk}
-              onRetry={handleRetry}
-              onFork={handleFork}
-              onGenerateCards={() => setGenCardsOpen(true)}
-              onProposeCardsFromMessage={handleProposeCardsFromMessage}
-              onSaveJournalEntry={handleSaveJournalEntry}
-              noteSourceIds={noteSourceIds}
-              sourceTitle={pick(source.title, source.titleEn ?? source.title)}
-              pick={pick}
-              variant="mobile"
-              aiResponseLocale={aiResponseLocale}
-              onAiResponseLocaleChange={setAiResponseLocale}
-              skippedCount={lastSkippedCount}
-              quotedText={quotedText}
-              onClearQuote={() => setQuotedText(null)}
-              webSearchEnabled={webSearchEnabled}
-              onWebSearchToggle={handleWebSearchToggle}
-              onWebCitationClick={setPeekCitation}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Desktop (md+): reader + chat. Outline lives in reader topbar as a flyout. */}
-      <div
-        ref={desktopGridRef}
-        className="hidden h-full min-h-0 md:grid"
-        style={{ gridTemplateColumns: desktopGridColumns }}
-      >
-        <ReaderPanel
-          source={source}
-          chunks={chunks}
-          highlights={highlights}
-          workspaceId={workspaceId}
-          onMouseUp={handleMouseUp}
-          pick={pick}
-        />
-
-        <PanelResizeHandle
-          label={pick("Sohbet paneli genişliğini ayarla", "Resize chat panel")}
-          onMouseDown={startChatResize}
-        />
-
-        <ChatPanel
-          messages={messages}
-          chunks={chunks}
-          chatStatus={chatStatus}
-          chunkCount={chunks.length}
-          sourceReady={source.ingestStatus === "ready"}
-          onSend={sendMessage}
-          onCancel={cancelStream}
-          onUnlock={() => setVaultModalOpen(true)}
-          onJumpCitation={jumpToChunk}
-          onRetry={handleRetry}
-          onFork={handleFork}
-          onGenerateCards={() => setGenCardsOpen(true)}
-          onProposeCardsFromMessage={handleProposeCardsFromMessage}
-          onSaveJournalEntry={handleSaveJournalEntry}
-          noteSourceIds={noteSourceIds}
-          sourceTitle={pick(source.title, source.titleEn ?? source.title)}
-          pick={pick}
-          aiResponseLocale={aiResponseLocale}
-          onAiResponseLocaleChange={setAiResponseLocale}
-          skippedCount={lastSkippedCount}
-          quotedText={quotedText}
-          onClearQuote={() => setQuotedText(null)}
-          mode={chatMode}
-          onModeChange={setChatMode}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchToggle={handleWebSearchToggle}
-          onWebCitationClick={setPeekCitation}
-          threadList={
-            <ChatThreadSidebar
-              workspaceId={workspaceId}
-              sourceId={sourceId}
-              sourceTitle={pick(source.title, source.titleEn ?? source.title)}
-              activeThreadId={threadId ?? null}
-              onSelect={(id) => { if (!session.isRunning) setActiveThreadId(id); }}
-              variant="popover"
-            />
-          }
-        />
-      </div>
+        }
+        chat={
+          <ChatPanel
+            messages={messages}
+            chunks={chunks}
+            chatStatus={chatStatus}
+            chunkCount={chunks.length}
+            sourceReady={source.ingestStatus === "ready"}
+            onSend={sendMessage}
+            onCancel={cancelStream}
+            onUnlock={() => setVaultModalOpen(true)}
+            onJumpCitation={jumpToChunk}
+            onRetry={handleRetry}
+            onFork={handleFork}
+            onGenerateCards={() => setGenCardsOpen(true)}
+            onProposeCardsFromMessage={handleProposeCardsFromMessage}
+            onSaveJournalEntry={handleSaveJournalEntry}
+            noteSourceIds={noteSourceIds}
+            sourceTitle={pick(source.title, source.titleEn ?? source.title)}
+            pick={pick}
+            aiResponseLocale={aiResponseLocale}
+            onAiResponseLocaleChange={setAiResponseLocale}
+            skippedCount={lastSkippedCount}
+            quotedText={quotedText}
+            onClearQuote={() => setQuotedText(null)}
+            webSearchEnabled={webSearchEnabled}
+            onWebSearchToggle={handleWebSearchToggle}
+            onWebCitationClick={setPeekCitation}
+            threadList={
+              <ChatThreadSidebar
+                workspaceId={workspaceId}
+                sourceId={sourceId}
+                sourceTitle={pick(source.title, source.titleEn ?? source.title)}
+                activeThreadId={threadId ?? null}
+                onSelect={(id) => { if (!session.isRunning) setActiveThreadId(id); }}
+                variant="popover"
+              />
+            }
+          />
+        }
+        notes={
+          <ReaderNotesPanel
+            key={source.id}
+            workspaceId={workspaceId}
+            sourceId={source.id}
+            sourceTitle={pick(source.title, source.titleEn ?? source.title)}
+          />
+        }
+      />
 
       <SelectionPopoverHost
         onAsk={(text) => {
           setQuotedText(text);
+          setPanelCollapsed(false);
+          setActiveTab("chat");
           window.getSelection()?.removeAllRanges();
         }}
         pick={pick}
@@ -1709,27 +1589,6 @@ function EmbeddingBanner({
             )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function PanelResizeHandle({
-  label,
-  onMouseDown,
-}: {
-  label: string;
-  onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
-}) {
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={label}
-      title={label}
-      onMouseDown={onMouseDown}
-      className="group flex min-h-0 cursor-col-resize items-stretch justify-center bg-paper"
-    >
-      <div className="h-full w-px bg-rule transition-colors group-hover:bg-accent" />
     </div>
   );
 }
@@ -1940,9 +1799,9 @@ function ReaderPanel({
   const blobMissing = blobAvailable && blob === null;
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-rule bg-paper px-6 py-3 sm:px-8">
-        <div className="flex min-w-0 items-center gap-3">
+    <section className="@container/reader flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-rule bg-paper px-3 py-2 @min-[520px]/reader:px-6 @min-[520px]/reader:py-3">
+        <div className="flex min-w-0 flex-[1_1_120px] items-center gap-3">
           <Link
             href={`/w/${workspaceId}`}
             aria-label={pick("Kaynaklara dön", "Back to sources")}
@@ -1968,7 +1827,7 @@ function ReaderPanel({
             </h2>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {blobAvailable ? (
             <SegmentedControl
               value={viewMode}
@@ -2186,14 +2045,11 @@ function ChatPanel({
   onSaveJournalEntry,
   sourceTitle,
   pick,
-  variant = "desktop",
   aiResponseLocale,
   onAiResponseLocaleChange,
   skippedCount,
   quotedText,
   onClearQuote,
-  mode = "default",
-  onModeChange,
   threadList,
   webSearchEnabled = false,
   onWebSearchToggle,
@@ -2236,7 +2092,6 @@ function ChatPanel({
   onSaveJournalEntry?: ((messageId: string) => void) | undefined;
   sourceTitle: string;
   pick: (tr: string, en: string) => string;
-  variant?: "mobile" | "desktop";
   aiResponseLocale: AiResponseLocale;
   onAiResponseLocaleChange: (value: AiResponseLocale) => void;
   skippedCount: number;
@@ -2244,8 +2099,6 @@ function ChatPanel({
    *  after the user's question on send, then cleared automatically. */
   quotedText?: string | null;
   onClearQuote?: () => void;
-  mode?: ReaderPanelMode;
-  onModeChange?: (mode: ReaderPanelMode) => void;
   threadList?: React.ReactNode;
 }) {
   const t = useTranslations("reader");
@@ -2313,35 +2166,9 @@ function ChatPanel({
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  if (variant === "desktop" && mode === "closed") {
-    return (
-      <aside className="flex min-h-0 flex-col items-center border-l border-rule bg-paper py-3">
-        <button
-          type="button"
-          onClick={() => onModeChange?.("default")}
-          className="grid h-9 w-9 place-items-center rounded-[9px] border border-rule text-ink-3 transition-colors hover:border-accent hover:text-ink"
-          title={pick("Sohbet panelini aç", "Open chat panel")}
-          aria-label={pick("Sohbet panelini aç", "Open chat panel")}
-        >
-          <ChevronsLeft className="h-4 w-4" aria-hidden />
-        </button>
-        <div className="mt-4 rotate-90 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.12em] text-ink-4">
-          Claude
-        </div>
-      </aside>
-    );
-  }
-
   return (
-    <aside
-      className={cn(
-        "min-h-0 flex-col border-rule bg-paper",
-        variant === "mobile"
-          ? "flex h-full border-l-0"
-          : "hidden border-l lg:flex",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2 border-b border-rule px-4 py-3">
+    <aside className="@container flex h-full min-h-0 min-w-0 flex-col bg-paper">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-rule px-3 py-2">
         <div className="min-w-0">
           <div
             className="truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3"
@@ -2404,7 +2231,7 @@ function ChatPanel({
             <div
               role="dialog"
               aria-label={tAi("section_title")}
-              className="absolute right-0 top-full z-30 mt-2 w-[260px] rounded-[12px] border border-rule bg-paper p-3 shadow-[var(--shadow-medium)]"
+              className="absolute right-0 top-full z-30 mt-2 w-[min(260px,calc(100cqw-24px))] rounded-[12px] border border-rule bg-paper p-3 shadow-[var(--shadow-medium)]"
             >
               <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">
                 {tAi("section_title")}
@@ -2430,7 +2257,7 @@ function ChatPanel({
             <div
               role="dialog"
               aria-label={pick("Sohbetler", "Chats")}
-              className="absolute right-0 top-full z-30 mt-2 w-[300px]"
+              className="absolute right-0 top-full z-30 mt-2 w-[min(300px,calc(100cqw-24px))]"
             >
               {threadList}
             </div>
@@ -2536,7 +2363,7 @@ function ChatPanel({
             }
             rows={2}
             disabled={inputDisabled && !isStreaming}
-            className="flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] outline-none placeholder:text-ink-4 disabled:cursor-not-allowed disabled:text-ink-4"
+            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] outline-none placeholder:text-ink-4 disabled:cursor-not-allowed disabled:text-ink-4"
           />
           {isBusy ? (
             <Button

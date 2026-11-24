@@ -15,6 +15,7 @@ import { extractTags, extractTitle, extractWikilinks } from "@/lib/notes/parser"
 export type CreateNoteInput = {
   id?: string;
   workspaceId: string;
+  readerSourceId?: string;
   folderId?: string | null;
   title?: string;
   content?: string;
@@ -83,6 +84,7 @@ export async function createNote(input: CreateNoteInput): Promise<NoteRecord> {
   const record: NoteRecord = {
     id: input.id ?? newId("note"),
     workspaceId: input.workspaceId,
+    ...(input.readerSourceId ? { readerSourceId: input.readerSourceId } : {}),
     folderId,
     title,
     content,

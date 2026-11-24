@@ -10,6 +10,8 @@ type Props = {
   min: number;
   max: number;
   label: string;
+  controls?: string;
+  className?: string;
   /** Live width while dragging. */
   onResize: (width: number) => void;
   /** Final width when the drag ends (persist here). */
@@ -22,30 +24,31 @@ const KEY_STEP = 16;
  * Drag handle between two panes. Pointer capture keeps the drag alive when
  * the cursor leaves the 6px hit area; arrow keys resize for keyboard users.
  */
-export function PaneResizer({ side, width, min, max, label, onResize, onCommit }: Props) {
-  const startRef = useRef<{ x: number; width: number } | null>(null);
+export function PaneResizer({ side, width, min, max, label, controls, className, onResize, onCommit }: Props) {
+  const startRef = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const lastRef = useRef(width);
 
   const clamp = (w: number) => Math.min(max, Math.max(min, Math.round(w)));
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || startRef.current) return;
     e.preventDefault();
+    e.currentTarget.focus({ preventScroll: true });
     e.currentTarget.setPointerCapture(e.pointerId);
-    startRef.current = { x: e.clientX, width };
+    startRef.current = { pointerId: e.pointerId, x: e.clientX, width };
     lastRef.current = width;
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const start = startRef.current;
-    if (!start) return;
+    if (start?.pointerId !== e.pointerId) return;
     const delta = side === "right" ? e.clientX - start.x : start.x - e.clientX;
     lastRef.current = clamp(start.width + delta);
     onResize(lastRef.current);
   };
-  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!startRef.current) return;
+  const finishResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (startRef.current?.pointerId !== e.pointerId) return;
     startRef.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    onCommit(lastRef.current);
+    onCommit(clamp(lastRef.current));
   };
 
   return (
@@ -53,14 +56,16 @@ export function PaneResizer({ side, width, min, max, label, onResize, onCommit }
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
+      aria-controls={controls}
       aria-valuenow={width}
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerUp={finishResize}
+      onPointerCancel={finishResize}
+      onLostPointerCapture={finishResize}
       onKeyDown={(e) => {
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
         e.preventDefault();
@@ -68,8 +73,8 @@ export function PaneResizer({ side, width, min, max, label, onResize, onCommit }
         onCommit(clamp(width + (grow ? KEY_STEP : -KEY_STEP)));
       }}
       className={cn(
-        "group absolute top-0 z-20 hidden h-full w-[7px] cursor-col-resize touch-none lg:block",
-        side === "right" ? "-right-[4px]" : "-left-[4px]",
+        "group z-20 h-full w-[7px] cursor-col-resize touch-none",
+        className ?? cn("absolute top-0 hidden lg:block", side === "right" ? "-right-[4px]" : "-left-[4px]"),
       )}
     >
       <span className="absolute inset-y-0 left-[3px] w-px bg-transparent transition-colors group-hover:bg-accent group-focus-visible:bg-accent group-active:bg-accent" />

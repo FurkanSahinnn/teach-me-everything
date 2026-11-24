@@ -11,6 +11,7 @@ type Props = {
   words: number;
   characters: number;
   saveState: SaveState;
+  compact?: boolean;
   /** Global width preference (px). */
   width: number;
   /** Width forced by the note's `editor-width` frontmatter, if any. */
@@ -30,6 +31,7 @@ export function EditorStatusBar({
   words,
   characters,
   saveState,
+  compact = false,
   width,
   noteWidth,
   onWidthChange,
@@ -45,11 +47,11 @@ export function EditorStatusBar({
       className="flex h-8 shrink-0 items-center gap-4 border-t border-rule px-4 text-[11.5px] text-ink-4"
       data-testid="note-editor-statusbar"
     >
-      <span data-testid="note-editor-word-count" className="tabular-nums">
+      <span data-testid="note-editor-word-count" className="whitespace-nowrap tabular-nums">
         {words === 0 ? t("word_count_zero") : words === 1 ? t("word_count_one") : t("word_count_many", { count: words })}
       </span>
-      <span className="hidden tabular-nums sm:inline">{t("char_count", { count: characters })}</span>
-      {words > 0 ? <span className="hidden tabular-nums md:inline">{t("reading_time", { minutes })}</span> : null}
+      {!compact && <span className="hidden tabular-nums sm:inline">{t("char_count", { count: characters })}</span>}
+      {!compact && words > 0 ? <span className="hidden tabular-nums md:inline">{t("reading_time", { minutes })}</span> : null}
 
       <span className="ml-auto inline-flex items-center gap-1.5" aria-live="polite">
         {saveState === "idle" ? null : (
@@ -64,7 +66,7 @@ export function EditorStatusBar({
         )}
       </span>
 
-      <label
+      {!compact && <label
         className="hidden items-center gap-2 md:inline-flex"
         title={noteWidth !== null ? t("width_note_override") : t("width_label")}
       >
@@ -82,8 +84,8 @@ export function EditorStatusBar({
           data-testid="note-editor-width-slider"
           className="h-1 w-24 cursor-pointer accent-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
         />
-      </label>
-      <button
+      </label>}
+      {!compact && <button
         type="button"
         onClick={onWidthReset}
         disabled={noteWidth !== null}
@@ -91,7 +93,7 @@ export function EditorStatusBar({
         className="hidden w-9 rounded px-1 text-right tabular-nums hover:bg-paper-3 hover:text-ink disabled:pointer-events-none md:inline"
       >
         {pct}%
-      </button>
+      </button>}
     </div>
   );
 }
