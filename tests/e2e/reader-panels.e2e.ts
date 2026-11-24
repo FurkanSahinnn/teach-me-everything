@@ -18,7 +18,7 @@ test("chat is reachable while the reader window is resized", async ({ page }) =>
   await composer.fill("Keep this draft");
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(handle).toBeVisible();
+  await expect(handle).toHaveAttribute("aria-valuenow", "390");
   await expect(composer).toHaveValue("Keep this draft");
   const bounds = await handle.boundingBox();
   if (!bounds) throw new Error("Resize handle is missing");
@@ -95,7 +95,7 @@ function pdfLines(pageNumber: number): [string, string, string] {
   ];
 }
 
-async function seedShortPagePdf(page: Page, sourceId: string) {
+async function seedShortPagePdf(page: Page, sourceId: string, workspaceId?: string) {
   const pageCount = 6;
   const fontId = pageCount + 3;
   const objects = [
@@ -121,7 +121,7 @@ async function seedShortPagePdf(page: Page, sourceId: string) {
   const entries = offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
   pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${entries}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
 
-  await page.evaluate(async ({ sourceId, pdf }) => {
+  await page.evaluate(async ({ sourceId, pdf, workspaceId }) => {
     const name = (await indexedDB.databases()).find((item) => item.name)?.name;
     if (!name) throw new Error("IndexedDB is missing");
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -131,10 +131,17 @@ async function seedShortPagePdf(page: Page, sourceId: string) {
     });
     try {
       await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction("sourceBlobs", "readwrite");
+        const transaction = db.transaction(["sourceBlobs", "sources"], "readwrite");
         const blob = new Blob([pdf], { type: "application/pdf" });
+        const now = Date.now();
+        if (workspaceId) {
+          transaction.objectStore("sources").put({
+            id: sourceId, workspaceId, type: "pdf", title: "Second PDF",
+            ingestStatus: "ready", createdAt: now, updatedAt: now,
+          });
+        }
         transaction.objectStore("sourceBlobs").put({
-          sourceId, blob, contentType: blob.type, byteSize: blob.size, createdAt: Date.now(),
+          sourceId, blob, contentType: blob.type, byteSize: blob.size, createdAt: now,
         });
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
@@ -142,8 +149,91 @@ async function seedShortPagePdf(page: Page, sourceId: string) {
     } finally {
       db.close();
     }
-  }, { sourceId, pdf });
+  }, { sourceId, pdf, workspaceId });
 }
+
+test("each document restores its own reader settings after navigation and reload", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { workspaceId, sourceId, chunkIds } = await seedGuidedStudyWorkspace(page);
+  const secondId = "src_e2e_second_reader_pdf";
+  await seedShortPagePdf(page, sourceId);
+  await seedShortPagePdf(page, secondId, workspaceId);
+  const firstReader = `/w/${workspaceId}/read/${sourceId}`;
+  const secondReader = `/w/${workspaceId}/read/${secondId}`;
+  await page.goto(firstReader);
+
+  const pdf = page.getByRole("radio", { name: /orijinal pdf|original pdf/i });
+  const pageNumber = page.getByRole("textbox", { name: /sayfa numarası|page number/i });
+  const zoom = page.getByRole("button", { name: /100% \(varsayılan\)|reset to 100%/i });
+  const notes = page.getByRole("radio", { name: /^(notlar|notes)$/i });
+  const handle = page.getByRole("separator", { name: /yan panel genişliğini ayarla|resize side panel/i });
+  const collapse = page.getByRole("button", { name: /yan paneli daralt|collapse side panel/i });
+  const expand = page.getByRole("button", { name: /yan paneli aç|expand side panel/i });
+  const backToSources = page.getByRole("link", { name: /kaynaklara dön|back to sources/i });
+  const appearance = page.getByRole("button", { name: /görünüm ayarları|appearance settings/i });
+  const fullWidth = page.getByRole("radio", { name: /^(tam|full)$/i });
+  const narrowWidth = page.getByRole("radio", { name: /^(dar|narrow)$/i });
+  const fitWidth = page.getByRole("button", { name: /^(geniş|width)$/i });
+
+  await appearance.click();
+  await fullWidth.click();
+  await pdf.click();
+  await page.getByRole("button", { name: /yakınlaştır|zoom in/i }).click();
+  await page.getByRole("button", { name: /döndür|rotate/i }).click();
+  await pageNumber.fill("5");
+  await pageNumber.press("Enter");
+  await expect(pageNumber).toHaveValue("5");
+  await expect(page.locator('[data-page-number="5"]')).toBeInViewport();
+  await notes.click();
+  await handle.press("ArrowLeft");
+  await expect(handle).toHaveAttribute("aria-valuenow", "406");
+  await collapse.click();
+
+  await backToSources.click();
+  await page.locator(`a[href="${secondReader}"]`).first().click();
+  await expect(pdf).toHaveAttribute("aria-checked", "false");
+  await expect(handle).toHaveAttribute("aria-valuenow", "390");
+  await appearance.click();
+  await expect(narrowWidth).toHaveAttribute("aria-checked", "true");
+  await pdf.click();
+  await fitWidth.click();
+  await handle.press("ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuenow", "374");
+
+  await backToSources.click();
+  await page.locator(`a[href="${firstReader}"]`).first().click();
+  await expect(pdf).toHaveAttribute("aria-checked", "true");
+  await expect(zoom).toHaveText("150%");
+  await expect(pageNumber).toHaveValue("5");
+  await expect(page.locator('[data-page-number="5"]')).toBeInViewport();
+  await expect(page.locator('[data-page-number="1"]')).toHaveAttribute("data-rotation", "90");
+  await expand.click();
+  await expect(handle).toHaveAttribute("aria-valuenow", "406");
+  await expect(notes).toHaveAttribute("aria-checked", "true");
+
+  await page.reload();
+  await expect(handle).toHaveAttribute("aria-valuenow", "406");
+  await expect(zoom).toHaveText("150%");
+  await expect(notes).toHaveAttribute("aria-checked", "true");
+  await appearance.click();
+  await expect(fullWidth).toHaveAttribute("aria-checked", "true");
+
+  await page.goto(`${firstReader}?chunk=${chunkIds[0]}`);
+  await expect(pdf).toHaveAttribute("aria-checked", "false");
+  await expect(page.locator(`#chunk-${chunkIds[0]}`)).toBeVisible();
+  await expect(notes).toHaveAttribute("aria-checked", "true");
+
+  await backToSources.click();
+  await page.locator(`a[href="${secondReader}"]`).first().click();
+  await expect(handle).toHaveAttribute("aria-valuenow", "374");
+  await expect(fitWidth).toHaveAttribute("aria-pressed", "true");
+
+  await backToSources.click();
+  await page.locator(`a[href="${firstReader}"]`).first().click();
+  await expect(pdf).toHaveAttribute("aria-checked", "true");
+  await expect(zoom).toHaveText("150%");
+});
 
 test("PDF page controls navigate precisely without moving the reader or Notes panel", async ({ page }) => {
   test.setTimeout(60_000);
@@ -219,7 +309,93 @@ test("PDF page controls navigate precisely without moving the reader or Notes pa
   expect(await pdfScroll.evaluate((element) => element.scrollWidth)).toBe(
     await pdfScroll.evaluate((element) => element.clientWidth),
   );
+
+  await page.getByRole("button", { name: /100% \(varsayılan\)|reset to 100%/i }).click();
+  await expect(pdfScroll.locator("[data-page-number='1']")).toHaveCSS("height", "210px");
+  await pdfScroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect(pageNumber).toHaveValue("6");
+  await page.reload();
+  await expect(pageNumber).toHaveValue("6");
+  await expect(pdfScroll.locator('[data-page-number="6"]')).toBeInViewport();
 });
+
+for (const type of ["md", "docx", "url"] as const) {
+  test(`restores the reading position of an imported ${type} source`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const { workspaceId, sourceId, chunkIds } = await seedGuidedStudyWorkspace(page);
+    const readerUrl = `/w/${workspaceId}/read/${sourceId}`;
+    const resumeChunk = "ck_reader_resume_12";
+    await page.evaluate(async ({ workspaceId, sourceId, type }) => {
+      const name = (await indexedDB.databases()).find((item) => item.name)?.name;
+      if (!name) throw new Error("IndexedDB is missing");
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction(["sources", "chunks"], "readwrite");
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          const sources = transaction.objectStore("sources");
+          const request = sources.get(sourceId);
+          request.onsuccess = () => sources.put({ ...request.result, type });
+
+          const chunks = transaction.objectStore("chunks");
+          for (let index = 3; index < 20; index++) {
+            chunks.put({
+              id: `ck_reader_resume_${index}`, workspaceId, sourceId, index,
+              text: Array.from({ length: 7 }, (_, line) =>
+                `Paragraph ${line + 1} in section ${index}. ${"Reading position example. ".repeat(8)}`,
+              ).join("\n\n"),
+              tokenCount: 100, createdAt: Date.now(),
+            });
+          }
+        });
+      } finally {
+        db.close();
+      }
+    }, { workspaceId, sourceId, type });
+    await page.goto(readerUrl);
+    const chunk = page.locator(`#chunk-${resumeChunk}`);
+    const offsetFromViewport = () => chunk.evaluate((element) => {
+      const viewport = element.closest("[data-reader-scroll]");
+      if (!viewport) throw new Error("Reading area is missing");
+      return element.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    });
+    await chunk.scrollIntoViewIfNeeded();
+    await chunk.hover();
+    await page.mouse.wheel(0, 64);
+    await expect(chunk).toBeInViewport();
+    const offset = await chunk.evaluate(async (element) => {
+      const viewport = element.closest("[data-reader-scroll]");
+      if (!viewport) throw new Error("Reading area is missing");
+      const measure = () => element.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+      let position = measure();
+      let settledFrames = 0;
+      // Wait for wheel scrolling and content-visibility measurements to settle.
+      for (let frame = 0; frame < 120 && settledFrames < 8; frame++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const current = measure();
+        settledFrames = Math.abs(current - position) < 1 ? settledFrames + 1 : 0;
+        position = current;
+      }
+      return position;
+    });
+
+    await page.getByRole("link", { name: /kaynaklara dön|back to sources/i }).click();
+    await page.locator(`a[href="${readerUrl}"]`).first().click();
+    await expect(chunk).toBeInViewport();
+    await expect.poll(async () => Math.abs(await offsetFromViewport() - offset)).toBeLessThan(8);
+    await page.reload();
+    await expect(chunk).toBeInViewport();
+    await expect.poll(async () => Math.abs(await offsetFromViewport() - offset)).toBeLessThan(8);
+
+    await page.goto(`${readerUrl}?chunk=${chunkIds[0]}`);
+    await expect(page.locator(`#chunk-${chunkIds[0]}`)).toBeInViewport();
+  });
+}
 
 test("original PDF text follows the pointer and can be quoted in chat", async ({ page }) => {
   test.setTimeout(60_000);

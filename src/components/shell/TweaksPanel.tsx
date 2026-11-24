@@ -25,11 +25,12 @@ const READER_WIDTHS: Array<{
 // outline flyout pattern (mousedown-outside / Escape to close). Used in the
 // reader topbar; keeps the panel close to the rest of the controls instead
 // of a fixed bottom-right floater.
-export function TweaksPanel() {
+export function TweaksPanel({ readerWidth, onReaderWidthChange }: {
+  readerWidth: ReaderWidth;
+  onReaderWidthChange: (width: ReaderWidth) => void;
+}) {
   const locale = usePrefs((s) => s.locale);
   const setLocale = usePrefs((s) => s.setLocale);
-  const readerWidth = usePrefs((s) => s.readerWidth);
-  const setReaderWidth = usePrefs((s) => s.setReaderWidth);
   const pick = useLocalePick();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -97,7 +98,7 @@ export function TweaksPanel() {
               <SegmentedControl
                 size="sm"
                 value={readerWidth}
-                onChange={setReaderWidth}
+                onChange={onReaderWidthChange}
                 mono
                 options={READER_WIDTHS.map((w) => ({
                   value: w.value,

@@ -23,6 +23,7 @@ import {
 } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { TextLayerBuilder } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
+import type { PdfReaderView } from "@/lib/db/types";
 import { cn } from "@/lib/utils/cn";
 
 // pdfjs-dist v5 dropped the empty-workerSrc fake-worker fallback. Importing
@@ -64,17 +65,18 @@ function prevScaleStep(current: number): number {
   return MIN_SCALE;
 }
 
-type FitMode = "manual" | "width" | "page";
+type FitMode = PdfReaderView["fitMode"];
 
 type Props = {
   blob: Blob;
   pick: (tr: string, en: string) => string;
   className?: string;
   onMouseUp?: MouseEventHandler<HTMLDivElement>;
+  initialView: PdfReaderView | undefined;
+  onViewChange: (view: PdfReaderView) => void;
 };
 
-export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
-  const wrapperRef = useRef<HTMLDivElement>(null);
+export function PdfViewer({ blob, pick, className, onMouseUp, initialView, onViewChange }: Props) {
   const scrollRootRef = useRef<HTMLDivElement>(null);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const bindScrollRoot = useCallback((node: HTMLDivElement | null) => {
@@ -82,16 +84,49 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
     setScrollRoot(node);
   }, []);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pagesRef = useRef<HTMLDivElement>(null);
   const jumpScrollTop = useRef<number | null>(null);
+  const pendingPage = useRef<number | null>(null);
 
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const [scale, setScale] = useState(1.4);
-  const [rotation, setRotation] = useState(0);
-  const [fitMode, setFitMode] = useState<FitMode>("manual");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [view, setView] = useState<PdfReaderView>(() => ({
+    scale: initialView && Number.isFinite(initialView.scale) ? clamp(initialView.scale, MIN_SCALE, MAX_SCALE) : 1.4,
+    fitMode: initialView?.fitMode === "width" || initialView?.fitMode === "page" ? initialView.fitMode : "manual",
+    rotation: initialView && [0, 90, 180, 270].includes(initialView.rotation) ? initialView.rotation : 0,
+    page: initialView?.page && Number.isSafeInteger(initialView.page) ? Math.max(1, initialView.page) : 1,
+  }));
+  const viewRef = useRef(view);
+  const saveTimer = useRef<number | null>(null);
+  const { rotation, fitMode } = view;
+  const [fitScale, setFitScale] = useState<number | null>(null);
+  const scale = fitMode === "manual" ? view.scale : fitScale ?? view.scale;
+  const fitReady = fitMode === "manual" || fitScale !== null;
+  const currentPage = view.page ?? 1;
+
+  const flushView = useCallback(() => {
+    if (saveTimer.current === null) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    onViewChange(viewRef.current);
+  }, [onViewChange]);
+
+  const changeView = useCallback((patch: Partial<PdfReaderView>, defer = false) => {
+    const next = { ...viewRef.current, ...patch };
+    viewRef.current = next;
+    setView(next);
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    if (defer) {
+      saveTimer.current = window.setTimeout(flushView, 150);
+    } else {
+      saveTimer.current = null;
+      onViewChange(next);
+    }
+  }, [flushView, onViewChange]);
+
+  useEffect(() => flushView, [flushView]);
 
   // First-page natural dimensions (at scale=1, rotation=0) — the toolbar's
   // fit-width / fit-page math derives from these, so we cache them once per
@@ -111,7 +146,9 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
         setError(null);
         setPdf(null);
         setFirstPageNatural(null);
-        setCurrentPage(1);
+        setFitScale(null);
+        const lastPage = viewRef.current.page ?? 1;
+        pendingPage.current = lastPage > 1 ? lastPage : null;
         jumpScrollTop.current = null;
 
         const lib = await loadPdfjs();
@@ -149,14 +186,15 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
     };
   }, [blob]);
 
-  // Re-apply fit mode whenever it (or the document / rotation / window size)
+  // Re-apply fit mode whenever it (or the document / rotation / pane size)
   // changes. Manual mode opts out so explicit zoom presses don't get
   // immediately overwritten by a fit recalculation.
   const recalcFit = useCallback(() => {
     if (fitMode === "manual" || !firstPageNatural) return;
     const root = scrollRootRef.current;
-    const containerW = root?.clientWidth ?? wrapperRef.current?.clientWidth ?? 0;
-    const containerH = root?.clientHeight ?? window.innerHeight;
+    if (!root?.clientWidth || !root.clientHeight) return;
+    const containerW = root.clientWidth;
+    const containerH = root.clientHeight;
     // Account for horizontal padding (px-4 = 16px each side on the pages
     // wrapper) so the page actually fits with its margin instead of getting
     // clipped on the right.
@@ -166,9 +204,9 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
     const w = rotated ? firstPageNatural.height : firstPageNatural.width;
     const h = rotated ? firstPageNatural.width : firstPageNatural.height;
     if (fitMode === "width") {
-      setScale(clamp(usableW / w, MIN_SCALE, MAX_SCALE));
+      setFitScale(clamp(usableW / w, MIN_SCALE, MAX_SCALE));
     } else if (fitMode === "page") {
-      setScale(
+      setFitScale(
         clamp(Math.min(usableW / w, usableH / h), MIN_SCALE, MAX_SCALE),
       );
     }
@@ -179,13 +217,57 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
   }, [recalcFit]);
 
   useEffect(() => {
-    if (fitMode === "manual") return;
-    function onResize(): void {
-      recalcFit();
+    if (fitMode === "manual" || !scrollRoot) return;
+    let timer: number;
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(recalcFit, 100);
+    });
+    observer.observe(scrollRoot);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [fitMode, recalcFit, scrollRoot]);
+
+  const scrollToPage = useCallback((page: number): boolean => {
+    const root = scrollRootRef.current;
+    const target = pageRefs.current[page - 1];
+    // Placeholder heights can change the scroll target by several pages.
+    if (!root?.clientHeight || !target || !pageRefs.current.every((item) => item?.hasAttribute("data-page-measured"))) {
+      return false;
     }
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [fitMode, recalcFit]);
+    const viewportTop = root.getBoundingClientRect().top + root.clientTop;
+    const top = root.scrollTop + target.getBoundingClientRect().top - viewportTop;
+    root.scrollTo({ top, behavior: "instant" });
+    jumpScrollTop.current = root.scrollTop;
+    return true;
+  }, []);
+
+  useEffect(() => {
+    const pages = pagesRef.current;
+    if (!pdf || !scrollRoot || !pages || !fitReady) return;
+
+    const restorePage = () => {
+      const saved = pendingPage.current;
+      if (saved === null) return;
+      const page = Math.min(saved, pdf.numPages);
+      if (!scrollToPage(page)) return;
+      pendingPage.current = null;
+      if (page !== viewRef.current.page) changeView({ page });
+      observer.disconnect();
+      resizeObserver.disconnect();
+    };
+    const observer = new MutationObserver(restorePage);
+    const resizeObserver = new ResizeObserver(restorePage);
+    observer.observe(pages, { subtree: true, attributes: true, attributeFilter: ["data-page-measured"] });
+    resizeObserver.observe(scrollRoot);
+    restorePage();
+    return () => {
+      observer.disconnect();
+      resizeObserver.disconnect();
+    };
+  }, [pdf, scrollRoot, fitReady, scrollToPage, changeView]);
 
   // Track which page is currently centred in the viewport so the toolbar
   // page indicator follows the user's scroll without us having to set up a
@@ -195,6 +277,9 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
     if (!root || !pageCount) return;
 
     let raf = 0;
+    const recordPage = (page: number) => {
+      if (page !== viewRef.current.page) changeView({ page });
+    };
     const onScroll = (): void => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
@@ -202,13 +287,14 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
         // Several short pages can be visible at the same scroll position.
         // Keep the explicitly requested page until the viewport scrolls again.
         if (clientHeight === 0 || jumpScrollTop.current === scrollTop) return;
+        if (pendingPage.current !== null) return;
         jumpScrollTop.current = null;
         if (scrollTop <= 0) {
-          setCurrentPage(1);
+          recordPage(1);
           return;
         }
         if (scrollTop >= scrollHeight - clientHeight - 1) {
-          setCurrentPage(pageCount);
+          recordPage(pageCount);
           return;
         }
         const rootRect = root.getBoundingClientRect();
@@ -226,16 +312,15 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
             bestPage = i + 1;
           }
         }
-        setCurrentPage(bestPage);
+        recordPage(bestPage);
       });
     };
     root.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
     return () => {
       cancelAnimationFrame(raf);
       root.removeEventListener("scroll", onScroll);
     };
-  }, [pageCount]);
+  }, [pageCount, changeView]);
 
   // Ctrl/Cmd + wheel zoom — same gesture every PDF reader uses. We listen
   // on the scroll root with passive:false so we can preventDefault() and
@@ -246,46 +331,34 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
     function onWheel(e: WheelEvent): void {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      setFitMode("manual");
-      setScale((s) => {
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-        return clamp(s * factor, MIN_SCALE, MAX_SCALE);
-      });
+      const fromScale = viewRef.current.fitMode === "manual" ? viewRef.current.scale : scale;
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      changeView({ fitMode: "manual", scale: clamp(fromScale * factor, MIN_SCALE, MAX_SCALE) }, true);
     }
     root.addEventListener("wheel", onWheel, { passive: false });
     return () => root.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [changeView, scale]);
 
   function jumpToPage(pageNum: number): void {
-    const root = scrollRootRef.current;
-    const target = pageRefs.current[pageNum - 1];
-    if (!root || !target) return;
-    const viewportTop = root.getBoundingClientRect().top + root.clientTop;
-    const top = root.scrollTop + target.getBoundingClientRect().top - viewportTop;
-    root.scrollTo({ top, behavior: "instant" });
-    jumpScrollTop.current = root.scrollTop;
-    setCurrentPage(pageNum);
+    pendingPage.current = scrollToPage(pageNum) ? null : pageNum;
+    changeView({ page: pageNum });
   }
 
   function zoomIn(): void {
-    setFitMode("manual");
-    setScale((s) => nextScaleStep(s));
+    changeView({ fitMode: "manual", scale: nextScaleStep(scale) });
   }
   function zoomOut(): void {
-    setFitMode("manual");
-    setScale((s) => prevScaleStep(s));
+    changeView({ fitMode: "manual", scale: prevScaleStep(scale) });
   }
   function zoom100(): void {
-    setFitMode("manual");
-    setScale(1);
+    changeView({ fitMode: "manual", scale: 1 });
   }
   function rotate(): void {
-    setRotation((r) => (r + 90) % 360);
+    changeView({ rotation: (rotation + 90) % 360 });
   }
 
   return (
     <div
-      ref={wrapperRef}
       className={cn("flex min-h-0 min-w-0 flex-col bg-paper-2", className)}
     >
       <Toolbar
@@ -299,8 +372,8 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onZoom100={zoom100}
-        onFitWidth={() => setFitMode("width")}
-        onFitPage={() => setFitMode("page")}
+        onFitWidth={() => changeView({ fitMode: "width" })}
+        onFitPage={() => changeView({ fitMode: "page" })}
         onRotate={rotate}
         disabled={!pdf}
         pick={pick}
@@ -334,7 +407,7 @@ export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
         ) : null}
 
         {pdf ? (
-          <div className="flex flex-col items-center-safe gap-3 px-4 py-4">
+          <div ref={pagesRef} className="flex flex-col items-center-safe gap-3 px-4 py-4">
             {Array.from({ length: pageCount }, (_, i) => (
               <PdfPageView
                 key={i + 1}
@@ -560,9 +633,8 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
   // Cache the natural (scale=1) viewport so the placeholder reserves the
   // correct space before the page is actually rendered. Without this the
   // reader would jump as each page resolves its dimensions.
-  const [natural, setNatural] = useState<{ width: number; height: number } | null>(
-    null,
-  );
+  // Undefined while measuring, null if PDF.js couldn't read the dimensions.
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>();
   const [visible, setVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
 
@@ -586,7 +658,7 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
         const v = page.getViewport({ scale: 1, rotation: 0 });
         setNatural({ width: v.width, height: v.height });
       } catch {
-        // ignore; the placeholder will keep its fallback height
+        if (!cancelled) setNatural(null);
       }
     })();
     return () => {
@@ -694,6 +766,7 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
     <div
       ref={wrapperRef}
       data-page-number={pageNumber}
+      data-page-measured={natural !== undefined ? "" : undefined}
       data-rotation={rotation}
       className="tme-pdf-page relative shrink-0 overflow-hidden rounded-md bg-white"
       style={{

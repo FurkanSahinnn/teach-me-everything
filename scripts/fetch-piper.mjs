@@ -90,7 +90,7 @@ function warn(msg) {
 
 function fail(msg) {
   console.error(`[fetch-piper] x ${msg}`);
-  process.exit(IS_CI ? 1 : 0);
+  process.exitCode = IS_CI ? 1 : 0;
 }
 
 async function downloadFile(url, destPath) {
@@ -127,28 +127,14 @@ async function downloadFile(url, destPath) {
 
 function extractArchive(archivePath, destDir) {
   log(`extracting ${basename(archivePath)}`);
-  if (archivePath.endsWith(".zip")) {
-    if (process.platform === "win32") {
-      const r = spawnSync(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
-        ],
-        { stdio: "inherit" },
-      );
-      if (r.status !== 0) throw new Error("PowerShell Expand-Archive failed");
-      return;
-    }
-    const r = spawnSync("unzip", ["-oq", archivePath, "-d", destDir], { stdio: "inherit" });
-    if (r.status !== 0) throw new Error("unzip failed");
-    return;
+  // Windows ships bsdtar, which reads ZIP without the PowerShell Archive module.
+  const command = process.platform === "win32" ? "tar.exe" : "tar";
+  const flags = archivePath.endsWith(".zip") ? "-xf" : "-xzf";
+  const result = spawnSync(command, [flags, archivePath, "-C", destDir], { stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${command} could not extract ${basename(archivePath)} (${result.signal ?? `exit ${result.status}`})`);
   }
-  // tar.gz — bsdtar on Win10+, GNU tar on macOS/Linux.
-  const r = spawnSync("tar", ["-xzf", archivePath, "-C", destDir], { stdio: "inherit" });
-  if (r.status !== 0) throw new Error("tar -xzf failed");
 }
 
 async function main() {
@@ -214,8 +200,7 @@ async function main() {
   } catch (e) {
     fail(
       `${e instanceof Error ? e.message : String(e)}\n` +
-        `  PIPER_VERSION may be stale or the asset name/layout changed.\n` +
-        `  Edit scripts/fetch-piper.mjs and retry: node scripts/fetch-piper.mjs`,
+        `  Retry with: node scripts/fetch-piper.mjs`,
     );
   } finally {
     try {

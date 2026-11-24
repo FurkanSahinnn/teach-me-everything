@@ -3,6 +3,7 @@ import { db } from "./schema";
 import type {
   EmbeddingStatus,
   IngestStatus,
+  SourceReaderView,
   SourceRecord,
   SourceType,
 } from "./types";
@@ -70,6 +71,14 @@ export async function updateSource(
   patch: SourcePatch,
 ): Promise<void> {
   await db.sources.update(id, { ...patch, updatedAt: Date.now() });
+}
+
+/** Merge independent view changes without changing the source's content timestamp. */
+export async function updateSourceReaderView(id: string, patch: SourceReaderView): Promise<void> {
+  await db.transaction("rw", db.sources, async () => {
+    const source = await db.sources.get(id);
+    if (source) await db.sources.update(id, { readerView: { ...source.readerView, ...patch } });
+  });
 }
 
 /**

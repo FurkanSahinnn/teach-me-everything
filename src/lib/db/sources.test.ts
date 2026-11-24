@@ -3,12 +3,14 @@ import {
   compareManualOrder,
   createNoteSource,
   createSource,
+  deleteSource,
   getNoteSourceByNoteId,
   getSource,
   listSources,
   markNoteSourceDirty,
   markNoteSourceSynced,
   reorderSources,
+  updateSourceReaderView,
 } from "./sources";
 import { createNote } from "./notes";
 import { db } from "./schema";
@@ -21,6 +23,28 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await db.delete();
+});
+
+it("stores reader settings on the source and does not recreate it after deletion", async () => {
+  const first = await createSource({ workspaceId: "w", type: "pdf", title: "A" });
+  const second = await createSource({ workspaceId: "w", type: "pdf", title: "B" });
+  const pdf = { scale: 1.5, fitMode: "manual", rotation: 90, page: 5 } as const;
+  const readingPosition = { scrollTop: 720, anchor: { chunkIndex: 3, offset: 24 } };
+  await Promise.all([
+    updateSourceReaderView(first.id, { panelWidth: 620, tab: "notes" }),
+    updateSourceReaderView(first.id, { mode: "pdf", pdf }),
+    updateSourceReaderView(first.id, { readingPosition }),
+  ]);
+  expect(await getSource(first.id)).toMatchObject({
+    readerView: { panelWidth: 620, tab: "notes", mode: "pdf", pdf, readingPosition },
+    updatedAt: first.updatedAt,
+  });
+  expect((await getSource(second.id))?.readerView).toBeUndefined();
+
+  await deleteSource(first.id);
+  await updateSourceReaderView(first.id, { panelWidth: 700 });
+  expect(await getSource(first.id)).toBeUndefined();
+  expect(await getSource(second.id)).toEqual(second);
 });
 
 describe("sources repo — manual order", () => {

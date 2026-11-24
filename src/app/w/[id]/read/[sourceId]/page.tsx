@@ -47,7 +47,8 @@ import {
 } from "@/components/notebook/CitationChip";
 import { ChatBubble as ChatBubbleStandalone } from "@/components/notebook/ChatBubble";
 import { ChatThreadSidebar } from "@/components/notebook/ChatThreadSidebar";
-import { ReaderLayout, type ReaderTab } from "@/components/notebook/ReaderLayout";
+import { ReaderLayout } from "@/components/notebook/ReaderLayout";
+import { useReadingPosition } from "@/hooks/use-reading-position";
 import { WebCitationPeekModal } from "@/components/notebook/WebCitationPeekModal";
 import { GenerateBatchModal } from "@/components/flashcards/GenerateBatchModal";
 import { useLocalePick } from "@/i18n/IntlProvider";
@@ -94,6 +95,7 @@ import {
 } from "@/lib/db/chats";
 import { deleteFlashcard } from "@/lib/db/flashcards";
 import { createNote } from "@/lib/db/notes";
+import { updateSourceReaderView } from "@/lib/db/sources";
 import { buildHighlightExtractContent } from "@/lib/notes/daily";
 import {
   SaveJournalEntryModal,
@@ -117,6 +119,10 @@ import type {
   EmbeddingStatus,
   HighlightRecord,
   IngestStatus,
+  PdfReaderView,
+  ReadingPosition,
+  ReaderTab,
+  SourceReaderView,
   SourceRecord,
 } from "@/lib/db/types";
 import type { AiResponseLocale } from "@/stores/prefs";
@@ -266,9 +272,11 @@ function friendlyChatError(
 }
 
 export default function NotebookReaderPage() {
-  const params = useRouteParams<{ id: string; sourceId: string }>();
-  const workspaceId = params.id;
-  const sourceId = params.sourceId;
+  const { id: workspaceId, sourceId } = useRouteParams<{ id: string; sourceId: string }>();
+  return <NotebookReader key={`${workspaceId}/${sourceId}`} workspaceId={workspaceId} sourceId={sourceId} />;
+}
+
+function NotebookReader({ workspaceId, sourceId }: { workspaceId: string; sourceId: string }) {
   const t = useTranslations("reader");
   const pick = useLocalePick();
   const locale = usePrefs((s) => s.locale);
@@ -276,24 +284,45 @@ export default function NotebookReaderPage() {
   const setAiResponseLocale = usePrefs((s) => s.setAiResponseLocale);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const source = useSource(sourceId);
+  const { toast } = useToast();
+  const [viewOverrides, setViewOverrides] = useState<SourceReaderView>({});
+  const [readingCitation, setReadingCitation] = useState(false);
+  const readerView = { ...source?.readerView, ...viewOverrides };
+  const sourceHasPdf = source?.type === "pdf" || source?.meta?.extractor === "arxiv-pdf";
+  const viewMode = sourceHasPdf && readerView.mode === "pdf" && !readingCitation ? "pdf" : "reading";
   const tabParam = searchParams.get("tab");
-  const activeTab: ReaderTab = tabParam === "chat" || tabParam === "notes" ? tabParam : "source";
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const activeTab = tabParam === "chat" || tabParam === "notes" || tabParam === "source"
+    ? tabParam
+    : readerView.tab ?? "source";
+  const panelCollapsed = readerView.panelCollapsed === true;
+
+  const changeReaderView = useCallback((patch: SourceReaderView) => {
+    if (patch.mode) setReadingCitation(false);
+    setViewOverrides((current) => ({ ...current, ...patch }));
+    void updateSourceReaderView(sourceId, patch).catch(() => {
+      toast({
+        variant: "error",
+        title: locale === "en" ? "Could not save reader settings" : "Okuyucu ayarları kaydedilemedi",
+      });
+    });
+  }, [sourceId, locale, toast]);
 
   const setActiveTab = useCallback(
-    (next: ReaderTab) => {
-      if (next === activeTab) return;
+    (next: ReaderTab, clearChunk = false) => {
+      if (next === activeTab && !clearChunk) return;
+      if (!clearChunk) changeReaderView({ tab: next });
       const sp = new URLSearchParams(searchParams.toString());
-      if (next === "source") sp.delete("tab");
+      if (next === "source" && !clearChunk) sp.delete("tab");
       else sp.set("tab", next);
+      if (clearChunk) sp.delete("chunk");
       const qs = sp.toString();
       router.replace(qs ? `?${qs}` : "?", { scroll: false });
     },
-    [activeTab, router, searchParams],
+    [activeTab, changeReaderView, router, searchParams],
   );
 
   const ws = useWorkspace(workspaceId);
-  const source = useSource(sourceId);
   const loadedChunks = useChunksBySource(sourceId);
   const chunks = useMemo(() => loadedChunks ?? [], [loadedChunks]);
   const highlights = useHighlightsBySource(sourceId) ?? [];
@@ -320,7 +349,6 @@ export default function NotebookReaderPage() {
 
   const isVaultUnlocked = useVault((s) => s.isUnlocked);
   const masterKey = useVault((s) => s.masterKey);
-  const { toast } = useToast();
 
   const loadedThreadsForSource = useThreadsBySource(sourceId);
   const threadsForSource = useMemo(() => loadedThreadsForSource ?? [], [loadedThreadsForSource]);
@@ -542,10 +570,11 @@ export default function NotebookReaderPage() {
     const noteRef = noteSourceById.get(chunk.sourceId);
     if (noteRef && noteRef.noteId) {
       router.push(`/w/${workspaceId}/notes?id=${noteRef.noteId}`);
-      return;
+      return true;
     }
-    const target = document.getElementById(`chunk-${chunk.id}`);
-    const switchTab = activeTab !== "source" && target && target.getClientRects().length === 0;
+    const readerPane = document.querySelector("[data-reader-pane]");
+    const switchTab = activeTab !== "source" && readerPane?.getClientRects().length === 0;
+    if (viewMode === "pdf") setReadingCitation(true);
     const doScroll = () => {
       const el = document.getElementById(`chunk-${chunk.id}`);
       if (!el) return;
@@ -557,14 +586,15 @@ export default function NotebookReaderPage() {
         el.classList.remove("citation-pulse");
       }, 1400);
     };
-    // In the single-pane layout, reveal the document before scrolling.
-    if (switchTab) {
-      setActiveTab("source");
+    // Reveal the reading view before scrolling if either view is hidden.
+    if (switchTab) setActiveTab("source", true);
+    if (switchTab || viewMode === "pdf") {
       window.requestAnimationFrame(() => window.requestAnimationFrame(doScroll));
     } else {
       doScroll();
     }
-  }, [noteSourceById, router, workspaceId, activeTab, setActiveTab]);
+    return switchTab;
+  }, [noteSourceById, router, workspaceId, activeTab, setActiveTab, viewMode]);
 
   const runChat = useCallback(
     async (
@@ -1285,19 +1315,19 @@ export default function NotebookReaderPage() {
   useEffect(() => {
     if (!chunkParam || !ws || !source || chunks.length === 0) return;
     if (consumedChunkParam.current === chunkParam) return;
-    const target = chunks.find((c) => c.id === chunkParam);
-    consumedChunkParam.current = chunkParam;
-    // Strip the param so a later back-navigation doesn't re-scroll the reader
-    // out from under the user.
-    const sp = new URLSearchParams(searchParams.toString());
-    sp.delete("chunk");
-    const qs = sp.toString();
-    router.replace(qs ? `?${qs}` : "?", { scroll: false });
-    if (target) jumpToChunk(target);
-    // `jumpToChunk` is re-created every render; depending on it would re-fire
-    // the jump on unrelated re-renders. The ref guard is the real gate.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chunkParam, chunks, ws, source, router, searchParams]);
+    // Measure the reader after the restored split layout has been committed.
+    const frame = window.requestAnimationFrame(() => {
+      const target = chunks.find((c) => c.id === chunkParam);
+      consumedChunkParam.current = chunkParam;
+      if (target && jumpToChunk(target)) return;
+      // Remove the jump so later navigation doesn't reset the reader scroll.
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.delete("chunk");
+      const qs = sp.toString();
+      router.replace(qs ? `?${qs}` : "?", { scroll: false });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chunkParam, chunks, ws, source, router, searchParams, jumpToChunk]);
 
   if (ws === undefined || source === undefined) {
     return (
@@ -1376,13 +1406,19 @@ export default function NotebookReaderPage() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         collapsed={panelCollapsed}
-        onCollapsedChange={setPanelCollapsed}
+        onCollapsedChange={(panelCollapsed) => changeReaderView({ panelCollapsed })}
+        initialPanelWidth={readerView.panelWidth}
+        onPanelWidthChange={(panelWidth) => changeReaderView({ panelWidth })}
         reader={
           <ReaderPanel
             source={source}
             chunks={chunks}
             highlights={highlights}
             workspaceId={workspaceId}
+            viewMode={viewMode}
+            readerView={readerView}
+            resumeReading={!chunkParam && !readingCitation}
+            onViewChange={changeReaderView}
             onMouseUp={handleMouseUp}
             pick={pick}
           />
@@ -1440,7 +1476,7 @@ export default function NotebookReaderPage() {
       <SelectionPopoverHost
         onAsk={(text) => {
           setQuotedText(text);
-          setPanelCollapsed(false);
+          if (panelCollapsed) changeReaderView({ panelCollapsed: false });
           setActiveTab("chat");
           window.getSelection()?.removeAllRanges();
           composerRef.current?.focus({ preventScroll: true });
@@ -1787,6 +1823,10 @@ function ReaderPanel({
   chunks,
   highlights,
   workspaceId,
+  viewMode,
+  readerView,
+  resumeReading,
+  onViewChange,
   onMouseUp,
   pick,
 }: {
@@ -1794,22 +1834,33 @@ function ReaderPanel({
   chunks: ChunkRecord[];
   highlights: HighlightRecord[];
   workspaceId: string;
+  viewMode: "reading" | "pdf";
+  readerView: SourceReaderView;
+  resumeReading: boolean;
+  onViewChange: (patch: SourceReaderView) => void;
   onMouseUp: (e: React.MouseEvent<HTMLDivElement>, surface: NonNullable<SelectionData>["surface"]) => void;
   pick: (tr: string, en: string) => string;
 }) {
-  const readerWidth = usePrefs((s) => s.readerWidth);
+  const defaultReaderWidth = usePrefs((s) => s.readerWidth);
+  const readerWidth = readerView.textWidth ?? defaultReaderWidth;
   // Only PDFs benefit from the canvas+textLayer viewer. DOCX blobs are
   // stored too but a Word renderer is out of scope for now; the toggle
   // simply doesn't appear for non-PDF sources.
   const blobAvailable = source.type === "pdf" || source.meta?.extractor === "arxiv-pdf";
   const blob = useSourceBlob(blobAvailable ? source.id : undefined);
-  const [viewMode, setViewMode] = useState<"reading" | "pdf">("reading");
   // PdfViewer is heavy (loads pdfjs ~2MB) and we want to preserve its scroll
   // position when the user toggles back to Reading. Once the user opens it,
   // we mount it and hide via display:none on subsequent toggles instead of
   // unmounting — both modes' scroll positions are then preserved naturally
   // across switches because the browser keeps scrollTop on hidden elements.
-  const [pdfEverOpened, setPdfEverOpened] = useState(false);
+  const [pdfEverOpened, setPdfEverOpened] = useState(viewMode === "pdf");
+  const savePdfView = useCallback((pdf: PdfReaderView) => onViewChange({ pdf }), [onViewChange]);
+  const saveReadingPosition = useCallback(
+    (readingPosition: ReadingPosition) => onViewChange({ readingPosition }),
+    [onViewChange],
+  );
+  const readingScrollRef = useReadingPosition(readerView.readingPosition, chunks.length > 0, resumeReading, saveReadingPosition);
+  const lazyChunkLayout = chunks.length > 50;
   // If the user uploaded the source before sourceBlobs existed, the toggle
   // shows a placeholder banner instead of trying to render an empty viewer.
   const blobMissing = blobAvailable && blob === null;
@@ -1849,7 +1900,7 @@ function ReaderPanel({
               value={viewMode}
               onChange={(v) => {
                 if (v === "pdf") setPdfEverOpened(true);
-                setViewMode(v);
+                onViewChange({ mode: v });
               }}
               options={[
                 {
@@ -1875,7 +1926,7 @@ function ReaderPanel({
               ariaLabel={pick("Görüntüleme modu", "View mode")}
             />
           ) : null}
-          <TweaksPanel />
+          <TweaksPanel readerWidth={readerWidth} onReaderWidthChange={(textWidth) => onViewChange({ textWidth })} />
           <FlyoutOutline
             chunks={chunks}
             highlights={highlights}
@@ -1892,6 +1943,7 @@ function ReaderPanel({
             so the user lands back exactly where they were when they
             return. */}
         <div
+          ref={readingScrollRef}
           data-reader-scroll
           className={cn(
             "flex-1 overflow-y-auto px-6 py-8 sm:px-8",
@@ -1921,15 +1973,16 @@ function ReaderPanel({
             ) : (
               <article>
                 {chunks.map((chunk) => (
-                  // `content-visibility: auto` lets the browser skip layout and
-                  // paint for chunks scrolled out of view — a long source is
-                  // hundreds of sections, and rendering them all on mount is
-                  // what makes the reader stall on big PDFs. The intrinsic-size
-                  // hint keeps the scrollbar stable before a chunk is measured.
+                  // Only large documents need estimated heights. For shorter
+                  // sources, laying out every section keeps scroll offsets stable.
                   <section
                     key={chunk.id}
                     id={`chunk-${chunk.id}`}
-                    className="mb-12 flex scroll-mt-24 flex-col [content-visibility:auto] [contain-intrinsic-size:auto_600px]"
+                    data-reader-chunk={chunk.index}
+                    className={cn(
+                      "mb-12 flex scroll-mt-24 flex-col",
+                      lazyChunkLayout && "[content-visibility:auto] [contain-intrinsic-size:auto_600px]",
+                    )}
                   >
                     {chunk.section ? (
                       <h3 className="mb-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent-ink">
@@ -1949,7 +2002,7 @@ function ReaderPanel({
             visibility instead of re-creating the viewer, so pdfjs
             doesn't reload, the canvases stay rendered, and (most
             importantly) scrollTop on the page list is preserved. */}
-        {pdfEverOpened ? (
+        {pdfEverOpened || viewMode === "pdf" ? (
           blobMissing ? (
             <div
               className={cn(
@@ -1987,6 +2040,8 @@ function ReaderPanel({
             <PdfViewer
               blob={blob}
               pick={pick}
+              initialView={readerView.pdf}
+              onViewChange={savePdfView}
               onMouseUp={(event) => onMouseUp(event, "pdf")}
               className={cn("flex-1 min-h-0", viewMode !== "pdf" && "hidden")}
             />
