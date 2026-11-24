@@ -51,6 +51,30 @@ export type WorkspaceRecord = {
   archivedAt: number | null;
 };
 
+export type ReaderTab = "source" | "chat" | "notes";
+
+export type PdfReaderView = {
+  scale: number;
+  fitMode: "manual" | "width" | "page";
+  rotation: number;
+  page?: number;
+};
+
+export type ReadingPosition = {
+  scrollTop: number;
+  anchor?: { chunkIndex: number; offset: number };
+};
+
+export type SourceReaderView = {
+  tab?: ReaderTab;
+  panelWidth?: number;
+  panelCollapsed?: boolean;
+  mode?: "reading" | "pdf";
+  textWidth?: "narrow" | "full";
+  pdf?: PdfReaderView;
+  readingPosition?: ReadingPosition;
+};
+
 export type SourceRecord = {
   id: string;
   workspaceId: string;
@@ -84,6 +108,7 @@ export type SourceRecord = {
   // Absent on sources never reordered; those sort after positioned ones by
   // createdAt. Not indexed — lists are small and sorted in memory.
   sortOrder?: number | undefined;
+  readerView?: SourceReaderView;
   createdAt: number;
   updatedAt: number;
 };

@@ -1,14 +1,13 @@
 "use client";
 
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { PaneResizer } from "@/components/notes/layout/PaneResizer";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useLocalePick } from "@/i18n/IntlProvider";
+import type { ReaderTab } from "@/lib/db/types";
 import { cn } from "@/lib/utils/cn";
-
-export type ReaderTab = "source" | "chat" | "notes";
 
 const MIN_READER_WIDTH = 320;
 const MIN_PANEL_WIDTH = 300;
@@ -20,6 +19,8 @@ export function ReaderLayout({
   onTabChange,
   collapsed,
   onCollapsedChange,
+  initialPanelWidth,
+  onPanelWidthChange,
   reader,
   chat,
   notes,
@@ -28,6 +29,8 @@ export function ReaderLayout({
   onTabChange: (tab: ReaderTab) => void;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  initialPanelWidth: number | undefined;
+  onPanelWidthChange: (width: number) => void;
   reader: ReactNode;
   chat: ReactNode;
   notes: ReactNode;
@@ -36,12 +39,15 @@ export function ReaderLayout({
   const container = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const [containerWidth, setContainerWidth] = useState(0);
-  const [preferredWidth, setPreferredWidth] = useState(390);
+  const [preferredWidth, setPreferredWidth] = useState(
+    typeof initialPanelWidth === "number" && Number.isFinite(initialPanelWidth) ? initialPanelWidth : 390,
+  );
   const [notesOpened, setNotesOpened] = useState(activeTab === "notes");
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = container.current;
     if (!element) return;
+    setContainerWidth(element.clientWidth);
     const observer = new ResizeObserver(([entry]) => {
       if (entry) setContainerWidth(Math.floor(entry.contentRect.width));
     });
@@ -85,7 +91,7 @@ export function ReaderLayout({
         className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)]"
         style={{ gridTemplateColumns: split ? `minmax(0,1fr) ${collapsed ? 0 : HANDLE_WIDTH}px ${collapsed ? 48 : width}px` : "minmax(0,1fr)" }}
       >
-        <div className={cn("min-h-0 min-w-0 flex-col", split || activeTab === "source" ? "flex" : "hidden")}>
+        <div data-reader-pane className={cn("min-h-0 min-w-0 flex-col", split || activeTab === "source" ? "flex" : "hidden")}>
           {reader}
         </div>
         {split && !collapsed && (
@@ -97,7 +103,10 @@ export function ReaderLayout({
             label={pick("Yan panel genişliğini ayarla", "Resize side panel")}
             controls={panelId}
             onResize={setPreferredWidth}
-            onCommit={setPreferredWidth}
+            onCommit={(next) => {
+              setPreferredWidth(next);
+              onPanelWidthChange(next);
+            }}
             className="relative block bg-paper [&>span]:bg-rule"
           />
         )}
