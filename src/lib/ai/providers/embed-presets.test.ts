@@ -25,6 +25,21 @@ const ALL_IDS: EmbedPresetId[] = [
   "ollama-nomic",
   "ollama-mxbai",
   "ollama-bge-m3",
+  "ollama-qwen3-embed",
+  "ollama-embeddinggemma-2",
+  "ollama-embeddinggemma",
+  "ollama-minilm",
+  "ollama-snowflake-arctic-embed2",
+  "local-qwen3-0.6b",
+  "local-embeddinggemma-2",
+  "local-embeddinggemma-300m",
+  "local-minilm-multilingual",
+  "local-minilm-l6",
+  "local-bge-m3",
+  "local-e5-multilingual-small",
+  "local-e5-multilingual-base",
+  "local-e5-multilingual-large",
+  "local-arctic-embed-m-v2",
 ];
 
 const FAMILIES: ReadonlySet<EmbedFamily> = new Set<EmbedFamily>([
@@ -34,12 +49,13 @@ const FAMILIES: ReadonlySet<EmbedFamily> = new Set<EmbedFamily>([
   "cohere",
   "jina",
   "huggingface",
+  "local-onnx",
 ]);
 
 describe("embed presets", () => {
-  it("registers all 17 presets", () => {
+  it("registers all 32 presets", () => {
     expect(Object.keys(EMBED_PRESETS).sort()).toEqual([...ALL_IDS].sort());
-    expect(listEmbedPresets()).toHaveLength(17);
+    expect(listEmbedPresets()).toHaveLength(ALL_IDS.length);
   });
 
   it("getEmbedPreset returns the entry by id and shape matches", () => {
@@ -75,9 +91,10 @@ describe("embed presets", () => {
     }
   });
 
-  it("only ollama presets are flagged isLocal", () => {
+  it("only ollama and local-onnx presets are flagged isLocal", () => {
     for (const preset of listEmbedPresets()) {
-      const expectedLocal = preset.id.startsWith("ollama-");
+      const expectedLocal =
+        preset.id.startsWith("ollama-") || preset.id.startsWith("local-");
       expect(preset.isLocal === true).toBe(expectedLocal);
     }
   });
@@ -90,7 +107,7 @@ describe("embed presets", () => {
     }
   });
 
-  it("family enum is one of six declared values", () => {
+  it("family enum is one of seven declared values", () => {
     for (const preset of listEmbedPresets()) {
       expect(FAMILIES.has(preset.family)).toBe(true);
     }
@@ -115,6 +132,21 @@ describe("embed presets", () => {
       "ollama-nomic": true,
       "ollama-mxbai": true,
       "ollama-bge-m3": true,
+      "ollama-qwen3-embed": true,
+      "ollama-embeddinggemma-2": true,
+      "ollama-embeddinggemma": true,
+      "ollama-minilm": true,
+      "ollama-snowflake-arctic-embed2": true,
+      "local-qwen3-0.6b": true,
+      "local-embeddinggemma-2": true,
+      "local-embeddinggemma-300m": true,
+      "local-minilm-multilingual": true,
+      "local-minilm-l6": true,
+      "local-bge-m3": true,
+      "local-e5-multilingual-small": true,
+      "local-e5-multilingual-base": true,
+      "local-e5-multilingual-large": true,
+      "local-arctic-embed-m-v2": true,
     };
     for (const preset of listEmbedPresets()) {
       expect(preset.freeTier).toBe(expected[preset.id]);

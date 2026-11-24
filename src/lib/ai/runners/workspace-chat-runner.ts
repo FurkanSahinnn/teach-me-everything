@@ -560,7 +560,7 @@ export function useWorkspaceChat(
         let embedKey: string | null = null;
         try {
           embedKey =
-            embeddingProvider === "ollama"
+            embeddingProvider === "ollama" || embeddingProvider === "local-embed"
               ? ""
               : await getApiKey(embeddingProvider as Provider);
         } catch {
@@ -575,6 +575,7 @@ export function useWorkspaceChat(
               apiKey: embedKey,
               model: embeddingModel,
               inputs: [userMessage],
+              inputType: "query",
             });
             const queryVec = queryEmbed.vectors[0];
             if (queryVec) {

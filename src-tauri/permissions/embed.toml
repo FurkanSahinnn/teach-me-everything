@@ -1,0 +1,21 @@
+"$schema" = "../gen/schemas/default-permissions-schema.json"
+
+[[permission]]
+identifier = "allow-embed-list-installed-models"
+description = "List installed embedding models in app data."
+commands.allow = ["embed_list_installed_models"]
+
+[[permission]]
+identifier = "allow-embed-check-readiness"
+description = "Check an embedding model installation."
+commands.allow = ["embed_check_readiness"]
+
+[[permission]]
+identifier = "allow-embed-install-model"
+description = "Install a curated embedding model from Hugging Face."
+commands.allow = ["embed_install_model"]
+
+[[permission]]
+identifier = "allow-embed-delete-model"
+description = "Delete an installed embedding model."
+commands.allow = ["embed_delete_model"]

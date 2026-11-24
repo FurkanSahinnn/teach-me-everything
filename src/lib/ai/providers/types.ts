@@ -86,6 +86,7 @@ export type CloudProviderId =
   | "jina"
   | "huggingface"
   | "ollama"
+  | "local-embed"
   | "lm-studio"
   | "llama-cpp";
 
@@ -187,10 +188,13 @@ export interface ChatProvider {
   streamChat(req: ChatRequest): ChatStreamHandle;
 }
 
+export type EmbedInputType = "query" | "document";
+
 export type EmbedRequest = {
   apiKey: string;
   model: string;
   inputs: string[];
+  inputType?: EmbedInputType;
   signal?: AbortSignal;
 };
 

@@ -5,6 +5,7 @@
 
 mod agent_cli;
 mod agent_process;
+mod embed;
 mod keychain;
 mod sysinfo;
 mod tts;
@@ -66,6 +67,10 @@ pub fn run() {
       tts::tts_list_installed_voices,
       tts::tts_install_voice,
       tts::tts_delete_voice,
+      embed::embed_list_installed_models,
+      embed::embed_check_readiness,
+      embed::embed_install_model,
+      embed::embed_delete_model,
       sysinfo::sysinfo_probe,
       sysinfo::sysinfo_gpu,
       usage::usage_scan,
@@ -202,6 +207,20 @@ fn serve_export_asset<R: Runtime>(
   // platform (sidesteps the Windows `tauri.localhost` host); `asset_resolver`
   // percent-decodes and maps directory paths to `index.html` internally.
   let path = request.uri().path().to_string();
+
+  if path.starts_with("/__tme_embed_models/") {
+    return match embed::read_model_asset(ctx.app_handle(), &path) {
+      Some((bytes, mime)) => Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .body(Cow::Owned(bytes))
+        .unwrap_or_else(|_| Response::new(Cow::Borrowed(b"".as_slice()))),
+      None => Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .body(Cow::Borrowed(b"404 Not Found".as_slice()))
+        .unwrap_or_else(|_| Response::new(Cow::Borrowed(b"".as_slice()))),
+    };
+  }
 
   let asset = resolver.get(path.clone()).or_else(|| {
     export_shell_fallback(&path).and_then(|fallback| resolver.get(fallback))

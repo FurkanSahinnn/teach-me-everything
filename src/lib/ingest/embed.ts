@@ -60,6 +60,7 @@ const BATCH_BY_PROVIDER: Partial<Record<ProviderId, number>> = {
   jina: 128,
   voyage: 128,
   mistral: 128,
+  "local-embed": 8,
 };
 
 // Three in-flight batches is well under every provider's RPM ceiling and
@@ -153,6 +154,7 @@ async function runEmbed(
           apiKey,
           model,
           inputs: batch.chunks.map((c) => c.text),
+          inputType: "document",
         });
       } catch (err) {
         if (!sharedError.error) {
@@ -179,7 +181,7 @@ async function runEmbed(
 
   // Pool size capped at min(CONCURRENCY, batches.length) so tiny jobs
   // (e.g. a single short note) don't spin up idle workers.
-  const poolSize = Math.min(CONCURRENCY, batches.length);
+  const poolSize = Math.min(providerId === "local-embed" ? 1 : CONCURRENCY, batches.length);
   const workers: Array<Promise<void>> = [];
   for (let w = 0; w < poolSize; w += 1) {
     workers.push(worker());

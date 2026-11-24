@@ -55,6 +55,21 @@ const PRESET_TO_PROVIDER: Record<EmbedPresetId, ProviderId> = {
   "ollama-nomic": "ollama",
   "ollama-mxbai": "ollama",
   "ollama-bge-m3": "ollama",
+  "ollama-qwen3-embed": "ollama",
+  "ollama-embeddinggemma-2": "ollama",
+  "ollama-embeddinggemma": "ollama",
+  "ollama-minilm": "ollama",
+  "ollama-snowflake-arctic-embed2": "ollama",
+  "local-qwen3-0.6b": "local-embed",
+  "local-embeddinggemma-2": "local-embed",
+  "local-embeddinggemma-300m": "local-embed",
+  "local-minilm-multilingual": "local-embed",
+  "local-minilm-l6": "local-embed",
+  "local-bge-m3": "local-embed",
+  "local-e5-multilingual-small": "local-embed",
+  "local-e5-multilingual-base": "local-embed",
+  "local-e5-multilingual-large": "local-embed",
+  "local-arctic-embed-m-v2": "local-embed",
 };
 
 export function presetToProviderId(presetId: EmbedPresetId): ProviderId {
@@ -116,6 +131,18 @@ function matchesTargetDim(
   return preset.dim === chunkDim;
 }
 
+function matchesTargetPreset(
+  preset: EmbedPreset,
+  chunk: ChunkRecord,
+): boolean {
+  const chunkDim = chunkEffectiveDim(chunk);
+  if (!matchesTargetDim(preset, chunkDim)) return false;
+  if (chunk.embeddingModel && chunk.embeddingModel !== preset.model) {
+    return false;
+  }
+  return true;
+}
+
 async function readChunksForScope(scope: ReembedScope): Promise<ChunkRecord[]> {
   if (scope.kind === "workspace") {
     return db.chunks.where("workspaceId").equals(scope.workspaceId).toArray();
@@ -135,8 +162,7 @@ export async function planReembed(
   let embeddedCount = 0;
   for (const c of chunks) {
     if (hasAnyEmbedding(c)) embeddedCount += 1;
-    const cdim = chunkEffectiveDim(c);
-    if (!matchesTargetDim(preset, cdim)) {
+    if (!matchesTargetPreset(preset, c)) {
       toReembed += 1;
       estTokens += c.tokenCount ?? 0;
     }
@@ -178,10 +204,7 @@ export function runReembed(args: RunReembedArgs): ReembedHandle {
     const chunks = await readChunksForScope(args.scope);
     if (cancelled) return { done: 0, total: 0 };
 
-    const toReembed = chunks.filter((c) => {
-      const cdim = chunkEffectiveDim(c);
-      return !matchesTargetDim(preset, cdim);
-    });
+    const toReembed = chunks.filter((c) => !matchesTargetPreset(preset, c));
 
     if (toReembed.length === 0) {
       return { done: 0, total: 0 };
@@ -241,7 +264,7 @@ export function runReembed(args: RunReembedArgs): ReembedHandle {
       for (const sourceId of sourceIds) {
         if (!sourceId) continue;
         const remaining = await db.chunks.where("sourceId").equals(sourceId).toArray();
-        const complete = remaining.length > 0 && remaining.every((c) => c.embedding && matchesTargetDim(preset, chunkEffectiveDim(c)));
+        const complete = remaining.length > 0 && remaining.every((c) => c.embedding && matchesTargetPreset(preset, c));
         await setEmbeddingStatus(sourceId, complete ? "ready" : "missing", {
           provider: String(result.providerId),
           model: result.model,

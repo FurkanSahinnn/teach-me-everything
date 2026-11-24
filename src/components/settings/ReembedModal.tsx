@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { filterInstalledEmbedOptions, listEmbedOptions } from "@/lib/ai/model-options";
+import { listInstalledEmbedModels, checkEmbedModelReadiness } from "@/lib/embed-local/install";
+import { isLocalEmbedModelId } from "@/lib/embed-local/catalog";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -19,8 +22,6 @@ import {
   type ReembedPlan,
 } from "@/lib/ingest/reembed";
 import type { Provider } from "@/lib/db/schema";
-
-const ALL_PRESET_IDS = Object.keys(EMBED_PRESETS) as EmbedPresetId[];
 
 function formatUsd(n: number): string {
   if (n === 0) return "$0.00";
@@ -55,6 +56,15 @@ export function ReembedModal({
   const masterKey = useVault((s) => s.masterKey);
 
   const [presetId, setPresetId] = useState<EmbedPresetId>("openai-3-small");
+  const [installedEmbedIds, setInstalledEmbedIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void listInstalledEmbedModels().then((models) => {
+      if (active) setInstalledEmbedIds(new Set(models.map((model) => model.modelId)));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [open]);
   const [plan, setPlan] = useState<ReembedPlan | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const handleRef = useRef<ReembedHandle | null>(null);
@@ -90,9 +100,12 @@ export function ReembedModal({
   }, [open]);
 
   const preset = EMBED_PRESETS[presetId];
+  const availablePresetIds = filterInstalledEmbedOptions(
+    listEmbedOptions(), installedEmbedIds,
+  ).filter((option) => !option.deprecated).map((option) => option.id as EmbedPresetId);
 
   async function start(): Promise<void> {
-    if (!isUnlocked || !masterKey) {
+    if (!preset.isLocal && (!isUnlocked || !masterKey)) {
       toast({
         variant: "warn",
         title: pick("Vault kilitli", "Vault locked"),
@@ -105,6 +118,13 @@ export function ReembedModal({
     }
 
     const providerId = presetToProviderId(presetId);
+    if (isLocalEmbedModelId(presetId)) {
+      const ready = await checkEmbedModelReadiness(presetId);
+      if (ready.state !== "ready") {
+        toast({ variant: "warn", title: pick("Model kurulu değil", "Model not installed") });
+        return;
+      }
+    }
     let apiKey: string | null = null;
     if (preset.isLocal === true) {
       apiKey = "";
@@ -166,7 +186,7 @@ export function ReembedModal({
     !plan ||
     plan.toReembed === 0 ||
     status.kind === "running" ||
-    !isUnlocked;
+    (!preset.isLocal && !isUnlocked);
 
   return (
     <Modal
@@ -206,7 +226,7 @@ export function ReembedModal({
             onChange={(e) => setPresetId(e.target.value as EmbedPresetId)}
             disabled={status.kind === "running"}
           >
-            {ALL_PRESET_IDS.map((id) => (
+            {availablePresetIds.map((id) => (
               <option key={id} value={id}>
                 {EMBED_PRESETS[id].label} · {presetDimLabel(id)}d
               </option>

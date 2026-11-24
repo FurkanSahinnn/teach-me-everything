@@ -4,6 +4,7 @@ import {
   badgesForEmbed,
   encodeChatModelBinding,
   findChatOption,
+  filterInstalledEmbedOptions,
   listChatOptions,
   listEmbedOptions,
 } from "./model-options";
@@ -86,6 +87,17 @@ describe("listChatOptions", () => {
 });
 
 describe("listEmbedOptions", () => {
+  it("offers installed ONNX models and preserves a previously bound missing model", () => {
+    const options = listEmbedOptions();
+    const installed = new Set(["local-minilm-multilingual"]);
+    const selectable = filterInstalledEmbedOptions(options, installed);
+    expect(selectable.some((o) => o.id === "local-minilm-multilingual")).toBe(true);
+    expect(selectable.some((o) => o.id === "local-qwen3-0.6b")).toBe(false);
+    expect(selectable.some((o) => o.id === "ollama-nomic")).toBe(true);
+    const withOldBinding = filterInstalledEmbedOptions(options, installed, "local-qwen3-0.6b");
+    expect(withOldBinding.some((o) => o.id === "local-qwen3-0.6b")).toBe(true);
+  });
+
   it("includes every EMBED_PRESETS entry", () => {
     const opts = listEmbedOptions();
     expect(opts.length).toBe(Object.keys(EMBED_PRESETS).length);

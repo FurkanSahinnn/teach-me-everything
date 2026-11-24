@@ -191,6 +191,19 @@ export function listEmbedOptions(): EmbedOption[] {
   }));
 }
 
+/** Keep an existing binding visible so a deleted model can be identified and changed. */
+export function filterInstalledEmbedOptions(
+  options: readonly EmbedOption[],
+  installedIds: ReadonlySet<string>,
+  currentId?: string,
+): EmbedOption[] {
+  return options.filter((option) =>
+    !option.id.startsWith("local-") ||
+    installedIds.has(option.id) ||
+    option.id === currentId,
+  );
+}
+
 /**
  * Settings → Models tab projects this list as the research provider row.
  * Sort: local first (readability), then by label so cloud providers stay
