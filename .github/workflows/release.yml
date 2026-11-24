@@ -87,6 +87,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
+          cache-on-failure: ${{ runner.os == 'Linux' }}
       - name: Sync release version
         run: node scripts/release-version.mjs "$RELEASE_TAG"
       - name: Install frontend dependencies
@@ -101,6 +102,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.prepare.outputs.publish == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: |
           args=(--bundles "$BUNDLES")
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            # linuxdeploy's strip can reject sections in newer system libraries.
+            export NO_STRIP=true
+            args+=(--verbose)
+          fi
           if [[ "$PUBLISH" != "true" ]]; then
             # Preview packages use a disposable key and are never sent to Releases.
             key="$RUNNER_TEMP/tauri-preview.key"
