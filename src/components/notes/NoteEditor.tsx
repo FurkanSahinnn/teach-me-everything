@@ -92,6 +92,7 @@ export type NoteEditorProps = {
   placeholder?: string;
   autosaveMs?: number;
   editable?: boolean;
+  compactStatus?: boolean;
   className?: string;
 };
 
@@ -130,6 +131,7 @@ export function NoteEditor({
   placeholder: placeholderProp,
   autosaveMs = DEFAULT_AUTOSAVE_MS,
   editable = true,
+  compactStatus = false,
   className,
 }: NoteEditorProps) {
   const tEditor = useTranslations("notes.editor");
@@ -425,6 +427,7 @@ export function NoteEditor({
         </div>
       ) : null}
       <EditorStatusBar
+        compact={compactStatus}
         words={counts.words}
         characters={counts.characters}
         saveState={saveState}

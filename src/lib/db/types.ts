@@ -306,6 +306,8 @@ export type WikilinkRef = {
 export type NoteRecord = {
   id: string;
   workspaceId: string;
+  /** Source open in the reader when this note was created. */
+  readerSourceId?: string;
   // Zero-or-one folder. `null` (or undefined) means the note lives at the
   // vault root. Stored as `null` rather than missing so the compound
   // `[workspaceId+folderId]` index has a stable bucket for root notes.

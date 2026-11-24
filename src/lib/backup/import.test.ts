@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db/schema";
 import { createWorkspace } from "@/lib/db/workspaces";
 import { createSource } from "@/lib/db/sources";
+import { createNote } from "@/lib/db/notes";
 import { bulkAddChunks } from "@/lib/db/chunks";
 import { createDeck, createFlashcard } from "@/lib/db/flashcards";
 import { createConcept, createEdge } from "@/lib/db/concepts";
@@ -384,6 +385,25 @@ async function exportSnapshotAndWipe(): Promise<File> {
 }
 
 describe("backup/import round-trip", () => {
+  it("keeps reader notes attached to the copied document when IDs conflict", async () => {
+    const workspace = await createWorkspace({ name: "Reader", color: "terracotta", initials: "R" });
+    const source = await createSource({ workspaceId: workspace.id, title: "Source", type: "pdf" });
+    const note = await createNote({
+      workspaceId: workspace.id,
+      readerSourceId: source.id,
+      content: "# Document note",
+    });
+
+    await importBackup(blobToFile(await exportBackup()));
+
+    const copiedNote = (await db.notes.toArray()).find((row) => row.id !== note.id);
+    if (!copiedNote?.readerSourceId) throw new Error("The copied note lost its document link");
+    expect(copiedNote.readerSourceId).not.toBe(source.id);
+    const copiedSource = await db.sources.get(copiedNote.readerSourceId);
+    expect(copiedSource).toMatchObject({ workspaceId: copiedNote.workspaceId, title: source.title });
+    expect(await db.notes.get(note.id)).toMatchObject({ readerSourceId: source.id });
+  });
+
   it("restores all tables byte-for-byte (including Float32 embeddings)", async () => {
     const { wsId, src1Id, deckId } = await seedDataset();
     const file = await exportSnapshotAndWipe();
