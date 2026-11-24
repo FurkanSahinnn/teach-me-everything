@@ -127,8 +127,10 @@ async function downloadFile(url, destPath) {
 
 function extractArchive(archivePath, destDir) {
   log(`extracting ${basename(archivePath)}`);
-  // Windows ships bsdtar, which reads ZIP without the PowerShell Archive module.
-  const command = process.platform === "win32" ? "tar.exe" : "tar";
+  // Git for Windows puts GNU tar on PATH, so use Windows' ZIP-capable bsdtar explicitly.
+  const command = process.platform === "win32"
+    ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+    : "tar";
   const flags = archivePath.endsWith(".zip") ? "-xf" : "-xzf";
   const result = spawnSync(command, [flags, archivePath, "-C", destDir], { stdio: "inherit" });
   if (result.error) throw result.error;

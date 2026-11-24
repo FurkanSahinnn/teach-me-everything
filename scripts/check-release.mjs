@@ -1,10 +1,41 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+const updaterInstallers = {
+  "windows-x86_64": ".msi",
+  "windows-x86_64-msi": ".msi",
+  "windows-x86_64-nsis": ".exe",
+  "linux-x86_64": ".AppImage",
+  "linux-x86_64-appimage": ".AppImage",
+  "linux-x86_64-deb": ".deb",
+  "linux-x86_64-rpm": ".rpm",
+};
+
+function findInstaller(names, extension) {
+  const installers = [...names].filter((name) => name.endsWith(extension));
+  assert.equal(installers.length, 1, `Missing or ambiguous installer ending in ${extension}`);
+  return installers[0];
+}
+
+export function createReleaseManifest(tag, repository, names, readSignature, notes) {
+  const platforms = Object.fromEntries(
+    Object.entries(updaterInstallers).map(([platform, extension]) => {
+      const name = findInstaller(names, extension);
+      return [platform, {
+        url: `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(name)}`,
+        signature: readSignature(`${name}.sig`).trim(),
+      }];
+    }),
+  );
+  const manifest = { version: tag.slice(1), notes, platforms };
+  const assets = ["latest.json", ...names].map((name) => ({ name, size: 1 }));
+  validateReleaseAssets({ tag_name: tag, prerelease: false, assets }, manifest, repository, tag);
+  return manifest;
+}
 
 export function validateReleaseConfig(tag, config, packageVersion) {
   assert.match(tag, /^v\d+\.\d+\.\d+$/, "Release tag must be a stable vX.Y.Z tag");
@@ -24,7 +55,7 @@ export function validateReleaseAssets(release, manifest, repository, tag) {
   assert.equal(manifest.version, tag.slice(1), "Manifest version differs from release tag");
   const names = new Set(release.assets.filter((asset) => asset.size > 0).map((asset) => asset.name));
   assert.ok(names.has("latest.json"), "Release is missing latest.json");
-  for (const platform of ["windows-x86_64", "windows-x86_64-msi", "windows-x86_64-nsis"]) {
+  for (const [platform, extension] of Object.entries(updaterInstallers)) {
     const entry = manifest.platforms?.[platform];
     assert.ok(entry, `Missing updater platform: ${platform}`);
     assert.ok(typeof entry.signature === "string" && entry.signature.trim(), `Missing signature: ${platform}`);
@@ -34,6 +65,7 @@ export function validateReleaseAssets(release, manifest, repository, tag) {
     assert.ok(url.pathname.startsWith(prefix), "Installer belongs to another repository or tag");
     assert.equal(url.search + url.hash, "", "Installer URL must not contain a query or fragment");
     const name = decodeURIComponent(url.pathname.slice(prefix.length));
+    assert.equal(name, findInstaller(names, extension), `Unexpected installer for platform ${platform}`);
     assert.ok(names.has(name), `Missing installer asset: ${name}`);
     assert.ok(names.has(`${name}.sig`), `Missing signature asset: ${name}`);
   }
@@ -48,10 +80,25 @@ function github(path, binary = false) {
 }
 
 function main() {
-  const [tag, releaseId] = process.argv.slice(2);
+  const [tag, releaseId, directory, notesFile] = process.argv.slice(2);
   const config = JSON.parse(readFileSync(resolve(root, "src-tauri/tauri.conf.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
   const repository = validateReleaseConfig(tag, config, pkg.version);
+  if (releaseId === "--prepare") {
+    const names = readdirSync(directory)
+      .filter((name) => name !== "latest.json")
+      .filter((name) => {
+        const stats = statSync(resolve(directory, name));
+        return stats.isFile() && stats.size > 0;
+      });
+    const manifest = createReleaseManifest(
+      tag, repository, names,
+      (name) => readFileSync(resolve(directory, name), "utf8"),
+      readFileSync(notesFile, "utf8"),
+    );
+    writeFileSync(resolve(directory, "latest.json"), JSON.stringify(manifest, null, 2) + "\n");
+    return;
+  }
   if (!releaseId) {
     console.log(`Release configuration valid for ${tag}.`);
     return;

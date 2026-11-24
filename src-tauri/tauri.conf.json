@@ -51,6 +51,11 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "createUpdaterArtifacts": true,
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
     "resources": ["binaries/piper-*/**/*"]
   },
   "plugins": {
