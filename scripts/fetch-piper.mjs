@@ -191,8 +191,8 @@ async function main() {
     if (existsSync(finalDir)) {
       rmSync(finalDir, { recursive: true, force: true });
     }
-    // cpSync handles cross-device copies (tmp on another drive on Windows).
-    cpSync(extractedRoot, finalDir, { recursive: true });
+    // Keep relative library links pointed inside the copied Piper distribution.
+    cpSync(extractedRoot, finalDir, { recursive: true, verbatimSymlinks: true });
 
     if (process.platform !== "win32") {
       chmodSync(piperExePath, 0o755);
