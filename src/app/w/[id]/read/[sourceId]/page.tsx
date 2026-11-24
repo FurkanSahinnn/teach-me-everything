@@ -32,7 +32,7 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRouteParams } from "@/lib/utils/route-params";
 import { useTranslations } from "next-intl";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MarkdownPreview } from "@/components/markdown/MarkdownPreview";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
@@ -121,7 +121,7 @@ import type {
 } from "@/lib/db/types";
 import type { AiResponseLocale } from "@/stores/prefs";
 import { usePrefs, webSearchPrefsToOptions } from "@/stores/prefs";
-import { useSelection } from "@/stores/selection";
+import { useSelection, type SelectionData } from "@/stores/selection";
 import { useVault } from "@/stores/vault";
 import { cn } from "@/lib/utils/cn";
 import type { Provider } from "@/lib/db/schema";
@@ -358,6 +358,12 @@ export default function NotebookReaderPage() {
   // Cleared on send (the chip's text is prepended to the final message) or
   // via the explicit X button on the chip.
   const [quotedText, setQuotedText] = useState<string | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (quotedText && activeTab === "chat" && !panelCollapsed) {
+      composerRef.current?.focus({ preventScroll: true });
+    }
+  }, [activeTab, panelCollapsed, quotedText]);
   const [, setVaultModalOpen] = useState(false);
   const [genCardsOpen, setGenCardsOpen] = useState(false);
   // When the user clicks "Karta çevir" on a chat bubble, we capture the
@@ -1332,10 +1338,15 @@ export default function NotebookReaderPage() {
     );
   }
 
-  function handleMouseUp(e: React.MouseEvent<HTMLDivElement>) {
+  function handleMouseUp(
+    e: React.MouseEvent<HTMLDivElement>,
+    surface: NonNullable<SelectionData>["surface"],
+  ) {
+    if (e.button !== 0) return;
     const sel = window.getSelection();
     const setSelection = useSelection.getState().setSelection;
-    if (!sel || sel.isCollapsed) {
+    const scrollRoot = e.currentTarget;
+    if (!sel || sel.isCollapsed || !scrollRoot.contains(sel.anchorNode) || !scrollRoot.contains(sel.focusNode)) {
       setSelection(null);
       return;
     }
@@ -1345,9 +1356,13 @@ export default function NotebookReaderPage() {
       return;
     }
     const rect = sel.getRangeAt(0).getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return;
-    setSelection({ text, x: rect.left + rect.width / 2, y: rect.top - 8 });
-    e.stopPropagation();
+    const viewport = scrollRoot.getBoundingClientRect();
+    setSelection({
+      text,
+      x: (Math.max(rect.left, viewport.left) + Math.min(rect.right, viewport.right)) / 2,
+      y: Math.max(rect.top, viewport.top) - 8,
+      surface,
+    });
   }
 
 
@@ -1395,6 +1410,7 @@ export default function NotebookReaderPage() {
             onAiResponseLocaleChange={setAiResponseLocale}
             skippedCount={lastSkippedCount}
             quotedText={quotedText}
+            composerRef={composerRef}
             onClearQuote={() => setQuotedText(null)}
             webSearchEnabled={webSearchEnabled}
             onWebSearchToggle={handleWebSearchToggle}
@@ -1427,8 +1443,8 @@ export default function NotebookReaderPage() {
           setPanelCollapsed(false);
           setActiveTab("chat");
           window.getSelection()?.removeAllRanges();
+          composerRef.current?.focus({ preventScroll: true });
         }}
-        pick={pick}
       />
 
       
@@ -1778,7 +1794,7 @@ function ReaderPanel({
   chunks: ChunkRecord[];
   highlights: HighlightRecord[];
   workspaceId: string;
-  onMouseUp: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseUp: (e: React.MouseEvent<HTMLDivElement>, surface: NonNullable<SelectionData>["surface"]) => void;
   pick: (tr: string, en: string) => string;
 }) {
   const readerWidth = usePrefs((s) => s.readerWidth);
@@ -1827,7 +1843,7 @@ function ReaderPanel({
             </h2>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
           {blobAvailable ? (
             <SegmentedControl
               value={viewMode}
@@ -1881,7 +1897,7 @@ function ReaderPanel({
             "flex-1 overflow-y-auto px-6 py-8 sm:px-8",
             viewMode !== "reading" && "hidden",
           )}
-          onMouseUp={onMouseUp}
+          onMouseUp={(event) => onMouseUp(event, "reading")}
         >
           <div
             className={cn(
@@ -1971,6 +1987,7 @@ function ReaderPanel({
             <PdfViewer
               blob={blob}
               pick={pick}
+              onMouseUp={(event) => onMouseUp(event, "pdf")}
               className={cn("flex-1 min-h-0", viewMode !== "pdf" && "hidden")}
             />
           )
@@ -2049,6 +2066,7 @@ function ChatPanel({
   onAiResponseLocaleChange,
   skippedCount,
   quotedText,
+  composerRef,
   onClearQuote,
   threadList,
   webSearchEnabled = false,
@@ -2098,6 +2116,7 @@ function ChatPanel({
   /** Optional quoted passage shown as a chip, appended as a distinct quotation
    *  after the user's question on send, then cleared automatically. */
   quotedText?: string | null;
+  composerRef: RefObject<HTMLTextAreaElement | null>;
   onClearQuote?: () => void;
   threadList?: React.ReactNode;
 }) {
@@ -2341,6 +2360,8 @@ function ChatPanel({
           className="flex items-end gap-2 rounded-lg border border-rule bg-paper p-2 transition-colors focus-within:border-ink-5"
         >
           <textarea
+            ref={composerRef}
+            aria-label={t("bir_sey_sor")}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -2526,13 +2547,7 @@ function TypingDots({
 // so the reader page does NOT re-render on selection — only this Host (and
 // the Popover beneath it) re-renders, leaving ReaderPanel / MarkdownPreview
 // untouched. That makes the popover appear instantly even on long sources.
-function SelectionPopoverHost({
-  onAsk,
-  pick,
-}: {
-  onAsk: (text: string) => void;
-  pick: (tr: string, en: string) => string;
-}) {
+function SelectionPopoverHost({ onAsk }: { onAsk: (text: string) => void }) {
   const selection = useSelection((s) => s.selection);
   const setSelection = useSelection((s) => s.setSelection);
   if (!selection) return null;
@@ -2545,7 +2560,6 @@ function SelectionPopoverHost({
         onAsk(text);
       }}
       onClose={() => setSelection(null)}
-      pick={pick}
     />
   );
 }
@@ -2554,52 +2568,81 @@ function SelectionPopover({
   selection,
   onAsk,
   onClose,
-
 }: {
-  selection: { text: string; x: number; y: number };
+  selection: NonNullable<SelectionData>;
   onAsk: () => void;
   onClose: () => void;
-  pick: (tr: string, en: string) => string;
 }) {
   const t = useTranslations("reader");
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    const { offsetWidth: width, offsetHeight: height } = toolbar;
+    const left = Math.max(8, Math.min(selection.x - width / 2, window.innerWidth - width - 8));
+    const preferredTop = selection.y - height >= 8 ? selection.y - height : selection.y + 16;
+    const top = Math.max(8, Math.min(preferredTop, window.innerHeight - height - 8));
+    toolbar.style.left = `${left}px`;
+    toolbar.style.top = `${top}px`;
+  }, [selection]);
+
+  useEffect(() => {
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+
   return (
     <div
-      className="fixed z-30 -translate-x-1/2 -translate-y-full rounded-lg border border-rule bg-paper p-1 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.35)]"
-      style={{ left: selection.x, top: selection.y }}
+      ref={toolbarRef}
+      className="fixed z-30 max-w-[calc(100vw-16px)] rounded-lg border border-rule bg-paper p-1 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.35)]"
+      onMouseDown={(event) => event.preventDefault()}
       role="toolbar"
       aria-label={t("secim_aksiyonlari")}
     >
-      <div className="flex items-center gap-0.5">
+      <div className="flex flex-wrap items-center gap-0.5">
         <button
+          type="button"
           onClick={onAsk}
           className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
         >
           <Sparkles className="h-3.5 w-3.5" aria-hidden />
           {t("bunu_sor")}
-          <Kbd className="ml-1">⌘⇧A</Kbd>
+          {selection.surface === "reading" && <Kbd className="ml-1">⌘⇧A</Kbd>}
         </button>
-        <span className="h-4 w-px bg-rule" />
-        <button
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
-        >
-          <Highlighter className="h-3.5 w-3.5" aria-hidden />
-          {t("highlight")}
-        </button>
-        <button
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
-        >
-          <NotebookPen className="h-3.5 w-3.5" aria-hidden />
-          {t("not")}
-        </button>
-        <button
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
-        >
-          <SquareStack className="h-3.5 w-3.5" aria-hidden />
-          {t("karta_ekle")}
-        </button>
+        {selection.surface === "reading" && (
+          <>
+            <span className="h-4 w-px bg-rule" />
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
+            >
+              <Highlighter className="h-3.5 w-3.5" aria-hidden />
+              {t("highlight")}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
+            >
+              <NotebookPen className="h-3.5 w-3.5" aria-hidden />
+              {t("not")}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-paper-2"
+            >
+              <SquareStack className="h-3.5 w-3.5" aria-hidden />
+              {t("karta_ekle")}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

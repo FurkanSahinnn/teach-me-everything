@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-export type SelectionData = { text: string; x: number; y: number } | null;
+export type SelectionData = {
+  text: string;
+  x: number;
+  y: number;
+  surface: "reading" | "pdf";
+} | null;
 
 type SelectionState = {
   selection: SelectionData;

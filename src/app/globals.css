@@ -1270,20 +1270,20 @@ html.theme-init-complete body {
 /* =========================================================================
    pdfjs textLayer overlay — drawn on top of the rendered canvas in
    PdfViewer so users can highlight, copy and select text directly out of
-   the PDF. The spans carry pdfjs's own per-character transforms; we only
-   set positioning, transparency, and the selection background.
-
-   The .endOfContent and .markedContent rules below are required for
-   selection to STOP at the right place — without them, dragging within a
-   paragraph leaks the selection across every sibling span until the end
-   of the page. pdfjs's TextLayer toggles `.selecting` on mouse-down so
-   `.endOfContent` extends from the bottom (idle) to cover the whole page
-   (active), which gives the browser a sentinel to clamp selection bounds.
-   See pdfjs-dist v5 web/text_layer_builder.css for reference.
+   the PDF. Keep the metrics in sync with pdfjs-dist's text layer styles:
+   PDF.js lays out the runs at natural size and the page supplies the
+   current zoom and rotation. TextLayerBuilder manages selection bounds.
    ========================================================================= */
 .textLayer {
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit, 1));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   overflow: clip;
   opacity: 1;
   line-height: 1;
@@ -1293,6 +1293,15 @@ html.theme-init-complete body {
   transform-origin: 0 0;
   z-index: 2;
   caret-color: CanvasText;
+}
+.tme-pdf-page[data-rotation="90"] .textLayer {
+  transform: rotate(90deg) translateY(-100%);
+}
+.tme-pdf-page[data-rotation="180"] .textLayer {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.tme-pdf-page[data-rotation="270"] .textLayer {
+  transform: rotate(270deg) translateX(-100%);
 }
 .textLayer.highlighting {
   touch-action: none;
@@ -1306,14 +1315,19 @@ html.theme-init-complete body {
 }
 .textLayer > :not(.markedContent),
 .textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
   z-index: 1;
 }
-/* Chrome-only quirk: marked-content wrappers get drawn at full height
-   without this and overlap their following sibling spans, blurring
-   selection bounds. */
-.textLayer span.markedContent {
-  top: 0;
-  height: 0;
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
 }
 .textLayer .endOfContent {
   display: block;
@@ -1329,6 +1343,9 @@ html.theme-init-complete body {
 .textLayer ::selection {
   background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
   color: transparent;
+}
+.textLayer br::selection {
+  background-color: transparent;
 }
 
 @keyframes article-brief-enter {

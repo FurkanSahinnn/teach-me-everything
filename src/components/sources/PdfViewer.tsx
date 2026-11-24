@@ -11,6 +11,8 @@ import {
   RotateCw,
 } from "lucide-react";
 import {
+  type CSSProperties,
+  type MouseEventHandler,
   forwardRef,
   useCallback,
   useEffect,
@@ -19,6 +21,8 @@ import {
   useRef,
   useState,
 } from "react";
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type { TextLayerBuilder } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import { cn } from "@/lib/utils/cn";
 
 // pdfjs-dist v5 dropped the empty-workerSrc fake-worker fallback. Importing
@@ -62,18 +66,14 @@ function prevScaleStep(current: number): number {
 
 type FitMode = "manual" | "width" | "page";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PdfDocument = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PdfPage = any;
-
 type Props = {
   blob: Blob;
   pick: (tr: string, en: string) => string;
   className?: string;
+  onMouseUp?: MouseEventHandler<HTMLDivElement>;
 };
 
-export function PdfViewer({ blob, pick, className }: Props) {
+export function PdfViewer({ blob, pick, className, onMouseUp }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const scrollRootRef = useRef<HTMLDivElement>(null);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
@@ -82,9 +82,9 @@ export function PdfViewer({ blob, pick, className }: Props) {
     setScrollRoot(node);
   }, []);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const jumpScrollTop = useRef<number | null>(null);
 
-  const [pdfjsLib, setPdfjsLib] = useState<PdfjsLib | null>(null);
-  const [pdf, setPdf] = useState<PdfDocument | null>(null);
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,7 +104,7 @@ export function PdfViewer({ blob, pick, className }: Props) {
   // Load pdfjs + open document.
   useEffect(() => {
     let cancelled = false;
-    let pdfDoc: PdfDocument | null = null;
+    let pdfDoc: PDFDocumentProxy | null = null;
 
     void (async () => {
       try {
@@ -112,10 +112,10 @@ export function PdfViewer({ blob, pick, className }: Props) {
         setPdf(null);
         setFirstPageNatural(null);
         setCurrentPage(1);
+        jumpScrollTop.current = null;
 
         const lib = await loadPdfjs();
         if (cancelled) return;
-        setPdfjsLib(lib);
 
         const data = await blob.arrayBuffer();
         if (cancelled) return;
@@ -192,13 +192,25 @@ export function PdfViewer({ blob, pick, className }: Props) {
   // separate observer per page.
   useEffect(() => {
     const root = scrollRootRef.current;
-    if (!root) return;
+    if (!root || !pageCount) return;
 
     let raf = 0;
-    function onScroll(): void {
+    const onScroll = (): void => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        if (!root) return;
+        const { scrollTop, clientHeight, scrollHeight } = root;
+        // Several short pages can be visible at the same scroll position.
+        // Keep the explicitly requested page until the viewport scrolls again.
+        if (clientHeight === 0 || jumpScrollTop.current === scrollTop) return;
+        jumpScrollTop.current = null;
+        if (scrollTop <= 0) {
+          setCurrentPage(1);
+          return;
+        }
+        if (scrollTop >= scrollHeight - clientHeight - 1) {
+          setCurrentPage(pageCount);
+          return;
+        }
         const rootRect = root.getBoundingClientRect();
         const midY = rootRect.top + rootRect.height / 2;
         let bestPage = 1;
@@ -216,7 +228,7 @@ export function PdfViewer({ blob, pick, className }: Props) {
         }
         setCurrentPage(bestPage);
       });
-    }
+    };
     root.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => {
@@ -245,9 +257,14 @@ export function PdfViewer({ blob, pick, className }: Props) {
   }, []);
 
   function jumpToPage(pageNum: number): void {
+    const root = scrollRootRef.current;
     const target = pageRefs.current[pageNum - 1];
-    if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!root || !target) return;
+    const viewportTop = root.getBoundingClientRect().top + root.clientTop;
+    const top = root.scrollTop + target.getBoundingClientRect().top - viewportTop;
+    root.scrollTo({ top, behavior: "instant" });
+    jumpScrollTop.current = root.scrollTop;
+    setCurrentPage(pageNum);
   }
 
   function zoomIn(): void {
@@ -269,7 +286,7 @@ export function PdfViewer({ blob, pick, className }: Props) {
   return (
     <div
       ref={wrapperRef}
-      className={cn("flex min-h-0 flex-col bg-paper-2", className)}
+      className={cn("flex min-h-0 min-w-0 flex-col bg-paper-2", className)}
     >
       <Toolbar
         currentPage={currentPage}
@@ -292,7 +309,8 @@ export function PdfViewer({ blob, pick, className }: Props) {
       <div
         ref={bindScrollRoot}
         data-pdf-scroll
-        className="flex-1 overflow-y-auto"
+        onMouseUp={onMouseUp}
+        className="min-h-0 flex-1 overflow-auto overscroll-contain"
       >
         {error ? (
           <div className="m-4 flex items-start gap-2 rounded-md border border-err/40 bg-err/10 px-3 py-2.5 text-[13px] text-err">
@@ -315,8 +333,8 @@ export function PdfViewer({ blob, pick, className }: Props) {
           </div>
         ) : null}
 
-        {pdf && pdfjsLib ? (
-          <div className="flex flex-col items-center gap-3 px-4 py-4">
+        {pdf ? (
+          <div className="flex flex-col items-center-safe gap-3 px-4 py-4">
             {Array.from({ length: pageCount }, (_, i) => (
               <PdfPageView
                 key={i + 1}
@@ -324,7 +342,6 @@ export function PdfViewer({ blob, pick, className }: Props) {
                   pageRefs.current[i] = el;
                 }}
                 pdf={pdf}
-                pdfjsLib={pdfjsLib}
                 pageNumber={i + 1}
                 scale={scale}
                 rotation={rotation}
@@ -378,7 +395,8 @@ function Toolbar({
   const pageInput = pageDraft ?? String(currentPage);
 
   function commitJump(): void {
-    const n = parseInt(pageInput, 10);
+    if (pageDraft === null) return;
+    const n = parseInt(pageDraft, 10);
     if (Number.isFinite(n)) {
       const clamped = clamp(n, 1, pageCount);
       onJump(clamped);
@@ -401,13 +419,12 @@ function Toolbar({
             type="text"
             inputMode="numeric"
             value={pageInput}
-            onFocus={() => setPageDraft(String(currentPage))}
             onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ""))}
             onBlur={commitJump}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                (e.target as HTMLInputElement).blur();
+                e.currentTarget.blur();
               }
             }}
             disabled={disabled}
@@ -523,8 +540,7 @@ function ToolbarButton({
 }
 
 type PdfPageProps = {
-  pdf: PdfDocument;
-  pdfjsLib: PdfjsLib;
+  pdf: PDFDocumentProxy;
   pageNumber: number;
   scale: number;
   rotation: number;
@@ -533,13 +549,13 @@ type PdfPageProps = {
 };
 
 const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageView(
-  { pdf, pdfjsLib, pageNumber, scale, rotation, scrollRoot, pick },
+  { pdf, pageNumber, scale, rotation, scrollRoot, pick },
   forwardedRef,
 ) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   useImperativeHandle(forwardedRef, () => wrapperRef.current as HTMLDivElement);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const textLayerRef = useRef<HTMLDivElement>(null);
+  const textLayerHostRef = useRef<HTMLDivElement>(null);
 
   // Cache the natural (scale=1) viewport so the placeholder reserves the
   // correct space before the page is actually rendered. Without this the
@@ -548,11 +564,6 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
     null,
   );
   const [visible, setVisible] = useState(false);
-  // Render token — bumped on every successful render. `scale|rotation`
-  // changes invalidate the canvas, so the rendering effect compares its
-  // captured token against the latest `renderTokenRef` and bails out if
-  // a newer render has started.
-  const renderTokenRef = useRef(0);
   const [rendered, setRendered] = useState(false);
 
   const viewport = useMemo(() => {
@@ -570,7 +581,7 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
     let cancelled = false;
     void (async () => {
       try {
-        const page: PdfPage = await pdf.getPage(pageNumber);
+        const page = await pdf.getPage(pageNumber);
         if (cancelled) return;
         const v = page.getViewport({ scale: 1, rotation: 0 });
         setNatural({ width: v.width, height: v.height });
@@ -612,168 +623,85 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
     return () => observer.disconnect();
   }, [scrollRoot]);
 
-  // Render canvas + textLayer whenever the page becomes visible OR when
-  // scale/rotation change after the page has already been rendered.
   useEffect(() => {
-    if (!visible || !natural) return;
     const canvas = canvasRef.current;
-    const textLayerDiv = textLayerRef.current;
-    if (!canvas || !textLayerDiv) return;
+    if (!visible || !natural || !canvas) return;
 
-    const token = ++renderTokenRef.current;
     let cancelled = false;
+    let task: RenderTask | undefined;
     setRendered(false);
 
     void (async () => {
       try {
-        const page: PdfPage = await pdf.getPage(pageNumber);
-        if (cancelled || token !== renderTokenRef.current) return;
+        const page = await pdf.getPage(pageNumber);
+        if (cancelled) return;
 
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const viewportLogical = page.getViewport({ scale, rotation });
-        const viewportDevice = page.getViewport({ scale: scale * dpr, rotation });
-
-        canvas.style.width = `${Math.floor(viewportLogical.width)}px`;
-        canvas.style.height = `${Math.floor(viewportLogical.height)}px`;
-        canvas.width = Math.floor(viewportDevice.width);
-        canvas.height = Math.floor(viewportDevice.height);
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        await page.render({
-          canvasContext: ctx,
-          viewport: viewportDevice,
-        }).promise;
-        if (cancelled || token !== renderTokenRef.current) return;
-
-        // Reset the text layer container before re-rendering — pdfjs's
-        // TextLayer appends spans, so a stale render would visually double
-        // the text on every zoom.
-        textLayerDiv.replaceChildren();
-        textLayerDiv.style.width = `${Math.floor(viewportLogical.width)}px`;
-        textLayerDiv.style.height = `${Math.floor(viewportLogical.height)}px`;
-        textLayerDiv.style.setProperty("--scale-factor", String(scale));
-
-        try {
-          const textContent = await page.getTextContent();
-          if (cancelled || token !== renderTokenRef.current) return;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const TextLayerCtor = (pdfjsLib as any).TextLayer;
-          if (TextLayerCtor) {
-            const tl = new TextLayerCtor({
-              textContentSource: textContent,
-              container: textLayerDiv,
-              viewport: viewportLogical,
-            });
-            await tl.render();
-          }
-          // pdfjs lays out text spans in PDF stream order, which often
-          // doesn't match visual reading order — section numbers and
-          // their titles, equations, footnote markers etc. land in
-          // separate text items and end up scattered across the DOM.
-          // Native browser selection follows DOM order, so dragging
-          // across "1 Bu Dökümanda" leaves "1" out because it sits in
-          // a non-adjacent span.
-          //
-          // Re-appending all leaf spans in (top, left) order collapses
-          // DOM order to visual reading order, which is what selection
-          // needs to behave intuitively. This drops pdfjs's marked-
-          // content wrapper structure — acceptable here because the
-          // textLayer is purely a selection overlay; accessibility for
-          // the rendered page goes through other channels.
-          //
-          // The .endOfContent sentinel is re-appended LAST so the
-          // .selecting toggle still clamps drag bounds at the bottom
-          // of the page.
-          const leafSpans: HTMLSpanElement[] = [];
-          (function collect(node: Element): void {
-            for (const child of Array.from(node.children)) {
-              if (child instanceof HTMLSpanElement) {
-                if (
-                  child.children.length === 0 &&
-                  (child.textContent ?? "").length > 0
-                ) {
-                  leafSpans.push(child);
-                } else {
-                  collect(child);
-                }
-              }
-            }
-          })(textLayerDiv);
-
-          if (leafSpans.length > 1) {
-            const measured = leafSpans.map((el) => {
-              const r = el.getBoundingClientRect();
-              return { el, top: r.top, left: r.left };
-            });
-            // 5px vertical tolerance treats spans on the same visual
-            // line as siblings even when the baseline jitters by a
-            // sub-pixel.
-            const LINE_THRESHOLD = 5;
-            measured.sort((a, b) => {
-              if (Math.abs(a.top - b.top) < LINE_THRESHOLD) {
-                return a.left - b.left;
-              }
-              return a.top - b.top;
-            });
-            textLayerDiv.replaceChildren();
-            for (const { el } of measured) {
-              textLayerDiv.appendChild(el);
-            }
-          }
-
-          const eoc = document.createElement("div");
-          eoc.className = "endOfContent";
-          textLayerDiv.appendChild(eoc);
-        } catch {
-          // Text-layer failure is non-fatal — the canvas is already
-          // visible; the user just loses text selection on that page.
-        }
-
-        if (!cancelled && token === renderTokenRef.current) setRendered(true);
+        const deviceViewport = page.getViewport({ scale: scale * dpr, rotation });
+        canvas.width = Math.floor(deviceViewport.width);
+        canvas.height = Math.floor(deviceViewport.height);
+        task = page.render({ canvas, viewport: deviceViewport });
+        await task.promise;
+        if (!cancelled) setRendered(true);
       } catch {
-        // Page render failures bubble up as a blank placeholder; we don't
-        // crash the whole viewer over a single bad page.
+        // A failed or cancelled canvas render stays on its placeholder.
       }
     })();
 
     return () => {
       cancelled = true;
+      task?.cancel();
     };
-  }, [visible, natural, scale, rotation, pdf, pdfjsLib, pageNumber]);
+  }, [visible, natural, scale, rotation, pdf, pageNumber]);
 
-  // Toggle the `.selecting` class on the textLayer while the user is
-  // dragging a selection. Combined with the `.endOfContent` sentinel
-  // appended after render, this clamps the selection so it stops at the
-  // pointer position instead of bleeding to the bottom of the page.
+  // Keep the selectable DOM stable while zoom and rotation redraw the canvas.
+  // The builder owns native cross-page selection and the end-of-content marker.
   useEffect(() => {
-    const tl = textLayerRef.current;
-    if (!tl) return;
-    function onDown(): void {
-      tl?.classList.add("selecting");
-    }
-    function onUp(): void {
-      tl?.classList.remove("selecting");
-    }
-    tl.addEventListener("mousedown", onDown);
-    window.addEventListener("mouseup", onUp);
+    const host = textLayerHostRef.current;
+    if (!visible || !host) return;
+
+    let cancelled = false;
+    let layer: TextLayerBuilder | undefined;
+    void (async () => {
+      try {
+        // The PDF.js display module has already loaded by the time a page mounts.
+        const [{ TextLayerBuilder }, page] = await Promise.all([
+          import("pdfjs-dist/legacy/web/pdf_viewer.mjs"),
+          pdf.getPage(pageNumber),
+        ]);
+        if (cancelled) return;
+        layer = new TextLayerBuilder({ pdfPage: page });
+        layer.div.style.setProperty("--user-unit", String(page.userUnit));
+        await layer.render({
+          viewport: page.getViewport({ scale: 1, rotation: 0 }),
+          // Images are optional at runtime. This layer only needs text.
+          images: undefined!,
+        });
+        if (!cancelled) host.append(layer.div);
+      } catch {
+        // The canvas can still display pages whose text layer fails.
+      }
+    })();
+
     return () => {
-      tl.removeEventListener("mousedown", onDown);
-      window.removeEventListener("mouseup", onUp);
+      cancelled = true;
+      layer?.cancel();
+      layer?.div.remove();
     };
-  }, []);
+  }, [visible, pdf, pageNumber]);
 
   return (
     <div
       ref={wrapperRef}
       data-page-number={pageNumber}
+      data-rotation={rotation}
       className="tme-pdf-page relative shrink-0 overflow-hidden rounded-md bg-white"
       style={{
+        "--scale-factor": scale,
         width: viewport ? `${Math.floor(viewport.width)}px` : "min(640px, 100%)",
         height: viewport ? `${Math.floor(viewport.height)}px` : "800px",
         boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.08)",
-      }}
+      } as CSSProperties}
     >
       {!rendered ? (
         <div className="absolute inset-0 grid place-items-center bg-paper-2 text-[11px] text-ink-4">
@@ -794,16 +722,7 @@ const PdfPageView = forwardRef<HTMLDivElement, PdfPageProps>(function PdfPageVie
           height: viewport ? `${Math.floor(viewport.height)}px` : "100%",
         }}
       />
-      <div
-        ref={textLayerRef}
-        className="textLayer"
-        style={{
-          position: "absolute",
-          inset: 0,
-          lineHeight: 1,
-          color: "transparent",
-        }}
-      />
+      <div ref={textLayerHostRef} />
     </div>
   );
 });
